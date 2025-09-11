@@ -11,7 +11,7 @@ export class OdinConnect {
           resolve(event.data);
         }
       };
-      window.open(ORIGIN, target, settings);
+      window.open(`${ORIGIN}/authorize`, target, settings);
       window.addEventListener("message", handleMessage, { once: true });
     });
   }
