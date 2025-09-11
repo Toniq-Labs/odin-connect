@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
 
 import "./App.css";
-import { OdinConnect } from "odin-connect";
+import { OdinConnect, type OdinUser } from "odin-connect";
 
 function App() {
-  const [received, setReceived] = useState<string | null>(null);
+  const [received, setReceived] = useState<OdinUser | null>(null);
   const odinRef = useRef(new OdinConnect());
 
   const handleConnectWindow = async () => {
@@ -25,16 +25,33 @@ function App() {
   return (
     <>
       <div className="card">
+        <h3>Odin-Connect Demo</h3>
         {received ? (
-          <p>connected: {received}</p>
+          <UserCard user={received} />
         ) : (
           <p>No user connected yet.</p>
         )}
-        <button onClick={handleConnectWindow}>Connect (WINDOW)</button>
-        <button onClick={handleConnectTab}>Connect (TAB)</button>
+        <div className="demo-buttons">
+          <button onClick={handleConnectWindow}>Connect (WINDOW)</button>
+          <button onClick={handleConnectTab}>Connect (TAB)</button>
+        </div>
       </div>
     </>
   );
 }
 
+
+function UserCard({ user }: { user: OdinUser }) {
+  return (
+    <div className="user-card">
+      { user.image ? 
+        <img src={`https://images.odin.fun/user/${user.principal}`} alt="User Avatar" /> : 
+        <div className="avatar-placeholder">{user.username.slice(0,2)}</div> }
+      <div className="user-info">
+        <h4>{user.username}</h4>
+        <p>id: {user.principal}</p>
+      </div>
+    </div>
+  );
+}
 export default App;
