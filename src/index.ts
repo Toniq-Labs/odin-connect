@@ -1,25 +1,22 @@
+const ORIGIN = "http://localhost:5173";
+
 export class OdinConnect {
-  private _bc: BroadcastChannel;
+  constructor() {}
 
-  constructor() {
-    this._bc = new BroadcastChannel("odin-connect");
-  }
-
-  connect() {
-    console.log("Connecting to Odin...");
-  }
-
-  sendMessage() {
-    this._bc.postMessage({
-      text: "Hello from the sending tab!",
-      timestamp: Date.now(),
+  connect(target = "_blank", settings: string): Promise<string> {
+    return new Promise<string>((resolve) => {
+      const handleMessage = (event: MessageEvent) => {
+        if (event.origin === ORIGIN) {
+          window.removeEventListener("message", handleMessage);
+          resolve(event.data);
+        }
+      };
+      window.open(ORIGIN, target, settings);
+      window.addEventListener("message", handleMessage, { once: true });
     });
-    console.log("Message sent!");
   }
+}
 
-  receiveMessage() {
-    this._bc.onmessage = (event) => {
-      console.log("Message received:", event.data);
-    };
-  }
+export function hello() {
+  console.log("Hello from Odin Connect!");
 }
