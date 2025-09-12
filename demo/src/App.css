@@ -17,46 +17,43 @@
 .user-card {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.5rem;
   margin-bottom: 1rem;
+  flex-direction: column;
 }
 
 .user-card img {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   object-fit: cover;
 }
 
-.user-info {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-}
-
 .user-card p {
-  margin: 0px;
-  width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.user-card h4 {
-  margin: 0px;
+  margin: 0px; 
 }
 
 .avatar-placeholder {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background-color: #646cff;
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.5em;
+  font-size: 1em;
   font-weight: bold;
   text-transform: uppercase;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  text-align: left;
+}
+
+td.number ,th.number {
+  text-align: right;
 }

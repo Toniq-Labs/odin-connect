@@ -6,7 +6,9 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "demo:update": "npm run build && cd demo && npm install ../ && cd ..",
+    "demo:start": "cd demo && npm run dev"
   },
   "repository": {
     "type": "git",
@@ -25,6 +27,6 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
-    "@dfinity/identity": "^3.2.4"
+    "axios": "^1.12.0"
   }
 }
