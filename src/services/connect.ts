@@ -1,7 +1,7 @@
 import { User } from "../models/user";
 import { OdinApi } from "./api";
 
-const ORIGIN = {
+const ORIGINS = {
   local: "http://localhost:5173",
   prod: "https://odin.fun",
   dev: "https://dev.odin.fun",
@@ -10,7 +10,7 @@ const ORIGIN = {
 interface AppInitOptions {
   name?: string;
   icon?: string;
-  env?: keyof typeof ORIGIN;
+  env?: keyof typeof ORIGINS;
 }
 interface ConnectOptions {
   // options for window.open
@@ -24,7 +24,19 @@ interface ConnectOptions {
 interface BuyOptions {
   principal: string;
   token: string;
+  btcAmount: bigint;
+}
+
+interface SellOptions {
+  principal: string;
+  token: string;
+  tokenAmount: bigint;
+}
+interface TransferOptions {
+  principal: string;
+  token: string;
   amount: bigint;
+  destination: string;
 }
 
 interface GetBalanceOptions {
@@ -41,7 +53,7 @@ export class Connect {
       env: "prod",
       ...appInfo,
     };
-    this._api = new OdinApi();
+    this._api = new OdinApi(this._appInfo.env === "prod" ? "prod" : "dev");
     this._windowSettings = {
       target: "_blank",
       settings: "",
@@ -65,7 +77,7 @@ export class Connect {
   }
 
   get origin() {
-    return ORIGIN[this._appInfo?.env || "prod"];
+    return ORIGINS[this._appInfo?.env || "prod"];
   }
 
   connect({ open, requires_api }: Partial<ConnectOptions>): Promise<User> {
@@ -84,6 +96,7 @@ export class Connect {
             }
             const userId = event.data;
             try {
+              // we need to fetch user data from the api to get the full user object
               const user = await this._api.getUser(userId);
               resolve(user);
             } catch (error) {
@@ -94,7 +107,7 @@ export class Connect {
           }
         }
       };
-      this.openWindow(this.createUrl("authorize"));
+      this.openWindow(this.createUrl("authorize/connect"));
       window.addEventListener("message", handleMessage);
     });
   }
@@ -106,22 +119,73 @@ export class Connect {
     return this._api.getBalances(principal);
   }
 
-  buy({ token, amount, principal }: BuyOptions) {
+  async transfer({ principal, token, amount, destination }: TransferOptions) {
+    return new Promise<boolean>((resolve, reject) => {
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.origin === this.origin) {
+          window.removeEventListener("message", handleMessage);
+          if (event.data === "transferred") {
+            resolve(true);
+          } else {
+            reject("Transfer failed or was cancelled");
+          }
+        }
+      };
+      const url = this.createUrl("authorize/transfer");
+      url.searchParams.append("principal", principal);
+      url.searchParams.append("token", token);
+      url.searchParams.append("amount", amount.toString());
+      url.searchParams.append("destination", destination);
+      this.openWindow(url);
+      window.addEventListener("message", handleMessage);
+    });
+  }
+
+  async buy({ token, btcAmount, principal }: BuyOptions) {
     return new Promise<boolean>((resolve, reject) => {
       const handleMessage = async (event: MessageEvent) => {
         if (event.origin === this.origin) {
           window.removeEventListener("message", handleMessage);
           if (event.data === "purchased") {
-            resolve(true);
+            try {
+              resolve(true);
+            } catch (error) {
+              reject("Failed to parse purchased amount");
+            }
           } else {
             reject("Purchase failed or was cancelled");
           }
         }
       };
-      const url = this.createUrl("authorize");
+      const url = this.createUrl("authorize/buy");
       url.searchParams.append("principal", principal);
       url.searchParams.append("token", token);
-      url.searchParams.append("amount", amount.toString());
+      url.searchParams.append("amount", btcAmount.toString());
+      this.openWindow(url);
+      window.addEventListener("message", handleMessage);
+    });
+  }
+
+  async sell({ token, tokenAmount, principal }: SellOptions) {
+    return new Promise<boolean>((resolve, reject) => {
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.origin === this.origin) {
+          window.removeEventListener("message", handleMessage);
+          if (event.data === "sold") {
+            try {
+              resolve(true);
+            } catch (error) {
+              reject("Failed to parse sold amount");
+            }
+          } else {
+            reject("Sell failed or was cancelled");
+          }
+        }
+      };
+      const url = this.createUrl("authorize/sell");
+      url.searchParams.append("principal", principal);
+      url.searchParams.append("token", token);
+      url.searchParams.append("amount", tokenAmount.toString());
       this.openWindow(url);
       window.addEventListener("message", handleMessage);
     });
