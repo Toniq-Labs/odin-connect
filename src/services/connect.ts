@@ -68,12 +68,20 @@ export class Connect {
     return url;
   }
 
-  private openWindow(url: URL) {
-    window.open(
+  private openWindow(url: URL, onClose: () => void) {
+    const childWindow = window.open(
       url,
       this._windowSettings.target,
       this._windowSettings.settings
     );
+    // Polling to check if the window is closed
+    // maybe there's a better way to do this?
+    const id = setInterval(() => {
+      if (childWindow?.closed) {
+        clearInterval(id);
+        onClose();
+      }
+    }, 1000);
   }
 
   get origin() {
@@ -107,7 +115,11 @@ export class Connect {
           }
         }
       };
-      this.openWindow(this.createUrl("authorize/connect"));
+      this.openWindow(this.createUrl("authorize/connect"), () => {
+        window.removeEventListener("message", handleMessage);
+        reject("User closed the window");
+      });
+
       window.addEventListener("message", handleMessage);
     });
   }
@@ -136,7 +148,10 @@ export class Connect {
       url.searchParams.append("token", token);
       url.searchParams.append("amount", amount.toString());
       url.searchParams.append("destination", destination);
-      this.openWindow(url);
+      this.openWindow(url, () => {
+        window.removeEventListener("message", handleMessage);
+        reject("User closed the window");
+      });
       window.addEventListener("message", handleMessage);
     });
   }
@@ -161,7 +176,10 @@ export class Connect {
       url.searchParams.append("principal", principal);
       url.searchParams.append("token", token);
       url.searchParams.append("amount", btcAmount.toString());
-      this.openWindow(url);
+      this.openWindow(url, () => {
+        window.removeEventListener("message", handleMessage);
+        reject("User closed the window");
+      });
       window.addEventListener("message", handleMessage);
     });
   }
@@ -186,7 +204,10 @@ export class Connect {
       url.searchParams.append("principal", principal);
       url.searchParams.append("token", token);
       url.searchParams.append("amount", tokenAmount.toString());
-      this.openWindow(url);
+      this.openWindow(url, () => {
+        window.removeEventListener("message", handleMessage);
+        reject("User closed the window");
+      });
       window.addEventListener("message", handleMessage);
     });
   }
