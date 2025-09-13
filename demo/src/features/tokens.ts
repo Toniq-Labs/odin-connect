@@ -1,5 +1,11 @@
 export const sampleTokens = [
   {
+    id: "btc",
+    name: "BITCOIN",
+    divisibility: 8,
+    decimals: 3,
+  },
+  {
     id: "2jjj",
     name: "MACARON",
     divisibility: 8,
@@ -17,4 +23,10 @@ export const sampleTokens = [
     divisibility: 8,
     decimals: 3,
   },
+  {
+    id: "2jj2",
+    name: "TEST",
+    divisibility: 8,
+    decimals: 3
+  }
 ];

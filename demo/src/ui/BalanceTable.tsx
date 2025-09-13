@@ -11,7 +11,6 @@ export function BalanceTable({
         <tr>
           <th>Token ID</th>
           <th>Ticker</th>
-          <th className="number">Divisibility</th>
           <th className="number">Balance</th>
         </tr>
       </thead>
@@ -40,14 +39,12 @@ export function BalanceTable({
               {balance.id.replace("_", ":").toUpperCase()}
             </td>
             <td>{balance.ticker}</td>
-            <td className="number">{balance.divisibility}</td>
+           
             <td className="number">
               {(
                 Number(balance.balance) /
                 10 ** (balance.divisibility + 3)
-              ).toLocaleString("en-US", {
-                useGrouping: true,
-              })}
+              ).toLocaleString("en-US")}
             </td>
           </tr>
         ))}

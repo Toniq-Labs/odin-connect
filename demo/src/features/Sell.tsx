@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { useOdinContext } from "../hook";
-import { convertToPreciseBigInt } from "../utils";
+import { convertToOdinAmount } from "../utils";
 import { sampleTokens } from "./tokens";
 
 export function Sell() {
   const { odinConnect, user } = useOdinContext();
   const [amount, setAmount] = useState("10000");
-  const [token, setToken] = useState("2jjj");
+  const [token, setToken] = useState("2jj5");
   const [result, setResult] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -25,7 +25,7 @@ export function Sell() {
       }
 
       await odinConnect.sell({
-        tokenAmount: convertToPreciseBigInt(
+        tokenAmount: convertToOdinAmount(
           amount,
           tokenInfo.divisibility + tokenInfo.decimals
         ),
@@ -37,7 +37,11 @@ export function Sell() {
 
       console.log(`Executing trade: ${amount} of ${tokenInfo.id}`);
     } catch (error) {
-      setResult("Error executing trade");
+      if (error instanceof Error) {
+        setResult("Error: " + error.message);
+      } else {
+        setResult("Error executing trade");
+      }
       console.error("Error executing trade:", error);
     }
   };
@@ -57,18 +61,16 @@ export function Sell() {
       <div className="form-group">
         <label>Token:</label>
         <select value={token} onChange={(e) => setToken(e.target.value)}>
-          {sampleTokens.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} ({t.id})
-            </option>
-          ))}
+          {sampleTokens
+            .filter((t) => t.id !== "btc")
+            .map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.id})
+              </option>
+            ))}
         </select>
       </div>
-      {user ? (
-        <button type="submit">Sell Token</button>
-      ) : (
-        <p>Please connect your wallet to trade.</p>
-      )}
+      <button type="submit">Sell Token</button>
       {result && <div className="result">{result}</div>}
     </form>
   );

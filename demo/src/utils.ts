@@ -1,4 +1,4 @@
-export function convertToPreciseBigInt(
+export function convertToOdinAmount(
   numberStr: string | number,
   places: number = 11
 ) {

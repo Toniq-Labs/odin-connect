@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { useOdinContext } from "../hook";
-import { convertToPreciseBigInt } from "../utils";
+import { convertToOdinAmount } from "../utils";
 import { sampleTokens } from "./tokens";
 
 export function Buy() {
   const { odinConnect, user } = useOdinContext();
-  const [amount, setAmount] = useState("0.00002");
-  const [token, setToken] = useState("2jjj");
+  const [amount, setAmount] = useState("0.0002");
+  const [token, setToken] = useState("2jj5");
   const [result, setResult] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -22,9 +22,9 @@ export function Buy() {
       if (!tokenInfo) {
         throw new Error("Invalid token selected");
       }
-      // Placeholder for trade execution logic
+
       await odinConnect.buy({
-        btcAmount: convertToPreciseBigInt(amount),
+        btcAmount: convertToOdinAmount(amount),
         token,
         principal: user.principal,
       });
@@ -33,7 +33,11 @@ export function Buy() {
 
       console.log(`Executing trade: ${amount} of ${tokenInfo.id}`);
     } catch (error) {
-      setResult("Error executing trade");
+      if (error instanceof Error) {
+        setResult(`Error: ${error.message}`);
+      } else {
+        setResult("Error executing trade");
+      }
       console.error("Error executing trade:", error);
     }
   };
@@ -52,24 +56,21 @@ export function Buy() {
       </div>
       <div className="form-group">
         <label htmlFor="token">Token:</label>
-
         <select
           id="token"
           value={token}
           onChange={(e) => setToken(e.target.value)}
         >
-          {sampleTokens.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} ({t.id})
-            </option>
-          ))}
+          {sampleTokens
+            .filter((t) => t.id !== "btc")
+            .map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.id})
+              </option>
+            ))}
         </select>
       </div>
-      {user ? (
-        <button type="submit">Buy Token</button>
-      ) : (
-        <p>Please connect your wallet to trade.</p>
-      )}
+      <button type="submit">Buy Token</button>
       {result && <div className="result">{result}</div>}
     </form>
   );

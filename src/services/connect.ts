@@ -26,7 +26,6 @@ interface BuyOptions {
   token: string;
   btcAmount: bigint;
 }
-
 interface SellOptions {
   principal: string;
   token: string;
@@ -41,6 +40,12 @@ interface TransferOptions {
 
 interface GetBalanceOptions {
   principal: string;
+}
+
+interface AddLiquidityOptions {
+  principal: string;
+  btcAmount: bigint;
+  token: string;
 }
 
 export class Connect {
@@ -69,19 +74,11 @@ export class Connect {
   }
 
   private openWindow(url: URL, onClose: () => void) {
-    const childWindow = window.open(
+    return window.open(
       url,
       this._windowSettings.target,
       this._windowSettings.settings
     );
-    // Polling to check if the window is closed
-    // maybe there's a better way to do this?
-    const id = setInterval(() => {
-      if (childWindow?.closed) {
-        clearInterval(id);
-        onClose();
-      }
-    }, 1000);
   }
 
   get origin() {
@@ -162,11 +159,7 @@ export class Connect {
         if (event.origin === this.origin) {
           window.removeEventListener("message", handleMessage);
           if (event.data === "purchased") {
-            try {
-              resolve(true);
-            } catch (error) {
-              reject("Failed to parse purchased amount");
-            }
+            resolve(true);
           } else {
             reject("Purchase failed or was cancelled");
           }
@@ -190,11 +183,7 @@ export class Connect {
         if (event.origin === this.origin) {
           window.removeEventListener("message", handleMessage);
           if (event.data === "sold") {
-            try {
-              resolve(true);
-            } catch (error) {
-              reject("Failed to parse sold amount");
-            }
+            resolve(true);
           } else {
             reject("Sell failed or was cancelled");
           }
@@ -204,6 +193,30 @@ export class Connect {
       url.searchParams.append("principal", principal);
       url.searchParams.append("token", token);
       url.searchParams.append("amount", tokenAmount.toString());
+      this.openWindow(url, () => {
+        window.removeEventListener("message", handleMessage);
+        reject("User closed the window");
+      });
+      window.addEventListener("message", handleMessage);
+    });
+  }
+
+  async addLiquidity({ principal, btcAmount, token }: AddLiquidityOptions) {
+    return new Promise<boolean>((resolve, reject) => {
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.origin === this.origin) {
+          window.removeEventListener("message", handleMessage);
+          if (event.data === "liquidityAdded") {
+            resolve(true);
+          } else {
+            reject("Add liquidity failed or was cancelled");
+          }
+        }
+      };
+      const url = this.createUrl("authorize/add_liquidity");
+      url.searchParams.append("principal", principal);
+      url.searchParams.append("amount", btcAmount.toString());
+      url.searchParams.append("token", token);
       this.openWindow(url, () => {
         window.removeEventListener("message", handleMessage);
         reject("User closed the window");

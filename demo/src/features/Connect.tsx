@@ -52,10 +52,10 @@ function Connect() {
     <UserInfo user={user} />
   ) : (
     <>
-      {error && <div className="error">{error}</div>}
+      {error && <div className="result">{error}</div>}
       <div className="demo-buttons">
-        <button onClick={handleConnectWindow}>Connect (WINDOW)</button>
-        <button onClick={handleConnectTab}>Connect (TAB)</button>
+        <button onClick={handleConnectWindow}>Connect Popup</button>
+        <button onClick={handleConnectTab}>Connect Tab</button>
       </div>
     </>
   );
