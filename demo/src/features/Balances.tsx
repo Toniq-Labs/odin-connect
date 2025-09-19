@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useOdinContext } from "../hook";
+import { useOdinContext } from "../OdinContext";
 import type { OdinBalance } from "odin-connect";
 import { BalanceTable } from "../ui/BalanceTable";
 
@@ -20,6 +20,7 @@ export function Balances() {
       }
       const balances = await odinConnect.getBalances({
         principal: user.principal,
+        pagination: { page: 1, limit: 20 },
       });
       console.log("Fetched balances:", balances);
       setBalances(balances);

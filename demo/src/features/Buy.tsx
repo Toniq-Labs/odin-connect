@@ -1,16 +1,16 @@
 import { useState, type FormEvent } from "react";
-import { useOdinContext } from "../hook";
+import { useOdinContext } from "../OdinContext";
 import { convertToOdinAmount } from "../utils";
-import { sampleTokens } from "./tokens";
 
 export function Buy() {
-  const { odinConnect, user } = useOdinContext();
+  const { odinConnect, user, tokens } = useOdinContext();
   const [amount, setAmount] = useState("0.0002");
   const [token, setToken] = useState("2jj5");
   const [result, setResult] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setResult(null);
     try {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
@@ -18,19 +18,16 @@ export function Buy() {
       if (!user) {
         throw new Error("No user connected");
       }
-      const tokenInfo = sampleTokens.find((t) => t.id === token);
+      const tokenInfo = tokens.find((t) => t.id === token);
       if (!tokenInfo) {
         throw new Error("Invalid token selected");
       }
-
       await odinConnect.buy({
         btcAmount: convertToOdinAmount(amount),
         token,
         principal: user.principal,
       });
-
       setResult(`Successfully bought ${amount} of ${tokenInfo.name}`);
-
       console.log(`Executing trade: ${amount} of ${tokenInfo.id}`);
     } catch (error) {
       if (error instanceof Error) {
@@ -61,7 +58,7 @@ export function Buy() {
           value={token}
           onChange={(e) => setToken(e.target.value)}
         >
-          {sampleTokens
+          {tokens
             .filter((t) => t.id !== "btc")
             .map((t) => (
               <option key={t.id} value={t.id}>

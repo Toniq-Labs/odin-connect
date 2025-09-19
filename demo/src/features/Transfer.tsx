@@ -1,19 +1,19 @@
 import { useState } from "react";
-import { useOdinContext } from "../hook";
+import { useOdinContext } from "../OdinContext";
 import { convertToOdinAmount } from "../utils";
-import { sampleTokens } from "./tokens";
 
 export function Transfer() {
-  const { odinConnect, user } = useOdinContext();
+  const { tokens, odinConnect, user } = useOdinContext();
   const [recipient, setRecipient] = useState(
     "fdr2s-q4xug-vi6m7-tlvgs-divc6-hj6sp-xouwu-rmo55-yohcc-rqru4-aqe"
   );
-  const [token, setToken] = useState("btc");
-  const [amount, setAmount] = useState("0.00002");
+  const [token, setToken] = useState("2jj5");
+  const [amount, setAmount] = useState("1000");
   const [result, setResult] = useState<string | null>(null);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setResult(null);
     try {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
@@ -21,7 +21,7 @@ export function Transfer() {
       if (!user) {
         throw new Error("No user connected");
       }
-      const tokenInfo = sampleTokens.find((t) => t.id === token);
+      const tokenInfo = tokens.find((t) => t.id === token);
       if (!tokenInfo) {
         throw new Error(`Token ${token} not found`);
       }
@@ -64,7 +64,8 @@ export function Transfer() {
         <div className="form-group">
           <label htmlFor="token">Token</label>
           <select value={token} onChange={(e) => setToken(e.target.value)}>
-            {sampleTokens.map((t) => (
+            <option value="btc">BTC</option>
+            {tokens.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name} ({t.id})
               </option>

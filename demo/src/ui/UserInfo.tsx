@@ -5,7 +5,6 @@ export function UserInfo({ user }: { user: OdinUser }) {
   const [placeholder, setPlaceholder] = useState(false);
 
   useEffect(() => {
-    console.log("User data:", user);
     setPlaceholder(false);
   }, [user]);
 
@@ -16,7 +15,7 @@ export function UserInfo({ user }: { user: OdinUser }) {
           <div className="avatar-placeholder">{user.username.slice(0, 2)}</div>
         ) : (
           <img
-            src={`https://images.odin.fun/user/${user.principal}`}
+            src={`https://images.odin.fun/dev/user/${user.principal}`}
             alt="User Avatar"
             onError={() => setPlaceholder(true)}
           />

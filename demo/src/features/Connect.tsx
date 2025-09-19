@@ -1,6 +1,6 @@
 import { useState } from "react";
 import "../App.css";
-import { useOdinContext } from "../hook";
+import { useOdinContext } from "../OdinContext";
 import { UserInfo } from "../ui/UserInfo";
 
 const centeredWindowFeatures = (width: number, height: number) => {
@@ -14,18 +14,19 @@ function Connect() {
   const { user, odinConnect, setUser } = useOdinContext();
 
   const openOdinConnect = async (mode: "window" | "tab" = "tab") => {
+    setError(null);
     try {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      const message = await odinConnect.connect({
+      const user = await odinConnect.connect({
         open: {
           target: "_blank",
           settings: mode === "window" ? centeredWindowFeatures(400, 600) : "",
         },
       });
-      console.log("Received user:", message);
-      setUser(message);
+      console.log("Received user:", user);
+      setUser(user);
     } catch (error) {
       console.error("Connection error:", error);
       setUser(null);

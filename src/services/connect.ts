@@ -8,16 +8,17 @@ const ORIGINS = {
 };
 
 interface AppInitOptions {
-  name?: string;
+  name: string;
   icon?: string;
   env?: keyof typeof ORIGINS;
 }
 interface ConnectOptions {
   // options for window.open
-  open: {
+  open?: {
     target: string;
     settings: string;
   };
+  // whether to request an auth keys upon connection
   requires_api: boolean;
 }
 
@@ -40,12 +41,29 @@ interface TransferOptions {
 
 interface GetBalanceOptions {
   principal: string;
+  pagination: {
+    page: number;
+    limit: number;
+  };
 }
 
 interface AddLiquidityOptions {
   principal: string;
   btcAmount: bigint;
   token: string;
+}
+
+interface RemoveLiquidityOptions {
+  principal: string;
+  lpAmount: bigint;
+  token: string;
+}
+
+interface SwapOptions {
+  principal: string;
+  fromToken: string;
+  toToken: string;
+  fromAmount: bigint;
 }
 
 export class Connect {
@@ -56,6 +74,7 @@ export class Connect {
   constructor(appInfo: Partial<AppInitOptions>) {
     this._appInfo = {
       env: "prod",
+      name: "app_name",
       ...appInfo,
     };
     this._api = new OdinApi(this._appInfo.env === "prod" ? "prod" : "dev");
@@ -76,8 +95,8 @@ export class Connect {
   private openWindow(url: URL, onClose: () => void) {
     return window.open(
       url,
-      this._windowSettings.target,
-      this._windowSettings.settings
+      this._windowSettings?.target || "_blank",
+      this._windowSettings?.settings
     );
   }
 
@@ -105,10 +124,10 @@ export class Connect {
               const user = await this._api.getUser(userId);
               resolve(user);
             } catch (error) {
-              reject("Failed to fetch user data");
+              reject(new Error("Failed to fetch user data"));
             }
           } else {
-            reject("User rejected the connection");
+            reject(new Error("User rejected the connection"));
           }
         }
       };
@@ -121,11 +140,15 @@ export class Connect {
     });
   }
 
-  async getBalances({ principal }: GetBalanceOptions) {
+  async getBalances({ principal, pagination }: GetBalanceOptions) {
     if (!principal) {
       throw new Error("Principal is required to fetch balances");
     }
-    return this._api.getBalances(principal);
+    return this._api.getBalances(principal, pagination);
+  }
+
+  async getTokens(pagination: { page: number; limit: number }) {
+    return this._api.getTokens(pagination);
   }
 
   sell({ token, tokenAmount, principal }: SellOptions) {
@@ -151,7 +174,7 @@ export class Connect {
         principal,
         token,
         amount: btcAmount.toString(),
-      },  
+      },
       odinPath: "authorize/buy",
       receivedMessageFromOrigin: "purchased",
       resolve: {
@@ -188,10 +211,45 @@ export class Connect {
         token,
       },
       odinPath: "authorize/add_liquidity",
-      receivedMessageFromOrigin: "liquidityAdded",
+      receivedMessageFromOrigin: "addedLiquidity",
       resolve: {
         success: true,
         failure: "Add liquidity failed or was cancelled",
+        close: "User closed the window",
+      },
+    });
+  }
+
+  removeLiquidity({ principal, lpAmount, token }: RemoveLiquidityOptions) {
+    return this.baseAction<boolean, string>({
+      params: {
+        principal,
+        amount: lpAmount.toString(),
+        token,
+      },
+      odinPath: "authorize/remove_liquidity",
+      receivedMessageFromOrigin: "removedLiquidity",
+      resolve: {
+        success: true,
+        failure: "Remove liquidity failed or was cancelled",
+        close: "User closed the window",
+      },
+    });
+  }
+
+  swap({ principal, fromToken: from, toToken: to, fromAmount }: SwapOptions) {
+    return this.baseAction<boolean, string>({
+      params: {
+        principal,
+        from,
+        to,
+        amount: fromAmount.toString(),
+      },
+      odinPath: "authorize/swap",
+      receivedMessageFromOrigin: "swapped",
+      resolve: {
+        success: true,
+        failure: "Swap failed or was cancelled",
         close: "User closed the window",
       },
     });
@@ -223,7 +281,7 @@ export class Connect {
           if (event.data === receivedMessageFromOrigin) {
             resolve(resolveMessages.success);
           } else {
-            reject(resolveMessages.failure);
+            reject(new Error(resolveMessages.failure));
           }
         }
       };
@@ -233,7 +291,7 @@ export class Connect {
       }
       this.openWindow(url, () => {
         window.removeEventListener("message", handleMessage);
-        reject(resolveMessages.close);
+        reject(new Error(resolveMessages.close));
       });
       window.addEventListener("message", handleMessage);
     });

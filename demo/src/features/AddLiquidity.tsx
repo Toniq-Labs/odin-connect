@@ -1,13 +1,12 @@
 import { useState } from "react";
-import { useOdinContext } from "../hook";
+import { useOdinContext } from "../OdinContext";
 import { convertToOdinAmount } from "../utils";
-import { sampleTokens } from "./tokens";
 
-export function Liquidity() {
-  const { odinConnect, user } = useOdinContext();
+export function AddLiquidity() {
+  const { odinConnect, user, tokens } = useOdinContext();
   const [result, setResult] = useState<string | null>(null);
   const [amount, setAmount] = useState("0.0002");
-  const [token, setToken] = useState("2jjj");
+  const [token, setToken] = useState("2jj5");
 
   const handleAddLiquidity = async (
     event: React.FormEvent<HTMLFormElement>
@@ -20,13 +19,13 @@ export function Liquidity() {
       if (!user) {
         throw new Error("User is not connected");
       }
-
       const result = await odinConnect.addLiquidity({
         principal: user.principal,
         btcAmount: convertToOdinAmount(amount),
         token: token,
       });
       console.log("Liquidity added:", result);
+      setResult(`Successfully added liquidity of ${amount} BTC to ${token}`);
     } catch (error) {
       console.error("Error adding liquidity:", error);
       if (error instanceof Error) {
@@ -56,16 +55,14 @@ export function Liquidity() {
             value={token}
             onChange={(e) => setToken(e.target.value)}
           >
-            {sampleTokens
-              .filter((t) => t.id !== "btc")
-              .map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.id})
-                </option>
-              ))}
+            {tokens.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.id})
+              </option>
+            ))}
           </select>
         </div>
-        <button type="submit">Add Token</button>
+        <button type="submit">Add Liquidity</button>
         {result && <div className="result">{result}</div>}
       </form>
     </div>

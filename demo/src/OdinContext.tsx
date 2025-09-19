@@ -4,6 +4,12 @@ type OdinContextType = {
   odinConnect: OdinConnect | null;
   user: OdinUser | null;
   setUser: (user: OdinUser | null) => void;
+  tokens: ReadonlyArray<{
+    id: string;
+    name: string;
+    divisibility: number;
+    decimals: number;
+  }>;
 };
 
 export const OdinContext = createContext<OdinContextType | undefined>(
