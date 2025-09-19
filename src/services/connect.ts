@@ -128,104 +128,114 @@ export class Connect {
     return this._api.getBalances(principal);
   }
 
-  async transfer({ principal, token, amount, destination }: TransferOptions) {
-    return new Promise<boolean>((resolve, reject) => {
-      const handleMessage = async (event: MessageEvent) => {
-        if (event.origin === this.origin) {
-          window.removeEventListener("message", handleMessage);
-          if (event.data === "transferred") {
-            resolve(true);
-          } else {
-            reject("Transfer failed or was cancelled");
-          }
-        }
-      };
-      const url = this.createUrl("authorize/transfer");
-      url.searchParams.append("principal", principal);
-      url.searchParams.append("token", token);
-      url.searchParams.append("amount", amount.toString());
-      url.searchParams.append("destination", destination);
-      this.openWindow(url, () => {
-        window.removeEventListener("message", handleMessage);
-        reject("User closed the window");
-      });
-      window.addEventListener("message", handleMessage);
+  sell({ token, tokenAmount, principal }: SellOptions) {
+    return this.baseAction<boolean, string>({
+      params: {
+        principal,
+        token,
+        amount: tokenAmount.toString(),
+      },
+      odinPath: "authorize/sell",
+      receivedMessageFromOrigin: "sold",
+      resolve: {
+        success: true,
+        failure: "Sell failed or was cancelled",
+        close: "User closed the window",
+      },
     });
   }
 
-  async buy({ token, btcAmount, principal }: BuyOptions) {
-    return new Promise<boolean>((resolve, reject) => {
-      const handleMessage = async (event: MessageEvent) => {
-        if (event.origin === this.origin) {
-          window.removeEventListener("message", handleMessage);
-          if (event.data === "purchased") {
-            resolve(true);
-          } else {
-            reject("Purchase failed or was cancelled");
-          }
-        }
-      };
-      const url = this.createUrl("authorize/buy");
-      url.searchParams.append("principal", principal);
-      url.searchParams.append("token", token);
-      url.searchParams.append("amount", btcAmount.toString());
-      this.openWindow(url, () => {
-        window.removeEventListener("message", handleMessage);
-        reject("User closed the window");
-      });
-      window.addEventListener("message", handleMessage);
+  buy({ principal, token, btcAmount }: BuyOptions) {
+    return this.baseAction<boolean, string>({
+      params: {
+        principal,
+        token,
+        amount: btcAmount.toString(),
+      },  
+      odinPath: "authorize/buy",
+      receivedMessageFromOrigin: "purchased",
+      resolve: {
+        success: true,
+        failure: "Purchase failed or was cancelled",
+        close: "User closed the window",
+      },
     });
   }
 
-  async sell({ token, tokenAmount, principal }: SellOptions) {
-    return new Promise<boolean>((resolve, reject) => {
-      const handleMessage = async (event: MessageEvent) => {
-        if (event.origin === this.origin) {
-          window.removeEventListener("message", handleMessage);
-          if (event.data === "sold") {
-            resolve(true);
-          } else {
-            reject("Sell failed or was cancelled");
-          }
-        }
-      };
-      const url = this.createUrl("authorize/sell");
-      url.searchParams.append("principal", principal);
-      url.searchParams.append("token", token);
-      url.searchParams.append("amount", tokenAmount.toString());
-      this.openWindow(url, () => {
-        window.removeEventListener("message", handleMessage);
-        reject("User closed the window");
-      });
-      window.addEventListener("message", handleMessage);
+  transfer({ principal, token, amount, destination }: TransferOptions) {
+    return this.baseAction<boolean, string>({
+      params: {
+        principal,
+        token,
+        amount: amount.toString(),
+        destination,
+      },
+      odinPath: "authorize/transfer",
+      receivedMessageFromOrigin: "transferred",
+      resolve: {
+        success: true,
+        failure: "Transfer failed or was cancelled",
+        close: "User closed the window",
+      },
     });
   }
 
-  async addLiquidity({ principal, btcAmount, token }: AddLiquidityOptions) {
-    return new Promise<boolean>((resolve, reject) => {
-      const handleMessage = async (event: MessageEvent) => {
-        if (event.origin === this.origin) {
-          window.removeEventListener("message", handleMessage);
-          if (event.data === "liquidityAdded") {
-            resolve(true);
-          } else {
-            reject("Add liquidity failed or was cancelled");
-          }
-        }
-      };
-      const url = this.createUrl("authorize/add_liquidity");
-      url.searchParams.append("principal", principal);
-      url.searchParams.append("amount", btcAmount.toString());
-      url.searchParams.append("token", token);
-      this.openWindow(url, () => {
-        window.removeEventListener("message", handleMessage);
-        reject("User closed the window");
-      });
-      window.addEventListener("message", handleMessage);
+  addLiquidity({ principal, btcAmount, token }: AddLiquidityOptions) {
+    return this.baseAction<boolean, string>({
+      params: {
+        principal,
+        amount: btcAmount.toString(),
+        token,
+      },
+      odinPath: "authorize/add_liquidity",
+      receivedMessageFromOrigin: "liquidityAdded",
+      resolve: {
+        success: true,
+        failure: "Add liquidity failed or was cancelled",
+        close: "User closed the window",
+      },
     });
   }
 
   hello() {
     console.log("Hello from Odin Connect!");
+  }
+
+  private baseAction<ResolveType = string, MessageType = string>({
+    params,
+    odinPath,
+    receivedMessageFromOrigin,
+    resolve: resolveMessages,
+  }: {
+    params: Record<string, string>;
+    odinPath: string;
+    receivedMessageFromOrigin: MessageType;
+    resolve: {
+      success: ResolveType;
+      failure: string;
+      close: string;
+    };
+  }) {
+    return new Promise<ResolveType>((resolve, reject) => {
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.origin === this.origin) {
+          window.removeEventListener("message", handleMessage);
+          if (event.data === receivedMessageFromOrigin) {
+            resolve(resolveMessages.success);
+          } else {
+            reject(resolveMessages.failure);
+          }
+        }
+      };
+      const url = this.createUrl(odinPath);
+      for (const key in params) {
+        url.searchParams.append(key, params[key]);
+      }
+      this.openWindow(url, () => {
+        window.removeEventListener("message", handleMessage);
+        reject(resolveMessages.close);
+      });
+      window.addEventListener("message", handleMessage);
+    });
   }
 }
