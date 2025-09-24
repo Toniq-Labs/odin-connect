@@ -32,10 +32,7 @@ export function Sell() {
         token,
         principal: user.principal,
       });
-
       setResult(`Successfully sold ${amount} of $${tokenInfo.name}`);
-
-      console.log(`Executing trade: ${amount} of ${tokenInfo.id}`);
     } catch (error) {
       if (error instanceof Error) {
         setResult("Error: " + error.message);

@@ -15,7 +15,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
   >([]);
 
   useEffect(() => {
-    const odin = new OdinConnect({ name: "Demo" });
+    const odin = new OdinConnect({ name: "Demo", env: "_deployment_preview" });
     setOdinConnect(odin);
   }, []);
 
@@ -25,7 +25,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
         try {
           const fetchedTokens = await odinConnect.getTokens({
             page: 1,
-            limit: 20,
+            limit: 50,
           });
           if (fetchedTokens) {
             setTokens(fetchedTokens);

@@ -12,6 +12,7 @@ export function Balances() {
   const handleFetchBalance = async () => {
     try {
       setLoading(true);
+      setError(null);
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
@@ -39,16 +40,13 @@ export function Balances() {
   if (!odinConnect) {
     return <div>Loading...</div>;
   }
-  if (!user) {
-    return <div>Please connect to view balances.</div>;
-  }
 
   return (
     <div>
       <button onClick={handleFetchBalance}>
         {loading ? "Fetching..." : "Fetch Balances"}
       </button>
-      {error && <div className="error">{error}</div>}
+      {error && <div className="result">{error}</div>}
       {balances.length > 0 && <BalanceTable balances={balances} />}
     </div>
   );

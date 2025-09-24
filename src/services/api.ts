@@ -54,6 +54,7 @@ export class OdinApi {
       },
       params: {
         ...pagination,
+        sort: "marketcap:desc",
       },
     });
     return response.data;

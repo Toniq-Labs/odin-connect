@@ -27,8 +27,7 @@ export function Buy() {
         token,
         principal: user.principal,
       });
-      setResult(`Successfully bought ${amount} of ${tokenInfo.name}`);
-      console.log(`Executing trade: ${amount} of ${tokenInfo.id}`);
+      setResult(`Successfully bought of ${tokenInfo.name} for ${amount} BTC`);
     } catch (error) {
       if (error instanceof Error) {
         setResult(`Error: ${error.message}`);

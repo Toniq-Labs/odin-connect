@@ -10,18 +10,19 @@ export function UserInfo({ user }: { user: OdinUser }) {
 
   return (
     <div className="user-card">
-      <div style={{ display: "flex", alignItems: "center", gap: "2pt" }}>
+      <div>
         {placeholder ? (
-          <div className="avatar-placeholder">{user.username.slice(0, 2)}</div>
+          <div className="avatar">{user.username.slice(0, 2)}</div>
         ) : (
           <img
-            src={`https://images.odin.fun/dev/user/${user.principal}`}
+            src={`https://api.odin.fun/dev/user/${user.principal}/image`}
+            className="avatar"
             alt="User Avatar"
             onError={() => setPlaceholder(true)}
           />
         )}
-        <strong>{user.username}</strong>
       </div>
+      <strong>{user.username}</strong>
       <p>{user.principal}</p>
     </div>
   );

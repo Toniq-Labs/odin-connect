@@ -12,27 +12,29 @@ import { Swap } from "./features/Swap";
 function App() {
   return (
     <OdinProvider>
-      <section>
-        <h1>Connect</h1>
-        <Connect />
-      </section>
-      <section>
-        <h1>Balances</h1>
-        <Balances />
-      </section>
       <div className="demo-container">
         <section>
-          <h1>Trade</h1>
-          <h2>Buy Token with BTC</h2>
+          <h1>Connect</h1>
+          <Connect />
+        </section>
+        <section>
+          <h1>Balances</h1>
+          <Balances />
+        </section>
+        <section>
+          <h1>Buy Token with BTC</h1>
           <Buy />
-          <h2>Sell Token for BTC</h2>
+        </section>
+        <section>
+          <h1>Sell Token for BTC</h1>
           <Sell />
         </section>
         <section>
-          <h1>Liquidity</h1>
-          <h2>Add Liquidity</h2>
+          <h1>Add Liquidity</h1>
           <AddLiquidity />
-          <h2>Remove Liquidity</h2>
+        </section>
+        <section>
+          <h1>Remove Liquidity</h1>
           <RemoveLiquidity />
         </section>
         <section>
