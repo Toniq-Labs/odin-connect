@@ -23,7 +23,9 @@ export function UserInfo({ user }: { user: OdinUser }) {
         )}
       </div>
       <strong>{user.username}</strong>
-      <p>{user.principal}</p>
+      <div className="user-details">
+        <pre>{JSON.stringify(user, null, 2)}</pre>
+      </div>
     </div>
   );
 }
