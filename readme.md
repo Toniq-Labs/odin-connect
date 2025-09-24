@@ -7,14 +7,17 @@ To run it, simply do `npm run demo`
 
 ### Initializing new instance
 
+Instantiate the OdinConnect class with some information about your application
+
 ```typescript
-const odin = new OdinConnect({ name: "Demo App" });
+const odinConnect = new OdinConnect({ name: "Demo App" });
 ```
 
 ### Request for user connection
 
 ```typescript
 const user = await odinConnect.connect({
+  // these will be used when window.open is called
   open: {
     target: "_blank",
     settings: "height=800,width=400",
@@ -27,7 +30,7 @@ const user = await odinConnect.connect({
 
 ```typescript
 const balances = await odinConnect.getBalances({
-  principal: user.principal,
+  principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
   pagination: { page: 1, limit: 20 },
 });
 ```
@@ -40,7 +43,7 @@ await odinConnect.transfer({
   destination:
     "vv5jb-7sm7u-vn3nq-6nflf-dghis-fd7ji-cx764-xunni-zosog-eqvpw-oae",
   token: "2jjj",
-  amount: 200_000_000n,
+  amount: 20_000_000n, // 20K sats in millisats
 });
 ```
 
@@ -48,7 +51,7 @@ await odinConnect.transfer({
 
 ```typescript
 await odinConnect.buy({
-  btcAmount: 200_000_000n,
+  btcAmount: 20_000_000n,
   token: "2jjj",
   principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
 });
@@ -58,7 +61,7 @@ await odinConnect.buy({
 
 ```typescript
 await odinConnect.sell({
-  tokenAmount: 200_000_000n,
+  tokenAmount: 20_000_000n,
   token: "2jjj",
   principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
 });
@@ -68,7 +71,7 @@ await odinConnect.sell({
 
 ```typescript
 await odinConnect.addLiquidity({
-  btcAmount: 200_000_000n,
+  btcAmount: 20_000_000n,
   token: "2jj",
   principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
 });
@@ -78,8 +81,12 @@ await odinConnect.addLiquidity({
 
 ```typescript
 await odinConnect.removeLiquidity({
-  btcAmount: 200_000_000n,
+  btcAmount: 20_000_000n,
   token: "2jj",
   principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
 });
 ```
+
+### Notes
+* The `principal` sent should match the currently logged in user in ODIN.
+* BTC amounts are in millisatoshis
