@@ -5,7 +5,8 @@ const ORIGINS = {
   local: "http://localhost:5173",
   prod: "https://odin.fun",
   dev: "https://dev.odin.fun",
-  _deployment_preview: "https://deploy-preview-1047--dev-odin-toniq.netlify.app"
+  _deployment_preview:
+    "https://deploy-preview-1047--dev-odin-toniq.netlify.app",
 };
 
 interface AppInitOptions {
@@ -93,7 +94,7 @@ export class Connect {
     return url;
   }
 
-  private openWindow(url: URL, onClose: () => void) {
+  private openWindow(url: URL) {
     return window.open(
       url,
       this._windowSettings?.target || "_blank",
@@ -132,10 +133,7 @@ export class Connect {
           }
         }
       };
-      this.openWindow(this.createUrl("authorize/connect"), () => {
-        window.removeEventListener("message", handleMessage);
-        reject("User closed the window");
-      });
+      this.openWindow(this.createUrl("authorize/connect"));
 
       window.addEventListener("message", handleMessage);
     });
@@ -290,10 +288,7 @@ export class Connect {
       for (const key in params) {
         url.searchParams.append(key, params[key]);
       }
-      this.openWindow(url, () => {
-        window.removeEventListener("message", handleMessage);
-        reject(new Error(resolveMessages.close));
-      });
+      this.openWindow(url);
       window.addEventListener("message", handleMessage);
     });
   }
