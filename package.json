@@ -9,7 +9,8 @@
     "prepublishOnly": "npm run build",
     "demo:update": "npm run build && cd demo && npm install ../ && cd ..",
     "demo:start": "cd demo && npm run dev",
-    "demo": "npm run demo:update && npm run demo:start"
+    "demo": "npm run demo:update && npm run demo:start",
+    "release": "release-it"
   },
   "repository": {
     "type": "git",
