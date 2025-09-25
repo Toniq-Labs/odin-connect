@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useOdinContext } from "../OdinContext";
-import { convertToOdinAmount } from "../utils";
 import { TokenSelect } from "../ui/TokenSelect";
+import { OdinUtils } from "odin-connect";
 
 export function Sell() {
   const { odinConnect, user, tokens } = useOdinContext();
@@ -26,10 +26,7 @@ export function Sell() {
       }
 
       await odinConnect.sell({
-        tokenAmount: convertToOdinAmount(
-          amount,
-          tokenInfo.divisibility + tokenInfo.decimals
-        ),
+        tokenAmount: OdinUtils.convertToOdinAmount(amount, tokenInfo),
         token,
         principal: user.principal,
       });

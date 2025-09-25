@@ -87,6 +87,37 @@ await odinConnect.removeLiquidity({
 });
 ```
 
+### API Methods
+
+```typescript
+// Get tokens
+const tokens = await odinConnect.getTokens({
+  pagination: { page: 1, limit: 50 },
+  sort: { field: "marketcap", direction: "desc" },
+});
+
+// Get token info
+const token = await odinConnect.getToken("2jjj");
+
+// Get user info
+const user = await odinConnect.getUser(
+  "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe"
+);
+
+// Get balance
+const balances = await odinConnect.getBalances({
+  principal: user.principal,
+  pagination: { page: 1, limit: 20 },
+});
+
+// Get activities
+const activity = await odinConnect.getUserActivity({
+  principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
+  pagination: { page: 1, limit: 10 },
+});
+```
+
 ### Notes
-* The `principal` sent should match the currently logged in user in ODIN.
-* BTC amounts are in millisatoshis
+
+- The `principal` sent should match the currently logged in user in ODIN.
+- BTC amounts are in millisatoshis

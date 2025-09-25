@@ -8,6 +8,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
   const [tokens, setTokens] = useState<ReadonlyArray<OdinToken>>([]);
 
   useEffect(() => {
+    // Initialize OdinConnect with your app name and target environment
     const odin = new OdinConnect({ name: "Demo", env: "_deployment_preview" });
     setOdinConnect(odin);
   }, []);
@@ -16,12 +17,12 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     if (odinConnect) {
       const fetchTokens = async () => {
         try {
-          const fetchedTokens = await odinConnect.getTokens({
-            page: 1,
-            limit: 50,
+          const { data } = await odinConnect.getTokens({
+            pagination: { page: 1, limit: 50 },
+            sort: { field: "marketcap", direction: "desc" },
           });
-          if (fetchedTokens) {
-            setTokens(fetchedTokens);
+          if (data) {
+            setTokens(data);
           }
         } catch (error) {
           console.error("Error fetching tokens:", error);

@@ -1,7 +1,13 @@
+import { BaseToken } from "../models/token";
+
 export function convertToOdinAmount(
   numberStr: string | number,
-  places: number = 11
+  token: Pick<BaseToken, "decimals" | "divisibility"> = {
+    decimals: 3,
+    divisibility: 8,
+  }
 ) {
+  const places = token.decimals + token.divisibility;
   // Cast input to String and Remove any whitespace
   numberStr =
     typeof numberStr === "string" ? numberStr.trim() : String(numberStr);

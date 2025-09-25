@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
-import { convertToOdinAmount } from "../utils";
+import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
 
 export function AddLiquidity() {
@@ -22,7 +22,7 @@ export function AddLiquidity() {
       }
       const result = await odinConnect.addLiquidity({
         principal: user.principal,
-        btcAmount: convertToOdinAmount(amount),
+        btcAmount: OdinUtils.convertToOdinAmount(amount),
         token: token,
       });
       console.log("Liquidity added:", result);

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
-import { convertToOdinAmount } from "../utils";
+import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
 
 export function Transfer() {
@@ -31,10 +31,7 @@ export function Transfer() {
         principal: user.principal,
         destination: recipient,
         token,
-        amount: convertToOdinAmount(
-          amount,
-          tokenInfo.decimals + tokenInfo.divisibility
-        ),
+        amount: OdinUtils.convertToOdinAmount(amount, tokenInfo),
       });
       setResult(
         `Successfully transferred ${amount} of ${token} to ${recipient}`
