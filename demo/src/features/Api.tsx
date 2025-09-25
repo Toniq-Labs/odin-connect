@@ -49,7 +49,7 @@ export function Api() {
   };
 
   return (
-    <div>
+    <div className="demo-buttons">
       <button onClick={handleGetToken}>Get Token</button>
       <button onClick={handleGetUser}>Get User</button>
       <button onClick={handleGetUserActivity}>Get User Activity</button>

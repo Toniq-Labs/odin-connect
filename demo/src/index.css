@@ -5,7 +5,7 @@
 
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #1f1f27;
+  background-color: #212121;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -32,6 +32,8 @@ button:hover {
 h1 {
   font-size: 1.4rem;
   color: #00ffff;
+  padding-bottom: 8px;
+  border-bottom: 1pt solid #333;
 }
 
 h2 {
@@ -86,10 +88,6 @@ select {
   gap: 16px;
 }
 
-section {
-  border-radius: 8px;
-  background-color: #fff;
-}
 
 .user-card {
   display: flex;
@@ -135,8 +133,6 @@ td.number {
 }
 
 section {
-  border-radius: 8px;
-  background-color: #000;
   padding: 16px;
 }
 
@@ -172,8 +168,10 @@ section {
     border-color: #076e6e;
     color: #fff;
   }
+
   h1 {
     color: #076e6e;
+     border-bottom: 1pt solid #ddd;
   }
 
   .result {
@@ -187,7 +185,5 @@ section {
     background-color: #076e6e;
   }
 
-  section {
-    background-color: #fff;
-  }
+
 }
