@@ -22,6 +22,7 @@ const user = await odinConnect.connect({
     target: "_blank",
     settings: "height=800,width=400",
   },
+  // flag to weather or not api keys are required
   requires_api: true,
 });
 ```

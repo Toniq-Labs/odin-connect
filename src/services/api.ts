@@ -71,6 +71,25 @@ export class OdinApi {
     return this._httpClient.get<Token>(`${this.BASE_URL}/token/${id}`);
   }
 
+  uploadImage(image: File) {
+    // image file type validation
+    if (!image.type.startsWith("image/")) {
+      return Promise.reject(new Error("Invalid image file type"));
+    }
+    const formData = new FormData();
+    formData.append("file", image);
+    return this._httpClient.post<{ upload: string }, FormData>(
+      `${this.BASE_URL}/upload/image`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${this._apiKey}`,
+        },
+      }
+    );
+  }
+
   getUserActivity(principal: string, pagination: Pagination) {
     return this._httpClient.get<PaginatedResponse<Activity>>(
       `${this.BASE_URL}/user/${principal}/activity`,
