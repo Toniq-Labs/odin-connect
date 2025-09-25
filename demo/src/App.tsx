@@ -8,6 +8,7 @@ import { Transfer } from "./features/Transfer";
 import { AddLiquidity } from "./features/AddLiquidity";
 import { RemoveLiquidity } from "./features/RemoveLiquidity";
 import { Swap } from "./features/Swap";
+import { Api } from "./features/Api";
 
 function App() {
   return (
@@ -44,6 +45,11 @@ function App() {
         <section>
           <h1>Swap</h1>
           <Swap />
+        </section>
+        <section>
+          <h1>Api</h1>
+          <small>Open console to see response</small>
+          <Api />
         </section>
       </div>
     </OdinProvider>

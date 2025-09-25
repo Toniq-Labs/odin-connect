@@ -16,6 +16,7 @@ export function TokenSelect({
       id={id ?? "token"}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      disabled={tokens.length === 0}
     >
       {tokens.map((t) => (
         <option key={t.id} value={t.id}>

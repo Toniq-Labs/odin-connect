@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
-import { convertToOdinAmount } from "../utils";
+import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
 
 export function RemoveLiquidity() {
@@ -26,10 +26,7 @@ export function RemoveLiquidity() {
       }
       await odinConnect.removeLiquidity({
         principal: user.principal,
-        lpAmount: convertToOdinAmount(
-          amount,
-          tokenData.divisibility + tokenData.decimals
-        ),
+        lpAmount: OdinUtils.convertToOdinAmount(amount, tokenData),
         token: token,
       });
       setResult(`Successfully removed liquidity of ${amount} ${token}:LP`);

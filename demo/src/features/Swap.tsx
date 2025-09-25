@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useOdinContext } from "../OdinContext";
-import { convertToOdinAmount } from "../utils";
+import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
 
 export function Swap() {
@@ -26,9 +26,9 @@ export function Swap() {
       if (!fromTokenData) {
         throw new Error("Invalid from token selected.");
       }
-      const fromAmount = convertToOdinAmount(
+      const fromAmount = OdinUtils.convertToOdinAmount(
         amountFrom,
-        fromTokenData.decimals + fromTokenData.divisibility
+        fromTokenData
       );
       const result = await odinConnect.swap({
         principal: user.principal,

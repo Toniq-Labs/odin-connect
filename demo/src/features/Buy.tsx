@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useOdinContext } from "../OdinContext";
-import { convertToOdinAmount } from "../utils";
 import { TokenSelect } from "../ui/TokenSelect";
+import { OdinUtils } from "odin-connect";
 
 export function Buy() {
   const { odinConnect, user, tokens } = useOdinContext();
@@ -24,7 +24,7 @@ export function Buy() {
         throw new Error("Invalid token selected");
       }
       await odinConnect.buy({
-        btcAmount: convertToOdinAmount(amount),
+        btcAmount: OdinUtils.convertToOdinAmount(amount),
         token,
         principal: user.principal,
       });

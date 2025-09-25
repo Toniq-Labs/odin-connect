@@ -1,5 +1,5 @@
 import { User } from "../models/user";
-import { OdinApi } from "./api";
+import { OdinApi, Pagination, Sort } from "./api";
 
 const ORIGINS = {
   local: "http://localhost:5173",
@@ -66,6 +66,15 @@ interface SwapOptions {
   fromToken: string;
   toToken: string;
   fromAmount: bigint;
+}
+
+interface GetResourcesOptions {
+  pagination: Pagination;
+  sort?: Sort;
+}
+
+interface GetUserActivityOptions extends GetResourcesOptions {
+  principal: string;
 }
 
 export class Connect {
@@ -146,8 +155,20 @@ export class Connect {
     return this._api.getBalances(principal, pagination);
   }
 
-  async getTokens(pagination: { page: number; limit: number }) {
-    return this._api.getTokens(pagination);
+  getUser(principal: string) {
+    return this._api.getUser(principal);
+  }
+
+  getToken(id: string) {
+    return this._api.getToken(id);
+  }
+
+  getTokens({ pagination, sort }: GetResourcesOptions) {
+    return this._api.getTokens(pagination, sort);
+  }
+
+  getUserActivity({ principal, pagination }: GetUserActivityOptions) {
+    return this._api.getUserActivity(principal, pagination);
   }
 
   sell({ token, tokenAmount, principal }: SellOptions) {
