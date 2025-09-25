@@ -14,20 +14,24 @@
 }
 
 button {
-  background-color: #00ffff;
-  border: none;
+  border: 1pt solid #333;
   border-radius: 8px;
-  color: #111;
+  color: #fff;
   font-weight: 600;
   padding: 8px 16px;
   cursor: pointer;
-  text-transform: uppercase;
+  background: #201f1f;
+}
+
+button:hover {
+  background-color: #00ffff;
+  border-color: #00ffff;
+  color: #111;
 }
 
 h1 {
   font-size: 1.4rem;
   color: #00ffff;
-  text-transform: uppercase;
 }
 
 h2 {
@@ -158,7 +162,14 @@ section {
     border: 1px solid #ccc;
   }
   button {
+    border: 1pt solid #ddd;
+    background-color: #eee;
+    color: #111;
+  }
+
+  button:hover {
     background-color: #076e6e;
+    border-color: #076e6e;
     color: #fff;
   }
   h1 {
