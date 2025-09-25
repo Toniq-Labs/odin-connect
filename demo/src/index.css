@@ -146,6 +146,17 @@ section {
   font-size: small;
   font-family: monospace;
 }
+
+.object-result {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 8px;
+  padding: 8px;
+  overflow-y: auto;
+  height: 300px;
+  font-size: small;
+  font-family: monospace;
+}
 @media (prefers-color-scheme: light) {
   :root {
     color: rgba(0, 0, 0, 0.87);

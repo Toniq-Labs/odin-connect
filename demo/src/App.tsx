@@ -48,7 +48,6 @@ function App() {
         </section>
         <section>
           <h1>Api</h1>
-          <small>Open console to see response</small>
           <Api />
         </section>
       </div>

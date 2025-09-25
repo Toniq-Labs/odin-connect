@@ -94,6 +94,9 @@ export class OdinApi {
     return this._httpClient.get<PaginatedResponse<Activity>>(
       `${this.BASE_URL}/user/${principal}/activity`,
       {
+        headers: {
+          Authorization: this.apiKey ? `Bearer ${this.apiKey}` : "",
+        },
         params: {
           ...pagination,
         },
