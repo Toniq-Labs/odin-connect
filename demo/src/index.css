@@ -78,7 +78,7 @@ select {
 
 .demo-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
   gap: 16px;
 }
 
@@ -134,6 +134,17 @@ section {
   border-radius: 8px;
   background-color: #000;
   padding: 16px;
+}
+
+.user-details {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 8px;
+  padding: 8px;
+  overflow-y: auto;
+  height: 270px;
+  font-size: small;
+  font-family: monospace;
 }
 @media (prefers-color-scheme: light) {
   :root {

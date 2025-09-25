@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { convertToOdinAmount } from "../utils";
+import { TokenSelect } from "../ui/TokenSelect";
 
 export function RemoveLiquidity() {
   const { odinConnect, user, tokens } = useOdinContext();
@@ -56,19 +57,12 @@ export function RemoveLiquidity() {
         </div>
         <div className="form-group">
           <label htmlFor="token">Token:</label>
-          <select
+          <TokenSelect
             id="token"
+            tokens={tokens}
             value={token}
-            onChange={(e) => setToken(e.target.value)}
-          >
-            {tokens
-              .filter((t) => t.id !== "btc")
-              .map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.id})
-                </option>
-              ))}
-          </select>
+            onChange={setToken}
+          />
         </div>
         <button type="submit">Remove Liquidity</button>
         {result && <div className="result">{result}</div>}

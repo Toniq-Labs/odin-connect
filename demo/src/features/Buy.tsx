@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useOdinContext } from "../OdinContext";
 import { convertToOdinAmount } from "../utils";
+import { TokenSelect } from "../ui/TokenSelect";
 
 export function Buy() {
   const { odinConnect, user, tokens } = useOdinContext();
@@ -52,19 +53,12 @@ export function Buy() {
       </div>
       <div className="form-group">
         <label htmlFor="token">Token:</label>
-        <select
+        <TokenSelect
           id="token"
+          tokens={tokens}
           value={token}
-          onChange={(e) => setToken(e.target.value)}
-        >
-          {tokens
-            .filter((t) => t.id !== "btc")
-            .map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({t.id})
-              </option>
-            ))}
-        </select>
+          onChange={setToken}
+        />
       </div>
       <button type="submit">Buy Token</button>
       {result && <div className="result">{result}</div>}

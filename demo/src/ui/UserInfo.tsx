@@ -23,7 +23,13 @@ export function UserInfo({ user }: { user: OdinUser }) {
         )}
       </div>
       <strong>{user.username}</strong>
-      <p>{user.principal}</p>
+      <div className="user-details">
+        {Object.entries(user).map(([key, value]) => (
+          <div key={key}>
+            <span>{key}:</span> <strong>{String(value)}</strong>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
