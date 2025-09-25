@@ -1,18 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { OdinConnect, type OdinUser } from "odin-connect";
+import { OdinConnect, type OdinToken, type OdinUser } from "odin-connect";
 import { OdinContext } from "./OdinContext";
 
 export const OdinProvider = ({ children }: { children: ReactNode }) => {
   const [odinConnect, setOdinConnect] = useState<OdinConnect | null>(null);
   const [user, setUser] = useState<OdinUser | null>(null);
-  const [tokens, setTokens] = useState<
-    ReadonlyArray<{
-      id: string;
-      name: string;
-      divisibility: number;
-      decimals: number;
-    }>
-  >([]);
+  const [tokens, setTokens] = useState<ReadonlyArray<OdinToken>>([]);
 
   useEffect(() => {
     const odin = new OdinConnect({ name: "Demo", env: "_deployment_preview" });

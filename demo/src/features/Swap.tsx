@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useOdinContext } from "../OdinContext";
 import { convertToOdinAmount } from "../utils";
+import { TokenSelect } from "../ui/TokenSelect";
 
 export function Swap() {
   const { odinConnect, tokens, user } = useOdinContext();
@@ -51,17 +52,12 @@ export function Swap() {
       <form className="trade-form" onSubmit={handleSubmit}>
         <div className="form-group">
           <label htmlFor="tokenFrom">From Token</label>
-          <select
+          <TokenSelect
             id="tokenFrom"
+            tokens={tokens}
             value={tokenFrom}
-            onChange={(e) => setTokenFrom(e.target.value)}
-          >
-            {tokens.map((token) => (
-              <option key={token.id} value={token.id}>
-                {token.name} ({token.id})
-              </option>
-            ))}
-          </select>
+            onChange={setTokenFrom}
+          />
         </div>
         <div className="form-group">
           <label htmlFor="amountFrom">Amount</label>
@@ -74,17 +70,12 @@ export function Swap() {
         </div>
         <div className="form-group">
           <label htmlFor="tokenTo">To Token</label>
-          <select
+          <TokenSelect
             id="tokenTo"
+            tokens={tokens}
             value={tokenTo}
-            onChange={(e) => setTokenTo(e.target.value)}
-          >
-            {tokens.map((token) => (
-              <option key={token.id} value={token.id}>
-                {token.name} ({token.id})
-              </option>
-            ))}
-          </select>
+            onChange={setTokenTo}
+          />
         </div>
         <button type="submit">Submit</button>
       </form>

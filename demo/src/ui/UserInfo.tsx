@@ -24,7 +24,11 @@ export function UserInfo({ user }: { user: OdinUser }) {
       </div>
       <strong>{user.username}</strong>
       <div className="user-details">
-        <pre>{JSON.stringify(user, null, 2)}</pre>
+        {Object.entries(user).map(([key, value]) => (
+          <div key={key}>
+            <span>{key}:</span> <strong>{String(value)}</strong>
+          </div>
+        ))}
       </div>
     </div>
   );

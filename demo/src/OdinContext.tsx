@@ -1,15 +1,10 @@
 import { createContext, useContext } from "react";
-import type { OdinConnect, OdinUser } from "odin-connect";
+import type { OdinConnect, OdinToken, OdinUser } from "odin-connect";
 type OdinContextType = {
   odinConnect: OdinConnect | null;
   user: OdinUser | null;
   setUser: (user: OdinUser | null) => void;
-  tokens: ReadonlyArray<{
-    id: string;
-    name: string;
-    divisibility: number;
-    decimals: number;
-  }>;
+  tokens: ReadonlyArray<OdinToken>;
 };
 
 export const OdinContext = createContext<OdinContextType | undefined>(

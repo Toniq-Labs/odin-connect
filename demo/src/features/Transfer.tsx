@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { convertToOdinAmount } from "../utils";
+import { TokenSelect } from "../ui/TokenSelect";
 
 export function Transfer() {
   const { tokens, odinConnect, user } = useOdinContext();
@@ -63,14 +64,12 @@ export function Transfer() {
         </div>
         <div className="form-group">
           <label htmlFor="token">Token</label>
-          <select value={token} onChange={(e) => setToken(e.target.value)}>
-            <option value="btc">BTC</option>
-            {tokens.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({t.id})
-              </option>
-            ))}
-          </select>
+          <TokenSelect
+            id="token"
+            tokens={tokens}
+            value={token}
+            onChange={setToken}
+          />
         </div>
         <div className="form-group">
           <label htmlFor="amount">Amount</label>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { convertToOdinAmount } from "../utils";
+import { TokenSelect } from "../ui/TokenSelect";
 
 export function AddLiquidity() {
   const { odinConnect, user, tokens } = useOdinContext();
@@ -50,17 +51,12 @@ export function AddLiquidity() {
         </div>
         <div className="form-group">
           <label htmlFor="token">Token:</label>
-          <select
+          <TokenSelect
             id="token"
+            tokens={tokens}
             value={token}
-            onChange={(e) => setToken(e.target.value)}
-          >
-            {tokens.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({t.id})
-              </option>
-            ))}
-          </select>
+            onChange={setToken}
+          />
         </div>
         <button type="submit">Add Liquidity</button>
         {result && <div className="result">{result}</div>}
