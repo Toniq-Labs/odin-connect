@@ -1,3 +1,4 @@
+import { AxiosError } from "axios";
 import { User } from "../models/user";
 import { OdinApi, Pagination, Sort } from "./api";
 
@@ -291,20 +292,24 @@ export class Connect {
   }
 
   async createToken({ image, ...params }: CreateTokenParams) {
-    //const imageUrl = await this._api.uploadImage(image);
-    return this.baseAction<string, string>({
+    const imageUrl = await this._api.uploadImage(image);
+    const result = await this.baseAction<boolean, string>({
       params: {
         ...params,
-        image: "",
+        image: imageUrl,
       },
       odinPath: "authorize/create_token",
-      receivedMessageFromOrigin: (data) => data !== "rejected",
+      receivedMessageFromOrigin: "tokenCreated",
       resolve: {
-        success: (message) => message,
+        success: () => true,
         failure: "Token creation failed or was cancelled",
         close: "User closed the window",
       },
     });
+    if (!result) {
+      throw new Error("Token creation failed. Please try again.");
+    }
+    return true;
   }
 
   hello() {

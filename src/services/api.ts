@@ -1,3 +1,4 @@
+import { AxiosError } from "axios";
 import { Activity } from "../models/activity";
 import { Balance } from "../models/balance";
 import { Token } from "../models/token";
@@ -92,6 +93,33 @@ export class OdinApi {
     });
 
     return result.data.upload;
+  }
+
+  updateTokenImage(tokenId: string, image: File) {
+    if (!this._apiKey) {
+      throw new Error("API key is not set");
+    }
+    try {
+      return this._httpClient.post<{ data: Token }, { image: File }>(
+        `${this.BASE_URL}/token/${tokenId}/image`,
+        { image },
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+            Authorization: `Bearer ${this._apiKey}`,
+          },
+        }
+      );
+    } catch (error) {
+      if (error instanceof Error && error.name === "AxiosError") {
+        const axiosError = error as AxiosError<{ message: string }>;
+        throw new Error(
+          axiosError.response?.data?.message || axiosError.message
+        );
+      } else {
+        throw new Error("Image update failed");
+      }
+    }
   }
 
   getUserActivity(principal: string, pagination: Pagination) {

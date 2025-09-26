@@ -64,6 +64,7 @@ label {
 }
 
 input,
+textarea,
 select {
   padding: 12px;
   border: none;
@@ -87,7 +88,6 @@ select {
   grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
   gap: 16px;
 }
-
 
 .user-card {
   display: flex;
@@ -182,7 +182,7 @@ section {
 
   h1 {
     color: #076e6e;
-     border-bottom: 1pt solid #ddd;
+    border-bottom: 1pt solid #ddd;
   }
 
   .result {
@@ -195,6 +195,4 @@ section {
     color: #fff;
     background-color: #076e6e;
   }
-
-
 }
