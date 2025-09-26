@@ -6,8 +6,9 @@ export function CreateToken() {
   const [image, setImage] = useState<File | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const { odinConnect, user } = useOdinContext();
+  const [loading, setLoading] = useState(false);
   const [name, setName] = useState("Token " + randomInt);
-  const [ticker, setTicker] = useState("T" + randomInt);
+  const [ticker, setTicker] = useState("TKN" + randomInt);
   const [description, setDescription] = useState("This is a test token");
   const [website, setWebsite] = useState("https://example.com");
   const [telegram, setTelegram] = useState("https://t.me/example");
@@ -78,6 +79,8 @@ export function CreateToken() {
       <button
         onClick={async () => {
           try {
+            setResult(null);
+            setLoading(true);
             if (!odinConnect) {
               throw new Error("OdinConnect is not initialized");
             }
@@ -102,6 +105,7 @@ export function CreateToken() {
             });
             setResult(`Image uploaded successfully: ${url}`);
           } catch (error) {
+            setLoading(false);
             if (error instanceof Error) {
               setResult(`Error uploading image: ${error.message}`);
             } else {
@@ -110,7 +114,7 @@ export function CreateToken() {
           }
         }}
       >
-        Create Token
+        {loading ? "Creating..." : "Create Token"}
       </button>
 
       {result && <div className="result">{result}</div>}
