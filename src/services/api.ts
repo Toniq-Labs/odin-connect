@@ -4,6 +4,7 @@ import { Balance } from "../models/balance";
 import { Token } from "../models/token";
 import { User } from "../models/user";
 import { HttpClient } from "./http";
+import { createTokenValidators } from "../utils";
 
 const BASE_URL_ENV = {
   dev: "https://api.odin.fun/dev",
@@ -73,12 +74,12 @@ export class OdinApi {
   }
 
   async uploadImage(image: File) {
-    // image file type validation
-    if (!image.type.startsWith("image/")) {
-      throw new Error("Invalid image file type");
-    }
     if (!this._apiKey) {
       throw new Error("API key is not set");
+    }
+    const errors = createTokenValidators.image?.(image);
+    if (errors) {
+      throw new Error(errors);
     }
     const formData = new FormData();
     formData.append("file", image);

@@ -10,9 +10,9 @@ export function CreateToken() {
   const [name, setName] = useState("Token " + randomInt);
   const [ticker, setTicker] = useState("TKN" + randomInt);
   const [description, setDescription] = useState("This is a test token");
-  const [website, setWebsite] = useState("https://example.com");
-  const [telegram, setTelegram] = useState("https://t.me/example");
-  const [twitter, setTwitter] = useState("https://twitter.com/example");
+  const [website, setWebsite] = useState("");
+  const [telegram, setTelegram] = useState("");
+  const [twitter, setTwitter] = useState("");
 
   return (
     <div className="trade-form">
@@ -107,9 +107,9 @@ export function CreateToken() {
           } catch (error) {
             setLoading(false);
             if (error instanceof Error) {
-              setResult(`Error uploading image: ${error.message}`);
+              setResult(`Error: ${error.message}`);
             } else {
-              setResult("Error uploading image");
+              setResult("Error");
             }
           }
         }}

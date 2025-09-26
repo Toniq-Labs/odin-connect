@@ -1,6 +1,7 @@
 import { AxiosError } from "axios";
 import { User } from "../models/user";
 import { OdinApi, Pagination, Sort } from "./api";
+import { createTokenValidators } from "../utils";
 
 const ORIGINS = {
   local: "http://localhost:5173",
@@ -292,6 +293,18 @@ export class Connect {
   }
 
   async createToken({ image, ...params }: CreateTokenParams) {
+    // check if param validators exist and run them
+    for (const key in createTokenValidators) {
+      if (key in params) {
+        const field = key as keyof typeof createTokenValidators;
+        const errors = createTokenValidators[field]?.(
+          params[key as keyof typeof params] || null
+        );
+        if (errors) {
+          throw new Error(errors);
+        }
+      }
+    }
     const imageUrl = await this._api.uploadImage(image);
     const result = await this.baseAction<boolean, string>({
       params: {
