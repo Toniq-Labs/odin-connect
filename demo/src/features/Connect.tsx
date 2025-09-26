@@ -11,6 +11,7 @@ const centeredWindowFeatures = (width: number, height: number) => {
 
 function Connect() {
   const [error, setError] = useState<string | null>(null);
+  const [requireApi, setRequireApi] = useState(false);
   const { user, odinConnect, setUser } = useOdinContext();
 
   const openOdinConnect = async (mode: "window" | "tab" = "tab") => {
@@ -24,6 +25,7 @@ function Connect() {
           target: "_blank",
           settings: mode === "window" ? centeredWindowFeatures(400, 600) : "",
         },
+        requires_api: requireApi,
       });
       console.log("Received user:", user);
       setUser(user);
@@ -52,13 +54,19 @@ function Connect() {
   return user ? (
     <UserInfo user={user} />
   ) : (
-    <>
+    <div>
+      <input
+        type="checkbox"
+        checked={requireApi}
+        onChange={() => setRequireApi(!requireApi)}
+      />{" "}
+      Require API
       {error && <div className="result">{error}</div>}
       <div className="demo-buttons">
         <button onClick={handleConnectWindow}>Connect Popup</button>
         <button onClick={handleConnectTab}>Connect Tab</button>
       </div>
-    </>
+    </div>
   );
 }
 
