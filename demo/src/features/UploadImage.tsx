@@ -3,8 +3,8 @@ import { useOdinContext } from "../OdinContext";
 
 export function UploadImage() {
   const [image, setImage] = useState<File | null>(null);
-
-  const { odinConnect } = useOdinContext();
+  const [result, setResult] = useState<string | null>(null);
+  const { odinConnect, user } = useOdinContext();
   return (
     <div>
       <input
@@ -25,21 +25,39 @@ export function UploadImage() {
       {image && (
         <button
           onClick={async () => {
-            if (!odinConnect) {
-              throw new Error("OdinConnect is not initialized");
-            }
             try {
-              const url = await odinConnect.uploadImage(image);
-              alert(`Image uploaded successfully: ${url}`);
+              if (!odinConnect) {
+                throw new Error("OdinConnect is not initialized");
+              }
+
+              if (!user) {
+                throw new Error("User is not connected");
+              }
+
+              const url = await odinConnect.createToken({
+                image,
+                principal: user.principal,
+                name: "Test Token",
+                ticker: "TST",
+                description: "This is a test token",
+                website: "https://example.com",
+                telegram: "https://t.me/example",
+                twitter: "https://twitter.com/example",
+              });
+              setResult(`Image uploaded successfully: ${url}`);
             } catch (error) {
-              console.error("Error uploading image:", error);
-              alert("Error uploading image");
+              if (error instanceof Error) {
+                setResult(`Error uploading image: ${error.message}`);
+              } else {
+                setResult("Error uploading image");
+              }
             }
           }}
         >
           Upload Image
         </button>
       )}
+      {result && <div className="result">{result}</div>}
     </div>
   );
 }

@@ -77,6 +77,17 @@ interface GetUserActivityOptions extends GetResourcesOptions {
   principal: string;
 }
 
+interface CreateTokenParams {
+  principal: string;
+  name: string;
+  ticker: string;
+  image: File;
+  description?: string;
+  website?: string;
+  twitter?: string;
+  telegram?: string;
+}
+
 export class Connect {
   private _appInfo: AppInitOptions | null = null;
   private _api: OdinApi;
@@ -175,10 +186,6 @@ export class Connect {
     return this._api.getUserActivity(principal, pagination);
   }
 
-  uploadImage(image: File) {
-    return this._api.uploadImage(image);
-  }
-
   sell({ token, tokenAmount, principal }: SellOptions) {
     return this.baseAction<boolean, string>({
       params: {
@@ -189,7 +196,7 @@ export class Connect {
       odinPath: "authorize/sell",
       receivedMessageFromOrigin: "sold",
       resolve: {
-        success: true,
+        success: () => true,
         failure: "Sell failed or was cancelled",
         close: "User closed the window",
       },
@@ -206,7 +213,7 @@ export class Connect {
       odinPath: "authorize/buy",
       receivedMessageFromOrigin: "purchased",
       resolve: {
-        success: true,
+        success: () => true,
         failure: "Purchase failed or was cancelled",
         close: "User closed the window",
       },
@@ -224,7 +231,7 @@ export class Connect {
       odinPath: "authorize/transfer",
       receivedMessageFromOrigin: "transferred",
       resolve: {
-        success: true,
+        success: () => true,
         failure: "Transfer failed or was cancelled",
         close: "User closed the window",
       },
@@ -241,7 +248,7 @@ export class Connect {
       odinPath: "authorize/add_liquidity",
       receivedMessageFromOrigin: "addedLiquidity",
       resolve: {
-        success: true,
+        success: () => true,
         failure: "Add liquidity failed or was cancelled",
         close: "User closed the window",
       },
@@ -258,7 +265,7 @@ export class Connect {
       odinPath: "authorize/remove_liquidity",
       receivedMessageFromOrigin: "removedLiquidity",
       resolve: {
-        success: true,
+        success: () => true,
         failure: "Remove liquidity failed or was cancelled",
         close: "User closed the window",
       },
@@ -276,8 +283,25 @@ export class Connect {
       odinPath: "authorize/swap",
       receivedMessageFromOrigin: "swapped",
       resolve: {
-        success: true,
+        success: () => true,
         failure: "Swap failed or was cancelled",
+        close: "User closed the window",
+      },
+    });
+  }
+
+  async createToken({ image, ...params }: CreateTokenParams) {
+    //const imageUrl = await this._api.uploadImage(image);
+    return this.baseAction<string, string>({
+      params: {
+        ...params,
+        image: "",
+      },
+      odinPath: "authorize/create_token",
+      receivedMessageFromOrigin: (data) => data !== "rejected",
+      resolve: {
+        success: (message) => message,
+        failure: "Token creation failed or was cancelled",
         close: "User closed the window",
       },
     });
@@ -293,11 +317,11 @@ export class Connect {
     receivedMessageFromOrigin,
     resolve: resolveMessages,
   }: {
-    params: Record<string, string>;
+    params: Record<string, string | undefined>;
     odinPath: string;
-    receivedMessageFromOrigin: MessageType;
+    receivedMessageFromOrigin: string | ((message: string) => boolean);
     resolve: {
-      success: ResolveType;
+      success: (message: MessageType) => ResolveType;
       failure: string;
       close: string;
     };
@@ -305,9 +329,14 @@ export class Connect {
     return new Promise<ResolveType>((resolve, reject) => {
       const handleMessage = async (event: MessageEvent) => {
         if (event.origin === this.origin) {
+          console.log("Received message:", event.data);
           window.removeEventListener("message", handleMessage);
-          if (event.data === receivedMessageFromOrigin) {
-            resolve(resolveMessages.success);
+          if (
+            typeof receivedMessageFromOrigin === "function"
+              ? receivedMessageFromOrigin(event.data)
+              : receivedMessageFromOrigin === event.data
+          ) {
+            resolve(resolveMessages.success(event.data as MessageType));
           } else {
             reject(new Error(resolveMessages.failure));
           }
@@ -315,7 +344,10 @@ export class Connect {
       };
       const url = this.createUrl(odinPath);
       for (const key in params) {
-        url.searchParams.append(key, params[key]);
+        // exclude undefined params
+        if (params[key]) {
+          url.searchParams.append(key, params[key]);
+        }
       }
       this.openWindow(url);
       window.addEventListener("message", handleMessage);
