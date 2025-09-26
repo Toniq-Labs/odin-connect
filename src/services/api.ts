@@ -71,23 +71,27 @@ export class OdinApi {
     return this._httpClient.get<Token>(`${this.BASE_URL}/token/${id}`);
   }
 
-  uploadImage(image: File) {
+  async uploadImage(image: File) {
     // image file type validation
     if (!image.type.startsWith("image/")) {
-      return Promise.reject(new Error("Invalid image file type"));
+      throw new Error("Invalid image file type");
+    }
+    if (!this._apiKey) {
+      throw new Error("API key is not set");
     }
     const formData = new FormData();
     formData.append("file", image);
-    return this._httpClient.post<{ upload: string }, FormData>(
-      `${this.BASE_URL}/upload/image`,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          Authorization: `Bearer ${this._apiKey}`,
-        },
-      }
-    );
+    const result = await this._httpClient.post<
+      { data: { upload: string } },
+      FormData
+    >(`${this.BASE_URL}/upload`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+        Authorization: `Bearer ${this._apiKey}`,
+      },
+    });
+
+    return result.data.upload;
   }
 
   getUserActivity(principal: string, pagination: Pagination) {

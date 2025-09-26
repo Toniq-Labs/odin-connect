@@ -9,6 +9,7 @@ import { AddLiquidity } from "./features/AddLiquidity";
 import { RemoveLiquidity } from "./features/RemoveLiquidity";
 import { Swap } from "./features/Swap";
 import { Api } from "./features/Api";
+import { UploadImage } from "./features/UploadImage";
 
 function App() {
   return (
@@ -49,6 +50,9 @@ function App() {
         <section>
           <h1>Api</h1>
           <Api />
+        </section>
+        <section>
+          <UploadImage />
         </section>
       </div>
     </OdinProvider>

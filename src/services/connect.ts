@@ -175,6 +175,10 @@ export class Connect {
     return this._api.getUserActivity(principal, pagination);
   }
 
+  uploadImage(image: File) {
+    return this._api.uploadImage(image);
+  }
+
   sell({ token, tokenAmount, principal }: SellOptions) {
     return this.baseAction<boolean, string>({
       params: {
