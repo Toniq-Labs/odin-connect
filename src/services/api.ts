@@ -141,14 +141,31 @@ export class OdinApi {
     return this._httpClient.get<PaginatedResponse<Activity>>(
       `${this.BASE_URL}/user/${principal}/activity`,
       {
-        headers: {
-          Authorization: this.apiKey ? `Bearer ${this.apiKey}` : "",
-        },
         params: {
           ...pagination,
         },
       }
     );
+  }
+
+  getUserTokens(principal: string, pagination: Pagination) {
+    return this._httpClient.get<
+      PaginatedResponse<{ balance: bigint; token: Token }>
+    >(`${this.BASE_URL}/user/${principal}/tokens`, {
+      params: {
+        ...pagination,
+      },
+    });
+  }
+
+  getUserLiquidity(principal: string, pagination: Pagination) {
+    return this._httpClient.get<
+      PaginatedResponse<{ balance: bigint; token: Token }>
+    >(`${this.BASE_URL}/user/${principal}/liquidity`, {
+      params: {
+        ...pagination,
+      },
+    });
   }
 
   set apiKey(key: string) {
