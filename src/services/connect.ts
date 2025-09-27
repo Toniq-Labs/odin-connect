@@ -161,7 +161,9 @@ export class Connect {
           }
         }
       };
-      this.openWindow(this.createUrl("authorize/connect"));
+      const url = this.createUrl("authorize/connect");
+      url.searchParams.append("requires_api", requires_api ? "1" : "0");
+      this.openWindow(url);
 
       window.addEventListener("message", handleMessage);
     });
