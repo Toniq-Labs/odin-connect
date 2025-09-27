@@ -15,6 +15,7 @@ export function CreateToken() {
   const [telegram, setTelegram] = useState("");
   const [twitter, setTwitter] = useState("");
   const [preBuy, setPreBuy] = useState("");
+  const [discount, setDiscount] = useState("");
 
   return (
     <div className="trade-form">
@@ -85,7 +86,16 @@ export function CreateToken() {
           onChange={(e) => setPreBuy(e.target.value)}
         />
       </div>
+      <div className="form-group">
+        <label>Discount Code:</label>
+        <input
+          type="text"
+          value={discount}
+          onChange={(e) => setDiscount(e.target.value)}
+        />
+      </div>
       <button
+        disabled={loading}
         onClick={async () => {
           try {
             setResult(null);
@@ -114,6 +124,7 @@ export function CreateToken() {
               telegram,
               twitter,
               buy: buyAmount,
+              discount,
             });
             setResult(`Image uploaded successfully: ${url}`);
           } catch (error) {

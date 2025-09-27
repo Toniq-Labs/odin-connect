@@ -89,6 +89,7 @@ interface CreateTokenParams {
   twitter?: string;
   telegram?: string;
   buy?: bigint;
+  discount?: string;
 }
 
 export class Connect {
@@ -294,7 +295,7 @@ export class Connect {
   }
 
   async createToken({ image, ...params }: CreateTokenParams) {
-    // check if param validators exist and run them
+    // check if token field param validators exist and run them
     for (const key in createTokenValidators) {
       if (key in params) {
         const field = key as keyof typeof createTokenValidators;
@@ -304,6 +305,14 @@ export class Connect {
         if (errors) {
           throw new Error(errors);
         }
+      }
+    }
+    // additional validations for discount code
+    if (params.discount) {
+      if (!/^[A-Za-z0-9]{10}$/.test(params.discount)) {
+        throw new Error(
+          "Discount code must be alphanumeric and exactly 10 characters long."
+        );
       }
     }
     const imageUrl = await this._api.uploadImage(image);
