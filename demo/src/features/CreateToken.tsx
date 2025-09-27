@@ -114,7 +114,7 @@ export function CreateToken() {
 
             const buyAmount = OdinUtils.convertToOdinAmount(preBuy || "0");
 
-            const url = await odinConnect.createToken({
+            await odinConnect.createToken({
               image,
               principal: user.principal,
               name,
@@ -126,7 +126,7 @@ export function CreateToken() {
               buy: buyAmount,
               discount,
             });
-            setResult(`Image uploaded successfully: ${url}`);
+            setResult(`Token created successfully!`);
           } catch (error) {
             setLoading(false);
             if (error instanceof Error) {
