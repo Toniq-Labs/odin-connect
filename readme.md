@@ -1,9 +1,12 @@
 # OdinConnect
 
-### Demo
+## Demo
 
 This repository includes a demo. See `demo/` folder
+
 To run it, simply do `npm run demo`
+
+## Examples
 
 ### Initializing new instance
 
@@ -22,6 +25,7 @@ const user = await odinConnect.connect({
     target: "_blank",
     settings: "height=800,width=400",
   },
+  // flag to weather or not api keys are required
   requires_api: true,
 });
 ```
@@ -87,6 +91,25 @@ await odinConnect.removeLiquidity({
 });
 ```
 
+### Request for creating new token
+
+Note: require_api must be set set to true
+
+```typescript
+await odinConnect.createToken({
+  image: file, // instance of a file
+  principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
+  name: "Test Token",
+  ticker: "TEST",
+  description: "Test Description", // optional
+  website: "http://test-website.com", // optional
+  telegram: "", // optional
+  twitter: "", // optional
+  buy: 20_000_000n, // 20K sats
+  discount: "",
+});
+```
+
 ### API Methods
 
 ```typescript
@@ -104,13 +127,13 @@ const user = await odinConnect.getUser(
   "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe"
 );
 
-// Get balance
+// Get user balance
 const balances = await odinConnect.getBalances({
   principal: user.principal,
   pagination: { page: 1, limit: 20 },
 });
 
-// Get activities
+// Get user activities
 const activity = await odinConnect.getUserActivity({
   principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
   pagination: { page: 1, limit: 10 },

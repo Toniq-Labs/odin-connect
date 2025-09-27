@@ -64,10 +64,12 @@ label {
 }
 
 input,
+textarea,
 select {
   padding: 12px;
   border: none;
   border-radius: 4px;
+  font-family: inherit;
 }
 
 .result {
@@ -87,7 +89,6 @@ select {
   grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
   gap: 16px;
 }
-
 
 .user-card {
   display: flex;
@@ -146,6 +147,17 @@ section {
   font-size: small;
   font-family: monospace;
 }
+
+.object-result {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 8px;
+  padding: 8px;
+  overflow-y: auto;
+  height: 300px;
+  font-size: small;
+  font-family: monospace;
+}
 @media (prefers-color-scheme: light) {
   :root {
     color: rgba(0, 0, 0, 0.87);
@@ -171,7 +183,7 @@ section {
 
   h1 {
     color: #076e6e;
-     border-bottom: 1pt solid #ddd;
+    border-bottom: 1pt solid #ddd;
   }
 
   .result {
@@ -184,6 +196,4 @@ section {
     color: #fff;
     background-color: #076e6e;
   }
-
-
 }

@@ -1,8 +1,10 @@
+import { AxiosError } from "axios";
 import { Activity } from "../models/activity";
 import { Balance } from "../models/balance";
 import { Token } from "../models/token";
 import { User } from "../models/user";
 import { HttpClient } from "./http";
+import { createTokenValidators } from "../utils";
 
 const BASE_URL_ENV = {
   dev: "https://api.odin.fun/dev",
@@ -71,10 +73,77 @@ export class OdinApi {
     return this._httpClient.get<Token>(`${this.BASE_URL}/token/${id}`);
   }
 
+  async uploadImage(image: File) {
+    if (!this._apiKey) {
+      throw new Error("API key is not set");
+    }
+    try {
+      const errors = createTokenValidators.image?.(image);
+      if (errors) {
+        throw new Error(errors);
+      }
+      const formData = new FormData();
+      formData.append("file", image);
+      const result = await this._httpClient.post<
+        { data: { upload: string } },
+        FormData
+      >(`${this.BASE_URL}/upload`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${this._apiKey}`,
+        },
+      });
+      return result.data.upload;
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.name === "AxiosError") {
+          const axiosError = error as AxiosError<{ message: string }>;
+          throw new Error(
+            axiosError.response?.data?.message || axiosError.message
+          );
+        } else {
+          throw new Error(error.message);
+        }
+      } else {
+        throw new Error("Image upload failed");
+      }
+    }
+  }
+
+  updateTokenImage(tokenId: string, image: File) {
+    if (!this._apiKey) {
+      throw new Error("API key is not set");
+    }
+    try {
+      return this._httpClient.post<{ data: Token }, { image: File }>(
+        `${this.BASE_URL}/token/${tokenId}/image`,
+        { image },
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+            Authorization: `Bearer ${this._apiKey}`,
+          },
+        }
+      );
+    } catch (error) {
+      if (error instanceof Error && error.name === "AxiosError") {
+        const axiosError = error as AxiosError<{ message: string }>;
+        throw new Error(
+          axiosError.response?.data?.message || axiosError.message
+        );
+      } else {
+        throw new Error("Image update failed");
+      }
+    }
+  }
+
   getUserActivity(principal: string, pagination: Pagination) {
     return this._httpClient.get<PaginatedResponse<Activity>>(
       `${this.BASE_URL}/user/${principal}/activity`,
       {
+        headers: {
+          Authorization: this.apiKey ? `Bearer ${this.apiKey}` : "",
+        },
         params: {
           ...pagination,
         },

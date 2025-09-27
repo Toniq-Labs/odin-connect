@@ -9,6 +9,7 @@ export interface BaseToken {
 }
 
 export interface Token extends BaseToken {
+  image: string | null;
   description: string | null;
   creator: string;
   created_time: Date;

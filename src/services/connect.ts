@@ -1,5 +1,7 @@
+import { AxiosError } from "axios";
 import { User } from "../models/user";
 import { OdinApi, Pagination, Sort } from "./api";
+import { createTokenValidators } from "../utils";
 
 const ORIGINS = {
   local: "http://localhost:5173",
@@ -77,6 +79,19 @@ interface GetUserActivityOptions extends GetResourcesOptions {
   principal: string;
 }
 
+interface CreateTokenParams {
+  principal: string;
+  name: string;
+  ticker: string;
+  image: File;
+  description?: string;
+  website?: string;
+  twitter?: string;
+  telegram?: string;
+  buy?: bigint;
+  discount?: string;
+}
+
 export class Connect {
   private _appInfo: AppInitOptions | null = null;
   private _api: OdinApi;
@@ -100,6 +115,7 @@ export class Connect {
     if (this._appInfo?.name) {
       url.searchParams.append("app_name", this._appInfo.name);
     }
+    url.searchParams.append("referrer", window.location.origin);
     return url;
   }
 
@@ -125,14 +141,18 @@ export class Connect {
           window.removeEventListener("message", handleMessage);
           if (event.data != "rejected") {
             // the user accepted the connection
-            if (requires_api) {
-              // issue a api key
-              this._api.apiKey = "some-api-key";
-            }
-            const userId = event.data;
             try {
+              const [userId, jwtToken] = event.data.split("::") as [
+                string,
+                string
+              ];
               // we need to fetch user data from the api to get the full user object
               const user = await this._api.getUser(userId);
+              if (requires_api) {
+                // issue a api key
+                // only using JWT for now, it will change in the real implementation
+                this._api.apiKey = jwtToken;
+              }
               resolve(user);
             } catch (error) {
               reject(new Error("Failed to fetch user data"));
@@ -142,7 +162,9 @@ export class Connect {
           }
         }
       };
-      this.openWindow(this.createUrl("authorize/connect"));
+      const url = this.createUrl("authorize/connect");
+      url.searchParams.append("requires_api", requires_api ? "1" : "0");
+      this.openWindow(url);
 
       window.addEventListener("message", handleMessage);
     });
@@ -181,7 +203,7 @@ export class Connect {
       odinPath: "authorize/sell",
       receivedMessageFromOrigin: "sold",
       resolve: {
-        success: true,
+        success: () => true,
         failure: "Sell failed or was cancelled",
         close: "User closed the window",
       },
@@ -198,7 +220,7 @@ export class Connect {
       odinPath: "authorize/buy",
       receivedMessageFromOrigin: "purchased",
       resolve: {
-        success: true,
+        success: () => true,
         failure: "Purchase failed or was cancelled",
         close: "User closed the window",
       },
@@ -216,7 +238,7 @@ export class Connect {
       odinPath: "authorize/transfer",
       receivedMessageFromOrigin: "transferred",
       resolve: {
-        success: true,
+        success: () => true,
         failure: "Transfer failed or was cancelled",
         close: "User closed the window",
       },
@@ -233,7 +255,7 @@ export class Connect {
       odinPath: "authorize/add_liquidity",
       receivedMessageFromOrigin: "addedLiquidity",
       resolve: {
-        success: true,
+        success: () => true,
         failure: "Add liquidity failed or was cancelled",
         close: "User closed the window",
       },
@@ -250,7 +272,7 @@ export class Connect {
       odinPath: "authorize/remove_liquidity",
       receivedMessageFromOrigin: "removedLiquidity",
       resolve: {
-        success: true,
+        success: () => true,
         failure: "Remove liquidity failed or was cancelled",
         close: "User closed the window",
       },
@@ -268,11 +290,53 @@ export class Connect {
       odinPath: "authorize/swap",
       receivedMessageFromOrigin: "swapped",
       resolve: {
-        success: true,
+        success: () => true,
         failure: "Swap failed or was cancelled",
         close: "User closed the window",
       },
     });
+  }
+
+  async createToken({ image, ...params }: CreateTokenParams) {
+    // check if token field param validators exist and run them
+    for (const key in createTokenValidators) {
+      if (key in params) {
+        const field = key as keyof typeof createTokenValidators;
+        const errors = createTokenValidators[field]?.(
+          params[key as keyof typeof params] || null
+        );
+        if (errors) {
+          throw new Error(errors);
+        }
+      }
+    }
+    // additional validations for discount code
+    if (params.discount) {
+      if (!/^[A-Za-z0-9]{10}$/.test(params.discount)) {
+        throw new Error(
+          "Discount code must be alphanumeric and exactly 10 characters long."
+        );
+      }
+    }
+    const imageUrl = await this._api.uploadImage(image);
+    const result = await this.baseAction<boolean, string>({
+      params: {
+        ...params,
+        image: imageUrl,
+        buy: params.buy?.toString(),
+      },
+      odinPath: "authorize/create_token",
+      receivedMessageFromOrigin: "tokenCreated",
+      resolve: {
+        success: () => true,
+        failure: "Token creation failed or was cancelled",
+        close: "User closed the window",
+      },
+    });
+    if (!result) {
+      throw new Error("Token creation failed. Please try again.");
+    }
+    return true;
   }
 
   hello() {
@@ -285,11 +349,11 @@ export class Connect {
     receivedMessageFromOrigin,
     resolve: resolveMessages,
   }: {
-    params: Record<string, string>;
+    params: Record<string, string | undefined>;
     odinPath: string;
-    receivedMessageFromOrigin: MessageType;
+    receivedMessageFromOrigin: string | ((message: string) => boolean);
     resolve: {
-      success: ResolveType;
+      success: (message: MessageType) => ResolveType;
       failure: string;
       close: string;
     };
@@ -297,9 +361,14 @@ export class Connect {
     return new Promise<ResolveType>((resolve, reject) => {
       const handleMessage = async (event: MessageEvent) => {
         if (event.origin === this.origin) {
+          console.log("Received message:", event.data);
           window.removeEventListener("message", handleMessage);
-          if (event.data === receivedMessageFromOrigin) {
-            resolve(resolveMessages.success);
+          if (
+            typeof receivedMessageFromOrigin === "function"
+              ? receivedMessageFromOrigin(event.data)
+              : receivedMessageFromOrigin === event.data
+          ) {
+            resolve(resolveMessages.success(event.data as MessageType));
           } else {
             reject(new Error(resolveMessages.failure));
           }
@@ -307,7 +376,10 @@ export class Connect {
       };
       const url = this.createUrl(odinPath);
       for (const key in params) {
-        url.searchParams.append(key, params[key]);
+        // exclude undefined params
+        if (params[key]) {
+          url.searchParams.append(key, params[key]);
+        }
       }
       this.openWindow(url);
       window.addEventListener("message", handleMessage);

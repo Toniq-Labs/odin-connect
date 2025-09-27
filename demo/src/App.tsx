@@ -9,6 +9,7 @@ import { AddLiquidity } from "./features/AddLiquidity";
 import { RemoveLiquidity } from "./features/RemoveLiquidity";
 import { Swap } from "./features/Swap";
 import { Api } from "./features/Api";
+import { CreateToken } from "./features/CreateToken";
 
 function App() {
   return (
@@ -47,8 +48,11 @@ function App() {
           <Swap />
         </section>
         <section>
+          <h1>Create Token</h1>
+          <CreateToken />
+        </section>
+        <section>
           <h1>Api</h1>
-          <small>Open console to see response</small>
           <Api />
         </section>
       </div>
