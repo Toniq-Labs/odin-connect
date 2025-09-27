@@ -127,6 +127,7 @@ export function CreateToken() {
               discount,
             });
             setResult(`Token created successfully!`);
+            setLoading(false);
           } catch (error) {
             setLoading(false);
             if (error instanceof Error) {

@@ -63,6 +63,9 @@ function validateName(name: TokenValue): string | undefined {
 }
 
 function validateDescription(description: TokenValue): string | undefined {
+  if (!description) {
+    return;
+  }
   if (typeof description !== "string") {
     return "Description must be a string.";
   }
