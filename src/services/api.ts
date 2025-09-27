@@ -77,23 +77,37 @@ export class OdinApi {
     if (!this._apiKey) {
       throw new Error("API key is not set");
     }
-    const errors = createTokenValidators.image?.(image);
-    if (errors) {
-      throw new Error(errors);
+    try {
+      const errors = createTokenValidators.image?.(image);
+      if (errors) {
+        throw new Error(errors);
+      }
+      const formData = new FormData();
+      formData.append("file", image);
+      const result = await this._httpClient.post<
+        { data: { upload: string } },
+        FormData
+      >(`${this.BASE_URL}/upload`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${this._apiKey}`,
+        },
+      });
+      return result.data.upload;
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.name === "AxiosError") {
+          const axiosError = error as AxiosError<{ message: string }>;
+          throw new Error(
+            axiosError.response?.data?.message || axiosError.message
+          );
+        } else {
+          throw new Error(error.message);
+        }
+      } else {
+        throw new Error("Image upload failed");
+      }
     }
-    const formData = new FormData();
-    formData.append("file", image);
-    const result = await this._httpClient.post<
-      { data: { upload: string } },
-      FormData
-    >(`${this.BASE_URL}/upload`, formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-        Authorization: `Bearer ${this._apiKey}`,
-      },
-    });
-
-    return result.data.upload;
   }
 
   updateTokenImage(tokenId: string, image: File) {
