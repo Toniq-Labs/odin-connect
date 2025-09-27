@@ -30,6 +30,7 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "@apimatic/json-bigint": "^1.2.0",
     "axios": "^1.12.0"
   },
   "release-it": {

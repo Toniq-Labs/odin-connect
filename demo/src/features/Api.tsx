@@ -6,6 +6,7 @@ import type {
   OdinTokenWithBalance,
   OdinUser,
 } from "odin-connect";
+import JSONBigInt from "@apimatic/json-bigint";
 
 export function Api() {
   const { odinConnect, user } = useOdinContext();
@@ -128,7 +129,9 @@ export function Api() {
         {loading ? (
           <div>Loading...</div>
         ) : (
-          <pre>{results ? JSON.stringify(results, null, 2) : "No results"}</pre>
+          <pre>
+            {results ? JSONBigInt.stringify(results, null, 2) : "No results"}
+          </pre>
         )}
       </div>
     </div>

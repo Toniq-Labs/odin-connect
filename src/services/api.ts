@@ -5,6 +5,7 @@ import { Token, TokenWithBalance } from "../models/token";
 import { User } from "../models/user";
 import { HttpClient } from "./http";
 import { createTokenValidators } from "../utils";
+import JSONBigInt from "@apimatic/json-bigint";
 
 const BASE_URL_ENV = {
   dev: "https://api.odin.fun/dev",
@@ -148,26 +149,45 @@ export class OdinApi {
     );
   }
 
-  getUserTokens(principal: string, pagination: Pagination) {
-    return this._httpClient.get<PaginatedResponse<TokenWithBalance>>(
-      `${this.BASE_URL}/user/${principal}/tokens`,
-      {
-        params: {
-          ...pagination,
-        },
-      }
-    );
+  async getUserTokens(principal: string, pagination: Pagination) {
+    const response = await this._httpClient.get<
+      PaginatedResponse<{
+        balance: bigint;
+        token: Token;
+        unrealized_pnl: number;
+        unrealized_pnl_percent: number;
+      }>
+    >(`${this.BASE_URL}/user/${principal}/tokens`, {
+      params: {
+        ...pagination,
+      },
+    });
+
+    return {
+      ...response,
+      data: response.data.map((item) => ({
+        ...item,
+        balance: BigInt(item.balance), // Cast balance to BigInt always
+      })),
+    };
   }
 
-  getUserLiquidity(principal: string, pagination: Pagination) {
-    return this._httpClient.get<PaginatedResponse<TokenWithBalance>>(
-      `${this.BASE_URL}/user/${principal}/liquidity`,
-      {
-        params: {
-          ...pagination,
-        },
-      }
-    );
+  async getUserLiquidity(principal: string, pagination: Pagination) {
+    const response = await this._httpClient.get<
+      PaginatedResponse<TokenWithBalance>
+    >(`${this.BASE_URL}/user/${principal}/liquidity`, {
+      params: {
+        ...pagination,
+      },
+    });
+
+    return {
+      ...response,
+      data: response.data.map((item) => ({
+        ...item,
+        balance: BigInt(item.balance), // Cast balance to BigInt always
+      })),
+    };
   }
 
   set apiKey(key: string) {
