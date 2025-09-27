@@ -3,7 +3,7 @@ import { useOdinContext } from "../OdinContext";
 import type { OdinActivity, OdinToken, OdinUser } from "odin-connect";
 
 export function Api() {
-  const { odinConnect } = useOdinContext();
+  const { odinConnect, user } = useOdinContext();
   const [results, setResults] = useState<
     OdinToken | OdinUser | ReadonlyArray<OdinActivity> | null
   >(null);
@@ -32,11 +32,12 @@ export function Api() {
     }
     try {
       setLoading(true);
-      const user = await odinConnect.getUser(
-        "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe"
+      const data = await odinConnect.getUser(
+        user?.principal ||
+          "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe"
       );
-      console.log("Fetched user:", user);
-      setResults(user);
+      console.log("Fetched user:", data);
+      setResults(data);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching user:", error);
@@ -52,6 +53,7 @@ export function Api() {
       setLoading(true);
       const activity = await odinConnect.getUserActivity({
         principal:
+          user?.principal ||
           "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
         pagination: { page: 1, limit: 2 },
       });
