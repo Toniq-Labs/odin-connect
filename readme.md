@@ -1,10 +1,12 @@
 # OdinConnect
 
-### Demo
+## Demo
 
-This repository includes a demo. See `demo/` folder.
+This repository includes a demo. See `demo/` folder
 
 To run it, simply do `npm run demo`
+
+## Examples
 
 ### Initializing new instance
 
