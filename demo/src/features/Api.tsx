@@ -1,13 +1,18 @@
 import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
-import type { OdinActivity, OdinToken, OdinUser } from "odin-connect";
+import type {
+  OdinActivity,
+  OdinToken,
+  OdinTokenWithBalance,
+  OdinUser,
+} from "odin-connect";
 
 export function Api() {
   const { odinConnect, user } = useOdinContext();
   const [results, setResults] = useState<
     | OdinToken
     | OdinUser
-    | ReadonlyArray<OdinActivity | { balance: bigint; token: OdinToken }>
+    | ReadonlyArray<OdinActivity | OdinTokenWithBalance>
     | null
   >(null);
   const [loading, setLoading] = useState(false);

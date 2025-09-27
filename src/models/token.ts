@@ -52,3 +52,8 @@ export interface Token extends BaseToken {
   price_6h: number | null;
   price_1d: number | null;
 }
+
+export interface TokenWithBalance {
+  token: Token;
+  balance: bigint;
+}

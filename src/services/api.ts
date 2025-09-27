@@ -1,7 +1,7 @@
 import { AxiosError } from "axios";
 import { Activity } from "../models/activity";
 import { Balance } from "../models/balance";
-import { Token } from "../models/token";
+import { Token, TokenWithBalance } from "../models/token";
 import { User } from "../models/user";
 import { HttpClient } from "./http";
 import { createTokenValidators } from "../utils";
@@ -149,23 +149,25 @@ export class OdinApi {
   }
 
   getUserTokens(principal: string, pagination: Pagination) {
-    return this._httpClient.get<
-      PaginatedResponse<{ balance: bigint; token: Token }>
-    >(`${this.BASE_URL}/user/${principal}/tokens`, {
-      params: {
-        ...pagination,
-      },
-    });
+    return this._httpClient.get<PaginatedResponse<TokenWithBalance>>(
+      `${this.BASE_URL}/user/${principal}/tokens`,
+      {
+        params: {
+          ...pagination,
+        },
+      }
+    );
   }
 
   getUserLiquidity(principal: string, pagination: Pagination) {
-    return this._httpClient.get<
-      PaginatedResponse<{ balance: bigint; token: Token }>
-    >(`${this.BASE_URL}/user/${principal}/liquidity`, {
-      params: {
-        ...pagination,
-      },
-    });
+    return this._httpClient.get<PaginatedResponse<TokenWithBalance>>(
+      `${this.BASE_URL}/user/${principal}/liquidity`,
+      {
+        params: {
+          ...pagination,
+        },
+      }
+    );
   }
 
   set apiKey(key: string) {
