@@ -115,6 +115,7 @@ export class Connect {
     if (this._appInfo?.name) {
       url.searchParams.append("app_name", this._appInfo.name);
     }
+    url.searchParams.append("referrer", window.location.origin);
     return url;
   }
 
