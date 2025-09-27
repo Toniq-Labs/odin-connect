@@ -88,6 +88,7 @@ interface CreateTokenParams {
   website?: string;
   twitter?: string;
   telegram?: string;
+  buy?: bigint;
 }
 
 export class Connect {
@@ -310,6 +311,7 @@ export class Connect {
       params: {
         ...params,
         image: imageUrl,
+        buy: params.buy?.toString(),
       },
       odinPath: "authorize/create_token",
       receivedMessageFromOrigin: "tokenCreated",

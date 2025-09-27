@@ -36,7 +36,7 @@ export function convertToOdinAmount(
   return result;
 }
 
-type TokenValue = string | File | null;
+type TokenValue = string | File | null | bigint;
 
 export const createTokenValidators: Partial<
   Record<keyof Token, (value: TokenValue) => string | undefined>
@@ -51,7 +51,7 @@ export const createTokenValidators: Partial<
 };
 
 function validateName(name: TokenValue): string | undefined {
-  if (name && typeof name === "object") {
+  if (typeof name !== "string") {
     return "Name must be a string.";
   }
   if (!name || name.trim() === "") {
@@ -63,7 +63,7 @@ function validateName(name: TokenValue): string | undefined {
 }
 
 function validateDescription(description: TokenValue): string | undefined {
-  if (typeof description === "object") {
+  if (typeof description !== "string") {
     return "Description must be a string.";
   }
   if (description && description.length > 100) {
@@ -72,7 +72,7 @@ function validateDescription(description: TokenValue): string | undefined {
 }
 
 function validateTicker(ticker: TokenValue): string | undefined {
-  if (typeof ticker === "object") {
+  if (typeof ticker !== "string") {
     return "Ticker must be a string.";
   }
   if (!ticker || ticker.trim() === "") {
@@ -90,7 +90,7 @@ function validateTicker(ticker: TokenValue): string | undefined {
 }
 
 function validateImage(file: TokenValue): string | undefined {
-  if (typeof file === "string") {
+  if (!(file instanceof File)) {
     return "Image must be a file.";
   }
   const allowedFileTypes = [
@@ -119,7 +119,11 @@ function validateImage(file: TokenValue): string | undefined {
 }
 
 function validateTwitter(value: TokenValue): string | undefined {
-  if (value && typeof value === "object") {
+  // it's optional
+  if (!value) {
+    return;
+  }
+  if (typeof value !== "string") {
     return "Twitter handle must be a string.";
   }
   if (
@@ -133,7 +137,10 @@ function validateTwitter(value: TokenValue): string | undefined {
 }
 
 function validateWebsite(value: TokenValue): string | undefined {
-  if (value && typeof value === "object") {
+  if (!value) {
+    return;
+  }
+  if (typeof value !== "string") {
     return "Website must be a string.";
   }
   if (
@@ -145,7 +152,10 @@ function validateWebsite(value: TokenValue): string | undefined {
 }
 
 function validateTelegram(value: TokenValue): string | undefined {
-  if (value && typeof value === "object") {
+  if (!value) {
+    return;
+  }
+  if (typeof value !== "string") {
     return "Telegram must be a string.";
   }
   if (

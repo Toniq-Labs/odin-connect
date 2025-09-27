@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
+import { OdinUtils } from "odin-connect";
 const randomInt = Math.floor(Math.random() * 1000);
 
 export function CreateToken() {
@@ -13,6 +14,7 @@ export function CreateToken() {
   const [website, setWebsite] = useState("");
   const [telegram, setTelegram] = useState("");
   const [twitter, setTwitter] = useState("");
+  const [preBuy, setPreBuy] = useState("");
 
   return (
     <div className="trade-form">
@@ -76,6 +78,14 @@ export function CreateToken() {
           onChange={(e) => setTwitter(e.target.value)}
         />
       </div>
+      <div className="form-group">
+        <label>Pre-buy (BTC):</label>
+        <input
+          type="text"
+          value={preBuy}
+          onChange={(e) => setPreBuy(e.target.value)}
+        />
+      </div>
       <button
         onClick={async () => {
           try {
@@ -93,6 +103,8 @@ export function CreateToken() {
               throw new Error("No image selected");
             }
 
+            const buyAmount = OdinUtils.convertToOdinAmount(preBuy || "0");
+
             const url = await odinConnect.createToken({
               image,
               principal: user.principal,
@@ -102,6 +114,7 @@ export function CreateToken() {
               website,
               telegram,
               twitter,
+              buy: buyAmount,
             });
             setResult(`Image uploaded successfully: ${url}`);
           } catch (error) {
