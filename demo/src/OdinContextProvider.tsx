@@ -9,7 +9,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     // Initialize OdinConnect with your app name and target environment
-    const odin = new OdinConnect({ name: "Demo", env: "local" });
+    const odin = new OdinConnect({ name: "Demo", env: "_deployment_preview" });
     setOdinConnect(odin);
   }, []);
 

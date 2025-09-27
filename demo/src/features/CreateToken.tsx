@@ -46,7 +46,6 @@ export function CreateToken() {
           onChange={(e) => setTicker(e.target.value)}
         />
       </div>
-
       <div className="form-group">
         <label>Description:</label>
         <textarea
