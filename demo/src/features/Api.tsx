@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import type {
+  OdinAchievementCategory,
   OdinActivity,
   OdinToken,
   OdinTokenWithBalance,
@@ -13,7 +14,9 @@ export function Api() {
   const [results, setResults] = useState<
     | OdinToken
     | OdinUser
-    | ReadonlyArray<OdinActivity | OdinTokenWithBalance>
+    | ReadonlyArray<
+        OdinActivity | OdinTokenWithBalance | OdinAchievementCategory
+      >
     | null
   >(null);
   const [loading, setLoading] = useState(false);
@@ -114,6 +117,26 @@ export function Api() {
     }
   };
 
+  const handleGetUserAchievements = async () => {
+    if (!odinConnect) {
+      console.error("OdinConnect is not initialized");
+      return;
+    }
+    try {
+      setLoading(true);
+      const achievements = await odinConnect.apiClient.getUserAchievements(
+        user?.principal ||
+          "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
+        { page: 1, limit: 10 }
+      );
+      console.log("Fetched user achievements:", achievements);
+      setResults(achievements);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error fetching user achievements:", error);
+    }
+  };
+
   return (
     <div>
       <div className="demo-buttons">
@@ -124,6 +147,9 @@ export function Api() {
       <div className="demo-buttons">
         <button onClick={handleGetUserLiquidity}>Get User Liquidity</button>
         <button onClick={handleGetUserTokens}>Get User Tokens</button>
+        <button onClick={handleGetUserAchievements}>
+          Get User Achievements
+        </button>
       </div>
       <div className="object-result">
         {loading ? (

@@ -5,7 +5,7 @@ import { Token, TokenWithBalance } from "../models/token";
 import { User } from "../models/user";
 import { HttpClient } from "./http";
 import { createTokenValidators } from "../utils";
-import JSONBigInt from "@apimatic/json-bigint";
+import { AchievementCategory } from "../models/achievement";
 
 const BASE_URL_ENV = {
   dev: "https://api.odin.fun/dev",
@@ -154,8 +154,8 @@ export class OdinApi {
       PaginatedResponse<{
         balance: bigint;
         token: Token;
-        unrealized_pnl: number;
-        unrealized_pnl_percent: number;
+        unrealized_pnl?: number;
+        unrealized_pnl_percent?: number;
       }>
     >(`${this.BASE_URL}/user/${principal}/tokens`, {
       params: {
@@ -188,6 +188,17 @@ export class OdinApi {
         balance: BigInt(item.balance), // Cast balance to BigInt always
       })),
     };
+  }
+
+  async getUserAchievements(principal: string, pagination: Pagination) {
+    const response = await this._httpClient.get<
+      PaginatedResponse<AchievementCategory>
+    >(`${this.BASE_URL}/user/${principal}/achievements`, {
+      params: {
+        ...pagination,
+      },
+    });
+    return response.data;
   }
 
   set apiKey(key: string) {
