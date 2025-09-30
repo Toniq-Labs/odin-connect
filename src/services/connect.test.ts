@@ -144,4 +144,26 @@ describe("Connect", () => {
     expect(params.get("amount")).toBe("32000");
     expect(params.get("principal")).toBe("test-principal");
   });
+
+  it("should open the transfer authorization window", () => {
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    connect.transfer({
+      token: "2jjj",
+      amount: 45000n,
+      destination: "to-principal",
+      principal: "from-principal",
+    });
+    expect(openSpy).toHaveBeenCalled();
+    const url = openSpy.mock.calls[0][0] as URL;
+    expect(url).toBeInstanceOf(URL);
+    expect(url?.toString()).toContain(
+      "http://localhost:5173/authorize/transfer?"
+    );
+    const params = new URLSearchParams(url?.search);
+    expect(params.get("app_name")).toBe("TestApp");
+    expect(params.get("token")).toBe("2jjj");
+    expect(params.get("amount")).toBe("45000");
+    expect(params.get("destination")).toBe("to-principal");
+    expect(params.get("principal")).toBe("from-principal");
+  });
 });
