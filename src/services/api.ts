@@ -1,10 +1,11 @@
 import { AxiosError } from "axios";
 import { Activity } from "../models/activity";
 import { Balance } from "../models/balance";
-import { Token } from "../models/token";
+import { Token, TokenWithBalance } from "../models/token";
 import { User } from "../models/user";
 import { HttpClient } from "./http";
 import { createTokenValidators } from "../utils";
+import { AchievementCategory } from "../models/achievement";
 
 const BASE_URL_ENV = {
   dev: "https://api.odin.fun/dev",
@@ -141,14 +142,63 @@ export class OdinApi {
     return this._httpClient.get<PaginatedResponse<Activity>>(
       `${this.BASE_URL}/user/${principal}/activity`,
       {
-        headers: {
-          Authorization: this.apiKey ? `Bearer ${this.apiKey}` : "",
-        },
         params: {
           ...pagination,
         },
       }
     );
+  }
+
+  async getUserTokens(principal: string, pagination: Pagination) {
+    const response = await this._httpClient.get<
+      PaginatedResponse<{
+        balance: bigint;
+        token: Token;
+        unrealized_pnl?: number;
+        unrealized_pnl_percent?: number;
+      }>
+    >(`${this.BASE_URL}/user/${principal}/tokens`, {
+      params: {
+        ...pagination,
+      },
+    });
+
+    return {
+      ...response,
+      data: response.data.map((item) => ({
+        ...item,
+        balance: BigInt(item.balance), // Cast balance to BigInt always
+      })),
+    };
+  }
+
+  async getUserLiquidity(principal: string, pagination: Pagination) {
+    const response = await this._httpClient.get<
+      PaginatedResponse<TokenWithBalance>
+    >(`${this.BASE_URL}/user/${principal}/liquidity`, {
+      params: {
+        ...pagination,
+      },
+    });
+
+    return {
+      ...response,
+      data: response.data.map((item) => ({
+        ...item,
+        balance: BigInt(item.balance), // Cast balance to BigInt always
+      })),
+    };
+  }
+
+  async getUserAchievements(principal: string, pagination: Pagination) {
+    const response = await this._httpClient.get<
+      PaginatedResponse<AchievementCategory>
+    >(`${this.BASE_URL}/user/${principal}/achievements`, {
+      params: {
+        ...pagination,
+      },
+    });
+    return response.data;
   }
 
   set apiKey(key: string) {

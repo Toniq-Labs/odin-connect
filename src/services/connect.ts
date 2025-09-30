@@ -193,6 +193,11 @@ export class Connect {
     return this._api.getUserActivity(principal, pagination);
   }
 
+  // exposes the api client, not sure if this is a good idea
+  get apiClient() {
+    return this._api;
+  }
+
   sell({ token, tokenAmount, principal }: SellOptions) {
     return this.baseAction<boolean, string>({
       params: {
