@@ -51,7 +51,6 @@ describe("Connect", () => {
 
     connectPromise.then(
       (res) => {
-        console.log("Result:", res);
         expect(res).toBeDefined();
         expect(res.username).toBe("username");
         expect(res.principal).toBe("user-principal");
@@ -84,7 +83,6 @@ describe("Connect", () => {
 
     connectPromise.then(
       (res) => {
-        console.log("Result with API:", res);
         expect(res).toBeDefined();
         expect(res.username).toBe("username");
         expect(res.principal).toBe("user-principal");
@@ -110,14 +108,17 @@ describe("Connect", () => {
   });
 
   it("should handle rejected connection", () => {
-    const connectPromise = connect.connect({ requires_api: false})
-    connectPromise.then(() => expect(false).toBe(true), (e)=> {
-      expect(e).toBeInstanceOf(Error)
-      expect(e.message).toContain('rejected')
-    })
+    const connectPromise = connect.connect({ requires_api: false });
+    connectPromise.then(
+      () => expect(false).toBe(true),
+      (e) => {
+        expect(e).toBeInstanceOf(Error);
+        expect(e.message).toContain("rejected");
+      }
+    );
 
-    simulateRejectMessage('authorize/connect')
-  })
+    simulateRejectMessage("authorize/connect");
+  });
 
   it("should open the buy authorization window", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
