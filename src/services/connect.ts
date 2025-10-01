@@ -149,13 +149,13 @@ export class Connect {
                 string,
                 string
               ];
-              // we need to fetch user data from the api to get the full user object
-              const user = await this._api.getUser(userId);
               if (requires_api) {
                 // issue a api key
                 // only using JWT for now, it will change in the real implementation
                 this._api.apiKey = jwtToken;
               }
+              // we need to fetch user data from the api to get the full user object
+              const user = await this._api.getUser(userId);
               resolve(user);
             } catch (error) {
               reject(new Error("Failed to fetch user data"));

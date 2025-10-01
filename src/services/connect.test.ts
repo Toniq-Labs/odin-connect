@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { Connect } from "./connect";
 import { Token } from "../models/token";
+import { User } from "../models/user";
 
 const mockTokens = [
   {
@@ -14,6 +15,11 @@ describe("Connect", () => {
 
   beforeAll(() => {
     connect = new Connect({ name: "TestApp", env: "local" });
+
+    connect["_api"].getUser = vi.fn().mockResolvedValue({
+      principal: "user-principal",
+      username: "username",
+    });
   });
 
   it("should initialize Connect instance", () => {
@@ -40,13 +46,21 @@ describe("Connect", () => {
 
   it("should open the connect window", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const getUserSpy = vi.spyOn(connect["_api"], "getUser");
+    const connectPromise = connect.connect({ requires_api: false });
 
-    // test both requires_api true and false
-    const result = connect.connect({ requires_api: false });
-
-    result.catch((e) => {
-      expect(e).toBeInstanceOf(Error);
-    });
+    connectPromise.then(
+      (res) => {
+        console.log("Result:", res);
+        expect(res).toBeDefined();
+        expect(res.username).toBe("username");
+        expect(res.principal).toBe("user-principal");
+        expect(connect.apiClient.apiKey).toBeNull();
+      },
+      (e) => {
+        expect(true).toBe(false);
+      }
+    );
 
     const url = openSpy.mock.calls[0][0] as URL;
 
@@ -58,7 +72,52 @@ describe("Connect", () => {
     expect(params.get("app_name")).toBe("TestApp");
     expect(params.get("referrer")).toBeDefined();
     expect(params.get("requires_api")).toBe("0");
+
+    simulateMessage("authorize/connect", "user-principal");
+
+    expect(getUserSpy).toHaveBeenCalledWith("user-principal");
   });
+
+  it("should open connect window with API requirement", () => {
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const connectPromise = connect.connect({ requires_api: true });
+
+    connectPromise.then(
+      (res) => {
+        console.log("Result with API:", res);
+        expect(res).toBeDefined();
+        expect(res.username).toBe("username");
+        expect(res.principal).toBe("user-principal");
+        expect(connect.apiClient.apiKey).toBe("test-jwt");
+      },
+      () => {
+        expect(true).toBe(false);
+      }
+    );
+
+    const url = openSpy.mock.calls[0][0] as URL;
+
+    expect(url).toBeInstanceOf(URL);
+    expect(url?.toString()).toContain(
+      "http://localhost:5173/authorize/connect?"
+    );
+    const params = new URLSearchParams(url?.search);
+    expect(params.get("app_name")).toBe("TestApp");
+    expect(params.get("referrer")).toBeDefined();
+    expect(params.get("requires_api")).toBe("1");
+
+    simulateMessage("authorize/connect", "user-principal::test-jwt");
+  });
+
+  it("should handle rejected connection", () => {
+    const connectPromise = connect.connect({ requires_api: false})
+    connectPromise.then(() => expect(false).toBe(true), (e)=> {
+      expect(e).toBeInstanceOf(Error)
+      expect(e.message).toContain('rejected')
+    })
+
+    simulateRejectMessage('authorize/connect')
+  })
 
   it("should open the buy authorization window", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
@@ -287,23 +346,24 @@ describe("Connect", () => {
 
   it("should create a base action", async () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
-    const action = connect["baseAction"]({
-      params: { test: "param" },
-      odinPath: "authorize/test_action",
-      receivedMessageFromOrigin(message) {
-        return message !== "rejected";
-      },
-      resolve: {
-        success: (message) => {
-          return message + " extra";
+    const action = () =>
+      connect["baseAction"]({
+        params: { test: "param" },
+        odinPath: "authorize/test_action",
+        receivedMessageFromOrigin(message) {
+          return message === "OK";
         },
-        failure: "rejected",
-        close: "rejected",
-      },
-    });
+        resolve: {
+          success: (message) => {
+            return message + "!";
+          },
+          failure: "test failed",
+          close: "rejected",
+        },
+      });
 
-    action.then((res) => {
-      expect(res).toBe("success extra");
+    action().then((res) => {
+      expect(res).toBe("OK!");
     });
 
     expect(openSpy).toHaveBeenCalled();
@@ -316,7 +376,17 @@ describe("Connect", () => {
     expect(params.get("app_name")).toBe("TestApp");
     expect(params.get("test")).toBe("param");
 
-    simulateMessage("authorize/test_action", "success");
+    simulateMessage("authorize/test_action", "OK");
+
+    action().then(
+      () => expect(true).toBe(false),
+      (e) => {
+        expect(e).toBeInstanceOf(Error);
+        expect(e.message).toBe("test failed");
+      }
+    );
+
+    simulateRejectMessage("authorize/test_action");
   });
 });
 
