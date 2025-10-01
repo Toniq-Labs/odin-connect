@@ -1,7 +1,17 @@
-import axios, { AxiosRequestConfig } from "axios";
+import axios, { AxiosRequestConfig, AxiosResponseTransformer } from "axios";
 import JSONBigInt from "@apimatic/json-bigint";
 
+export const bigIntTransformer =
+    (data:string) => {
+      try {
+        return JSONBigInt.parse(data);
+      } catch (e) {
+        console.error("Error parsing response:", e);
+        return data;
+      }
+    }
 export class HttpClient {
+
   async get<ResponseType>(url: string, options?: AxiosRequestConfig) {
     return this.fetch<ResponseType>(url, { method: "GET", ...options });
   }
@@ -10,16 +20,7 @@ export class HttpClient {
     // for any custom headers or other axios options in the future
     // should we add Auth bearer token here if available?
     const overrides: AxiosRequestConfig = {
-      transformResponse: [
-        (data) => {
-          try {
-            return JSONBigInt.parse(data);
-          } catch (e) {
-            console.error("Error parsing response:", e);
-            return data;
-          }
-        },
-      ],
+      transformResponse: [bigIntTransformer],
       ...options,
     };
     const response = await axios<ResponseType>(url, overrides);

@@ -137,22 +137,25 @@ export class Connect {
         this._windowSettings = open;
       }
       const handleMessage = async (event: MessageEvent) => {
-        if (event.origin === this.origin) {
+        if (
+          event.origin === this.origin &&
+          event.data.path === "/authorize/connect"
+        ) {
           window.removeEventListener("message", handleMessage);
-          if (event.data != "rejected") {
+          if (event.data.message != "rejected") {
             // the user accepted the connection
             try {
-              const [userId, jwtToken] = event.data.split("::") as [
+              const [userId, jwtToken] = event.data.message.split("::") as [
                 string,
                 string
               ];
-              // we need to fetch user data from the api to get the full user object
-              const user = await this._api.getUser(userId);
               if (requires_api) {
                 // issue a api key
                 // only using JWT for now, it will change in the real implementation
                 this._api.apiKey = jwtToken;
               }
+              // we need to fetch user data from the api to get the full user object
+              const user = await this._api.getUser(userId);
               resolve(user);
             } catch (error) {
               reject(new Error("Failed to fetch user data"));
@@ -365,15 +368,17 @@ export class Connect {
   }) {
     return new Promise<ResolveType>((resolve, reject) => {
       const handleMessage = async (event: MessageEvent) => {
-        if (event.origin === this.origin) {
-          console.log("Received message:", event.data);
+        if (
+          event.origin === this.origin &&
+          event.data.path === "/" + odinPath
+        ) {
           window.removeEventListener("message", handleMessage);
           if (
             typeof receivedMessageFromOrigin === "function"
-              ? receivedMessageFromOrigin(event.data)
-              : receivedMessageFromOrigin === event.data
+              ? receivedMessageFromOrigin(event.data.message)
+              : receivedMessageFromOrigin === event.data.message
           ) {
-            resolve(resolveMessages.success(event.data as MessageType));
+            resolve(resolveMessages.success(event.data.message as MessageType));
           } else {
             reject(new Error(resolveMessages.failure));
           }

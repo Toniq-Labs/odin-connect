@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",
+    "test": "vitest",
     "demo:update": "npm run build && cd demo && npm install ../ && cd ..",
     "demo:start": "cd demo && npm run dev",
     "demo": "npm run demo:update && npm run demo:start",
@@ -26,8 +27,11 @@
   "homepage": "https://github.com/Toniq-Labs/odin-connect#readme",
   "devDependencies": {
     "@types/node": "^24.3.1",
+    "@vitest/ui": "^3.2.4",
+    "jsdom": "^27.0.0",
     "release-it": "^19.0.5",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@apimatic/json-bigint": "^1.2.0",
