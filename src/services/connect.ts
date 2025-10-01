@@ -372,7 +372,6 @@ export class Connect {
           event.origin === this.origin &&
           event.data.path === "/" + odinPath
         ) {
-          console.log("Received message:", event.data);
           window.removeEventListener("message", handleMessage);
           if (
             typeof receivedMessageFromOrigin === "function"
