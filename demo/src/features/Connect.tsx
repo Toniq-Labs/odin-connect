@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "../App.css";
 import { useOdinContext } from "../OdinContext";
 import { UserInfo } from "../ui/UserInfo";
-import { Ed25519KeyIdentity } from "@dfinity/identity";
+import { DelegationChain, DelegationIdentity, Ed25519KeyIdentity } from "@dfinity/identity";
+import { HttpAgent } from "@dfinity/agent";
 
 const centeredWindowFeatures = (width: number, height: number) => {
   const left = (screen.width - width) / 2;
@@ -12,9 +13,16 @@ const centeredWindowFeatures = (width: number, height: number) => {
 
 function Connect() {
   const [error, setError] = useState<string | null>(null);
+  const [session, setSession] = useState<Ed25519KeyIdentity | null>(null);
+  const [delegationChain, setDelegationChain] = useState<DelegationChain| null>(null);
   const [requireApi, setRequireApi] = useState(false);
   const [requireDelegation, setRequireDelegation] = useState(false);
   const { user, odinConnect, setUser } = useOdinContext();
+
+  useEffect(() => {
+    const session = Ed25519KeyIdentity.generate();
+    setSession(session);
+  }, []);
 
   const openOdinConnect = async (mode: "window" | "tab" = "tab") => {
     setError(null);
@@ -23,7 +31,9 @@ function Connect() {
         throw new Error("OdinConnect is not initialized");
       }
 
-      const session = Ed25519KeyIdentity.generate();
+      if (!session) {
+        throw new Error("Session identity is not initialized");
+      }
       const baseOptions = {
         open: {
           target: "_blank",
@@ -42,8 +52,10 @@ function Connect() {
           }
         : baseOptions;
 
-      const { user } = await odinConnect.connect(connectOptions);
+      const { user, delegationChain: receivedDelegationChain } = await odinConnect.connect(connectOptions);
       console.log("Received user:", user);
+      console.log("Received delegation chain:", receivedDelegationChain);
+      setDelegationChain(receivedDelegationChain || null);
       setUser(user);
     } catch (error) {
       console.error("Connection error:", error);
@@ -67,9 +79,20 @@ function Connect() {
     openOdinConnect("tab");
   };
 
+  const handleTestAgent = () => {
+    if (!session || !delegationChain) {
+      console.error("Session or delegation chain is not available");
+      return;
+    }
+    const delegated = DelegationIdentity.fromDelegation(session, delegationChain);
+    const agent = HttpAgent.createSync({ identity: delegated, host: "https://icp0.io" });
+    console.log("Created agent:", agent);
+  };
+
   return user ? (
     <div>
       <UserInfo user={user} />
+      <button onClick={handleTestAgent}>Test Agent</button>
     </div>
   ) : (
     <div>
