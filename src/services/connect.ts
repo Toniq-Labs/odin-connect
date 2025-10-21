@@ -4,8 +4,8 @@ import { createTokenValidators } from "../utils";
 import {
   DelegationChain,
   Ed25519KeyIdentity,
-  Ed25519PublicKey,
 } from "@dfinity/identity";
+import type { DerEncodedPublicKey } from "@dfinity/agent"
 
 const ORIGINS = {
   local: "http://localhost:5173",
@@ -35,7 +35,7 @@ interface ConnectOptionsWithDelegation extends BaseConnectOptions {
   requires_delegation: true;
   targets: string[];
   session_key: Ed25519KeyIdentity;
-  public_key: Ed25519PublicKey;
+  public_key: DerEncodedPublicKey;
 }
 
 interface ConnectOptionsWithoutDelegation extends BaseConnectOptions {
@@ -185,7 +185,7 @@ export class Connect {
                 delegationChain?: DelegationChain | null;
               };
               const { principal: userId, jwt: jwtToken, delegationChain } = eventData;
-              console.log("Received delegation chain x:", delegationChain);
+            
               if (requires_api) {
                 // issue a api key
                 // only using JWT for now, it will change in the real implementation
@@ -193,7 +193,7 @@ export class Connect {
               }
               // we need to fetch user data from the api to get the full user object
               const user = await this._api.getUser(userId);
-              
+
               resolve({ user, delegationChain });
             } catch (error) {
               reject(new Error("Failed to fetch user data"));

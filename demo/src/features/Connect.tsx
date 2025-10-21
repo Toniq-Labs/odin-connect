@@ -2,7 +2,7 @@ import { useState } from "react";
 import "../App.css";
 import { useOdinContext } from "../OdinContext";
 import { UserInfo } from "../ui/UserInfo";
-import { Ed25519KeyIdentity, Ed25519PublicKey } from "@dfinity/identity";
+import { Ed25519KeyIdentity } from "@dfinity/identity";
 
 const centeredWindowFeatures = (width: number, height: number) => {
   const left = (screen.width - width) / 2;
@@ -13,6 +13,7 @@ const centeredWindowFeatures = (width: number, height: number) => {
 function Connect() {
   const [error, setError] = useState<string | null>(null);
   const [requireApi, setRequireApi] = useState(false);
+  const [requireDelegation, setRequireDelegation] = useState(false);
   const { user, odinConnect, setUser } = useOdinContext();
 
   const openOdinConnect = async (mode: "window" | "tab" = "tab") => {
@@ -23,17 +24,25 @@ function Connect() {
       }
 
       const session = Ed25519KeyIdentity.generate();
-      const { user } = await odinConnect.connect({
+      const baseOptions = {
         open: {
           target: "_blank",
           settings: mode === "window" ? centeredWindowFeatures(400, 600) : "",
         },
-        requires_api: true,
-        requires_delegation: true,
-        targets: ["w5cxm-6iaaa-aaaaj-az4jq-cai"], // Example target canister ID
-        session_key: session,
-        public_key: session.getPublicKey() as Ed25519PublicKey,
-      });
+        requires_api: requireApi,
+      };
+
+      const connectOptions: Parameters<typeof odinConnect.connect>[0] = requireDelegation
+        ? {
+            ...baseOptions,
+            requires_delegation: true,
+            session_key: session,
+            public_key: session.getPublicKey().toDer(),
+            targets: ["openid"],
+          }
+        : baseOptions;
+
+      const { user } = await odinConnect.connect(connectOptions);
       console.log("Received user:", user);
       setUser(user);
     } catch (error) {
@@ -59,15 +68,29 @@ function Connect() {
   };
 
   return user ? (
-    <UserInfo user={user} />
+    <div>
+      <UserInfo user={user} />
+    </div>
   ) : (
     <div>
-      <input
-        type="checkbox"
-        checked={requireApi}
-        onChange={() => setRequireApi(!requireApi)}
-      />{" "}
-      Require API
+      <div>
+        <label htmlFor="requireApi">Require API</label>
+        <input
+          id="requireApi"
+          type="checkbox"
+          checked={requireApi}
+          onChange={() => setRequireApi(!requireApi)}
+        />
+      </div>
+      <div>
+        <label htmlFor="requireDelegation">Require Delegation</label>
+        <input
+          id="requireDelegation"
+          type="checkbox"
+          checked={requireDelegation}
+          onChange={() => setRequireDelegation(!requireDelegation)}
+        />
+      </div>
       {error && <div className="result">{error}</div>}
       <div className="demo-buttons">
         <button onClick={handleConnectWindow}>Connect Popup</button>
