@@ -52,8 +52,8 @@ describe("Connect", () => {
     connectPromise.then(
       (res) => {
         expect(res).toBeDefined();
-        expect(res.username).toBe("username");
-        expect(res.principal).toBe("user-principal");
+        expect(res.user.username).toBe("username");
+        expect(res.user.principal).toBe("user-principal");
         expect(connect.apiClient.apiKey).toBeNull();
       },
       (e) => {
@@ -84,8 +84,8 @@ describe("Connect", () => {
     connectPromise.then(
       (res) => {
         expect(res).toBeDefined();
-        expect(res.username).toBe("username");
-        expect(res.principal).toBe("user-principal");
+        expect(res.user.username).toBe("username");
+        expect(res.user.principal).toBe("user-principal");
         expect(connect.apiClient.apiKey).toBe("test-jwt");
       },
       () => {
