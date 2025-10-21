@@ -23,7 +23,7 @@ function Connect() {
       }
 
       const session = Ed25519KeyIdentity.generate();
-      const user = await odinConnect.connect({
+      const { user } = await odinConnect.connect({
         open: {
           target: "_blank",
           settings: mode === "window" ? centeredWindowFeatures(400, 600) : "",
