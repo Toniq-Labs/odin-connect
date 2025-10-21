@@ -48,7 +48,9 @@ type ConnectOptions =
   | ConnectOptionsWithDelegation
   | ConnectOptionsWithoutDelegation;
 
-interface ConnectResult extends User {
+interface ConnectResult 
+{
+  user: User;
   delegationChain?: DelegationChain | null;
 }
 
@@ -192,7 +194,7 @@ export class Connect {
               // we need to fetch user data from the api to get the full user object
               const user = await this._api.getUser(userId);
               
-              resolve({ ...user, delegationChain });
+              resolve({ user, delegationChain });
             } catch (error) {
               reject(new Error("Failed to fetch user data"));
             }
