@@ -35,6 +35,7 @@
   },
   "dependencies": {
     "@apimatic/json-bigint": "^1.2.0",
+    "@dfinity/identity": "^3.3.0",
     "axios": "^1.12.0"
   },
   "release-it": {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import "../App.css";
 import { useOdinContext } from "../OdinContext";
 import { UserInfo } from "../ui/UserInfo";
+import { Ed25519KeyIdentity, Ed25519PublicKey } from "@dfinity/identity";
 
 const centeredWindowFeatures = (width: number, height: number) => {
   const left = (screen.width - width) / 2;
@@ -20,14 +21,18 @@ function Connect() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
+
+      const session = Ed25519KeyIdentity.generate();
       const user = await odinConnect.connect({
         open: {
           target: "_blank",
           settings: mode === "window" ? centeredWindowFeatures(400, 600) : "",
         },
         requires_api: true,
-        requires_delegation_identity: false,
-      
+        requires_delegation_identity: true,
+        targets: ["canister"],
+        session_key: session,
+        public_key: session.getPublicKey() as Ed25519PublicKey,
       });
       console.log("Received user:", user);
       setUser(user);

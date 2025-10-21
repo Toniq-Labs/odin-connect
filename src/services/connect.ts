@@ -1,7 +1,11 @@
-import { AxiosError } from "axios";
 import { User } from "../models/user";
 import { OdinApi, Pagination, Sort } from "./api";
 import { createTokenValidators } from "../utils";
+import {
+  DelegationChain,
+  Ed25519KeyIdentity,
+  Ed25519PublicKey,
+} from "@dfinity/identity";
 
 const ORIGINS = {
   local: "http://localhost:5173",
@@ -28,13 +32,14 @@ interface BaseConnectOptions {
 
 interface ConnectOptionsWithDelegation extends BaseConnectOptions {
   // whether to request an auth keys upon connection
-  requires_delegation_identity: true;
+  requires_delegation: true;
   targets: string[];
-  session_key: string;
+  session_key: Ed25519KeyIdentity;
+  public_key: Ed25519PublicKey;
 }
 
 interface ConnectOptionsWithoutDelegation extends BaseConnectOptions {
-  requires_delegation_identity?: false;
+  requires_delegation?: false;
   targets?: never;
   session_key?: never;
 }
@@ -42,6 +47,10 @@ interface ConnectOptionsWithoutDelegation extends BaseConnectOptions {
 type ConnectOptions =
   | ConnectOptionsWithDelegation
   | ConnectOptionsWithoutDelegation;
+
+interface ConnectResult extends User {
+  delegationChain?: string; // to type properly once delegation chain is implemented
+}
 
 interface BuyOptions {
   principal: string;
@@ -148,8 +157,14 @@ export class Connect {
     return ORIGINS[this._appInfo?.env || "prod"];
   }
 
-  connect({ open, requires_api }: ConnectOptions): Promise<User> {
-    return new Promise<User>((resolve, reject) => {
+  connect({
+    open,
+    requires_api,
+    requires_delegation,
+    session_key,
+    targets,
+  }: ConnectOptions): Promise<ConnectResult> {
+    return new Promise<ConnectResult>((resolve, reject) => {
       if (open) {
         this._windowSettings = open;
       }
@@ -162,7 +177,8 @@ export class Connect {
           if (event.data.message != "rejected") {
             // the user accepted the connection
             try {
-              const [userId, jwtToken] = event.data.message.split("::") as [
+              const [userId, jwtToken, delegationChain] = event.data.message.split("::") as [
+                string,
                 string,
                 string
               ];
@@ -173,7 +189,7 @@ export class Connect {
               }
               // we need to fetch user data from the api to get the full user object
               const user = await this._api.getUser(userId);
-              resolve(user);
+              resolve({ ...user, delegationChain });
             } catch (error) {
               reject(new Error("Failed to fetch user data"));
             }
@@ -184,6 +200,14 @@ export class Connect {
       };
       const url = this.createUrl("authorize/connect");
       url.searchParams.append("requires_api", requires_api ? "1" : "0");
+      if (requires_delegation) {
+        url.searchParams.append("requires_delegation", "1");
+        const sessionString = btoa(JSON.stringify(session_key.toJSON()));
+        url.searchParams.append("session_key", sessionString);
+        for (const target of targets) {
+          url.searchParams.append("targets", target);
+        }
+      }
       this.openWindow(url);
 
       window.addEventListener("message", handleMessage);
