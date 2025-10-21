@@ -10,6 +10,7 @@ import { RemoveLiquidity } from "./features/RemoveLiquidity";
 import { Swap } from "./features/Swap";
 import { Api } from "./features/Api";
 import { CreateToken } from "./features/CreateToken";
+import { Canister } from "./features/Canister";
 
 function App() {
   return (
@@ -18,6 +19,10 @@ function App() {
         <section>
           <h1>Connect</h1>
           <Connect />
+        </section>
+        <section>
+          <h1>Canister</h1>
+          <Canister />
         </section>
         <section>
           <h1>Balances</h1>

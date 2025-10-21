@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import "../App.css";
 import { useOdinContext } from "../OdinContext";
 import { UserInfo } from "../ui/UserInfo";
-import { DelegationChain, DelegationIdentity, Ed25519KeyIdentity } from "@dfinity/identity";
-import { HttpAgent } from "@dfinity/agent";
+import { Ed25519KeyIdentity } from "@dfinity/identity";
 
 const centeredWindowFeatures = (width: number, height: number) => {
   const left = (screen.width - width) / 2;
@@ -14,10 +13,9 @@ const centeredWindowFeatures = (width: number, height: number) => {
 function Connect() {
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<Ed25519KeyIdentity | null>(null);
-  const [delegationChain, setDelegationChain] = useState<DelegationChain| null>(null);
   const [requireApi, setRequireApi] = useState(false);
   const [requireDelegation, setRequireDelegation] = useState(false);
-  const { user, odinConnect, setUser } = useOdinContext();
+  const { user, odinConnect, setUser, setDelegationChain } = useOdinContext();
 
   useEffect(() => {
     const session = Ed25519KeyIdentity.generate();
@@ -79,20 +77,10 @@ function Connect() {
     openOdinConnect("tab");
   };
 
-  const handleTestAgent = () => {
-    if (!session || !delegationChain) {
-      console.error("Session or delegation chain is not available");
-      return;
-    }
-    const delegated = DelegationIdentity.fromDelegation(session, delegationChain);
-    const agent = HttpAgent.createSync({ identity: delegated, host: "https://icp0.io" });
-    console.log("Created agent:", agent);
-  };
 
   return user ? (
     <div>
       <UserInfo user={user} />
-      <button onClick={handleTestAgent}>Test Agent</button>
     </div>
   ) : (
     <div>
