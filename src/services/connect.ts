@@ -16,15 +16,32 @@ interface AppInitOptions {
   icon?: string;
   env?: keyof typeof ORIGINS;
 }
-interface ConnectOptions {
+interface BaseConnectOptions {
   // options for window.open
   open?: {
     target: string;
     settings: string;
   };
   // whether to request an auth keys upon connection
-  requires_api: boolean;
+  requires_api?: boolean;
 }
+
+interface ConnectOptionsWithDelegation extends BaseConnectOptions {
+  // whether to request an auth keys upon connection
+  requires_delegation_identity: true;
+  targets: string[];
+  session_key: string;
+}
+
+interface ConnectOptionsWithoutDelegation extends BaseConnectOptions {
+  requires_delegation_identity?: false;
+  targets?: never;
+  session_key?: never;
+}
+
+type ConnectOptions =
+  | ConnectOptionsWithDelegation
+  | ConnectOptionsWithoutDelegation;
 
 interface BuyOptions {
   principal: string;
@@ -131,7 +148,7 @@ export class Connect {
     return ORIGINS[this._appInfo?.env || "prod"];
   }
 
-  connect({ open, requires_api }: Partial<ConnectOptions>): Promise<User> {
+  connect({ open, requires_api }: ConnectOptions): Promise<User> {
     return new Promise<User>((resolve, reject) => {
       if (open) {
         this._windowSettings = open;

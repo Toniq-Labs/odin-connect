@@ -25,7 +25,9 @@ function Connect() {
           target: "_blank",
           settings: mode === "window" ? centeredWindowFeatures(400, 600) : "",
         },
-        requires_api: requireApi,
+        requires_api: true,
+        requires_delegation_identity: false,
+      
       });
       console.log("Received user:", user);
       setUser(user);
