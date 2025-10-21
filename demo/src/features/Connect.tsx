@@ -48,7 +48,7 @@ function Connect() {
             requires_delegation: true,
             session_key: session,
             public_key: session.getPublicKey().toDer(),
-            targets: ["openid"],
+            targets: ["w5cxm-6iaaa-aaaaj-az4jq-cai"],
           }
         : baseOptions;
 
