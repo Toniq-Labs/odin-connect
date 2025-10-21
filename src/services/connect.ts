@@ -49,7 +49,7 @@ type ConnectOptions =
   | ConnectOptionsWithoutDelegation;
 
 interface ConnectResult extends User {
-  delegationChain?: string; // to type properly once delegation chain is implemented
+  delegationChain?: DelegationChain | null;
 }
 
 interface BuyOptions {
@@ -177,11 +177,13 @@ export class Connect {
           if (event.data.message != "rejected") {
             // the user accepted the connection
             try {
-              const [userId, jwtToken, delegationChain] = event.data.message.split("::") as [
-                string,
-                string,
-                string
-              ];
+              const eventData = event.data.message as {
+                principal: string;
+                jwt: string;
+                delegationChain?: DelegationChain | null;
+              };
+              const { principal: userId, jwt: jwtToken, delegationChain } = eventData;
+              console.log("Received delegation chain x:", delegationChain);
               if (requires_api) {
                 // issue a api key
                 // only using JWT for now, it will change in the real implementation
@@ -189,6 +191,7 @@ export class Connect {
               }
               // we need to fetch user data from the api to get the full user object
               const user = await this._api.getUser(userId);
+              
               resolve({ ...user, delegationChain });
             } catch (error) {
               reject(new Error("Failed to fetch user data"));
@@ -204,9 +207,7 @@ export class Connect {
         url.searchParams.append("requires_delegation", "1");
         const sessionString = btoa(JSON.stringify(session_key.toJSON()));
         url.searchParams.append("session_key", sessionString);
-        for (const target of targets) {
-          url.searchParams.append("targets", target);
-        }
+        url.searchParams.append("targets", targets.join(","));
       }
       this.openWindow(url);
 

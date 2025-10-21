@@ -29,8 +29,8 @@ function Connect() {
           settings: mode === "window" ? centeredWindowFeatures(400, 600) : "",
         },
         requires_api: true,
-        requires_delegation_identity: true,
-        targets: ["canister"],
+        requires_delegation: true,
+        targets: ["w5cxm-6iaaa-aaaaj-az4jq-cai"], // Example target canister ID
         session_key: session,
         public_key: session.getPublicKey() as Ed25519PublicKey,
       });
