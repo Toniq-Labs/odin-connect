@@ -43,7 +43,8 @@ export function Canister() {
         return <div>No delegation chain available.</div>;
     }
     return <div>Canister Feature
-
-        <button onClick={handleTest}>Test</button>
+        <br />
+        <button onClick={handleTest}>Get Token (2jj2)</button>
+        Look at the console for results.
     </div>;
 }
