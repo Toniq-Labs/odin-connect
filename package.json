@@ -10,6 +10,7 @@
     "test": "vitest",
     "demo:update": "npm run build && cd demo && npm install ../ && cd ..",
     "demo:start": "cd demo && npm run dev",
+    "demo:build": "npm run demo:update && cd demo && npm run build",
     "demo": "npm run demo:update && npm run demo:start",
     "release": "release-it"
   },
