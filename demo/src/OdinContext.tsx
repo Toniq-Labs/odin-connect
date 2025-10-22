@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type { OdinConnect, OdinToken, OdinUser } from "odin-connect";
-import type { DelegationChain } from "@dfinity/identity";
+import type { DelegationChain, Ed25519KeyIdentity } from "@dfinity/identity";
 type OdinContextType = {
   odinConnect: OdinConnect | null;
   user: OdinUser | null;
@@ -8,6 +8,7 @@ type OdinContextType = {
   tokens: ReadonlyArray<OdinToken>;
   delegationChain: DelegationChain | null;
   setDelegationChain: (chain: DelegationChain | null) => void;
+  sessionKey: Ed25519KeyIdentity | null;
 };
 
 export const OdinContext = createContext<OdinContextType | undefined>(

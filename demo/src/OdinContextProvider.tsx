@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { OdinConnect, type OdinToken, type OdinUser } from "odin-connect";
 import { OdinContext } from "./OdinContext";
-import type { DelegationChain } from "@dfinity/identity";
+import { Ed25519KeyIdentity, type DelegationChain } from "@dfinity/identity";
 
 export const OdinProvider = ({ children }: { children: ReactNode }) => {
   const [odinConnect, setOdinConnect] = useState<OdinConnect | null>(null);
   const [user, setUser] = useState<OdinUser | null>(null);
+  const [sessionKey, setSessionKey] = useState<Ed25519KeyIdentity | null>(null);
   const [delegationChain, setDelegationChain] = useState<DelegationChain | null>(null);
   const [tokens, setTokens] = useState<ReadonlyArray<OdinToken>>([]);
 
@@ -13,6 +14,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     // Initialize OdinConnect with your app name and target environment
     const odin = new OdinConnect({ name: "Demo", env: "_deployment_preview" });
     setOdinConnect(odin);
+    setSessionKey(Ed25519KeyIdentity.generate());
   }, []);
 
   useEffect(() => {
@@ -35,7 +37,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
   }, [odinConnect]);
 
   return (
-    <OdinContext.Provider value={{ odinConnect, user, setUser, tokens, delegationChain, setDelegationChain }}>
+    <OdinContext.Provider value={{ odinConnect, user, setUser, tokens, delegationChain, setDelegationChain, sessionKey }}>
       {children}
     </OdinContext.Provider>
   );

@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import {  useState } from "react";
 import "../App.css";
 import { useOdinContext } from "../OdinContext";
 import { UserInfo } from "../ui/UserInfo";
-import { Ed25519KeyIdentity } from "@dfinity/identity";
 
 const centeredWindowFeatures = (width: number, height: number) => {
   const left = (screen.width - width) / 2;
@@ -12,15 +11,9 @@ const centeredWindowFeatures = (width: number, height: number) => {
 
 function Connect() {
   const [error, setError] = useState<string | null>(null);
-  const [session, setSession] = useState<Ed25519KeyIdentity | null>(null);
   const [requireApi, setRequireApi] = useState(false);
   const [requireDelegation, setRequireDelegation] = useState(false);
-  const { user, odinConnect, setUser, setDelegationChain } = useOdinContext();
-
-  useEffect(() => {
-    const session = Ed25519KeyIdentity.generate();
-    setSession(session);
-  }, []);
+  const { user, odinConnect, setUser, setDelegationChain, sessionKey } = useOdinContext();
 
   const openOdinConnect = async (mode: "window" | "tab" = "tab") => {
     setError(null);
@@ -29,7 +22,7 @@ function Connect() {
         throw new Error("OdinConnect is not initialized");
       }
 
-      if (!session) {
+      if (!sessionKey) {
         throw new Error("Session identity is not initialized");
       }
       const baseOptions = {
@@ -44,8 +37,8 @@ function Connect() {
         ? {
             ...baseOptions,
             requires_delegation: true,
-            session_key: session,
-            public_key: session.getPublicKey().toDer(),
+            session_key: sessionKey,
+            public_key: sessionKey.getPublicKey().toDer(),
             targets: ["w5cxm-6iaaa-aaaaj-az4jq-cai"],
           }
         : baseOptions;
