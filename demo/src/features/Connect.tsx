@@ -79,7 +79,7 @@ function Connect() {
       <UserInfo user={user} />
     </div>
   ) : (
-    <div>
+    <div className="container">
       <div>
         <label htmlFor="requireApi">Require API</label>
         <input
@@ -98,6 +98,7 @@ function Connect() {
           onChange={() => setRequireDelegation(!requireDelegation)}
         />
       </div>
+     
       {error && <div className="result">{error}</div>}
       <div className="demo-buttons">
         <button onClick={handleConnectWindow}>Connect Popup</button>

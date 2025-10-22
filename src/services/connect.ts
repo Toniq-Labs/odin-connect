@@ -184,7 +184,7 @@ export class Connect {
                 jwt: string;
                 delegationChain?: DelegationChain | null;
               };
-              const { principal: userId, jwt: jwtToken, delegationChain } = eventData;
+              const { principal, jwt: jwtToken, delegationChain } = eventData;
             
               if (requires_api) {
                 // issue a api key
@@ -192,7 +192,7 @@ export class Connect {
                 this._api.apiKey = jwtToken;
               }
               // we need to fetch user data from the api to get the full user object
-              const user = await this._api.getUser(userId);
+              const user = await this._api.getUser(principal);
 
               resolve({ user, delegationChain });
             } catch (error) {

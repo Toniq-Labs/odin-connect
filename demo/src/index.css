@@ -49,6 +49,7 @@ h2 {
 }
 
 .demo-buttons {
+  margin-top: 8px;
   display: flex;
   gap: 8px;
 }
@@ -157,6 +158,10 @@ section {
   height: 300px;
   font-size: small;
   font-family: monospace;
+}
+
+.container {
+ padding:4px
 }
 @media (prefers-color-scheme: light) {
   :root {
