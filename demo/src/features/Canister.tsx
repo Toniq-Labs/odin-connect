@@ -3,7 +3,7 @@ import { useOdinContext } from "../OdinContext";
 import { Actor, HttpAgent } from "@dfinity/agent";
 import { DelegationIdentity } from "@dfinity/identity";
 import { idlFactory, type _SERVICE } from "../canister/odin-dev";
-import { DEMO_IC_HOST } from "../constants";
+import { DEMO_CANISTER_ID, DEMO_IC_HOST } from "../constants";
 
 export function Canister() {
   const { user, delegationChain, sessionKey } = useOdinContext();
@@ -13,12 +13,17 @@ export function Canister() {
     if (!delegationChain || !sessionKey) {
       return;
     }
-    const delegated = DelegationIdentity.fromDelegation(
+    const delegatedIdentity = DelegationIdentity.fromDelegation(
       sessionKey,
       delegationChain
     );
-    const agent = new HttpAgent({
-      identity: delegated,
+    console.log({
+      delegatedIdentity,
+      sessionKey,
+      delegationChain,
+    });
+    const agent = HttpAgent.createSync({
+      identity: delegatedIdentity,
       host: DEMO_IC_HOST,
     });
     setAgent(agent);
@@ -31,7 +36,7 @@ export function Canister() {
       }
       const api = Actor.createActor<_SERVICE>(idlFactory, {
         agent,
-        canisterId: "w5cxm-6iaaa-aaaaj-az4jq-cai",
+        canisterId: DEMO_CANISTER_ID,
       });
       const token = await api.getToken("2jj2");
       console.log("Token info:", token);

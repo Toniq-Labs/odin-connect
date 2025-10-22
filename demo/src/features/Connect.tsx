@@ -14,7 +14,7 @@ function Connect() {
   const [error, setError] = useState<string | null>(null);
   const [requireApi, setRequireApi] = useState(false);
   const [requireDelegation, setRequireDelegation] = useState(false);
-  const { user, odinConnect, setUser, setDelegationChain, sessionKey } =
+  const { odinConnect, user, setUser, setDelegationChain, sessionKey } =
     useOdinContext();
 
   const openOdinConnect = async (mode: "window" | "tab" = "tab") => {
