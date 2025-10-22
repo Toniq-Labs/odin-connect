@@ -49,7 +49,7 @@ function Connect() {
       const { user, delegationChain: receivedDelegationChain } =
         await odinConnect.connect(connectOptions);
       console.log("Received user:", user);
-      console.log("Received delegation chain:", receivedDelegationChain);
+      console.log("Received delegation chain JSON:", receivedDelegationChain?.toJSON());
       setDelegationChain(receivedDelegationChain || null);
       setUser(user);
     } catch (error) {

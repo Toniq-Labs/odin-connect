@@ -4,6 +4,7 @@ import { createTokenValidators } from "../utils";
 import {
   DelegationChain,
   Ed25519KeyIdentity,
+  JsonnableDelegationChain,
 } from "@dfinity/identity";
 import type { DerEncodedPublicKey } from "@dfinity/agent"
 
@@ -182,7 +183,7 @@ export class Connect {
               const eventData = event.data.message as {
                 principal: string;
                 jwt: string;
-                delegationChain?: DelegationChain | null;
+                delegationChain?: JsonnableDelegationChain | null;
               };
               const { principal, jwt: jwtToken, delegationChain } = eventData;
             
@@ -194,7 +195,7 @@ export class Connect {
               // we need to fetch user data from the api to get the full user object
               const user = await this._api.getUser(principal);
 
-              resolve({ user, delegationChain });
+              resolve({ user, delegationChain: delegationChain ? DelegationChain.fromJSON(delegationChain) : null });
             } catch (error) {
               reject(new Error("Failed to fetch user data"));
             }
