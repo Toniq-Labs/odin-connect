@@ -1,7 +1,8 @@
-import {  useState } from "react";
+import { useState } from "react";
 import "../App.css";
 import { useOdinContext } from "../OdinContext";
 import { UserInfo } from "../ui/UserInfo";
+import { DEMO_CANISTER_ID } from "../constants";
 
 const centeredWindowFeatures = (width: number, height: number) => {
   const left = (screen.width - width) / 2;
@@ -13,7 +14,8 @@ function Connect() {
   const [error, setError] = useState<string | null>(null);
   const [requireApi, setRequireApi] = useState(false);
   const [requireDelegation, setRequireDelegation] = useState(false);
-  const { user, odinConnect, setUser, setDelegationChain, sessionKey } = useOdinContext();
+  const { user, odinConnect, setUser, setDelegationChain, sessionKey } =
+    useOdinContext();
 
   const openOdinConnect = async (mode: "window" | "tab" = "tab") => {
     setError(null);
@@ -33,17 +35,19 @@ function Connect() {
         requires_api: requireApi,
       };
 
-      const connectOptions: Parameters<typeof odinConnect.connect>[0] = requireDelegation
-        ? {
-            ...baseOptions,
-            requires_delegation: true,
-            session_key: sessionKey,
-            public_key: sessionKey.getPublicKey().toDer(),
-            targets: ["w5cxm-6iaaa-aaaaj-az4jq-cai"],
-          }
-        : baseOptions;
+      const connectOptions: Parameters<typeof odinConnect.connect>[0] =
+        requireDelegation
+          ? {
+              ...baseOptions,
+              requires_delegation: true,
+              session_key: sessionKey,
+              public_key: sessionKey.getPublicKey().toDer(),
+              targets: [DEMO_CANISTER_ID],
+            }
+          : baseOptions;
 
-      const { user, delegationChain: receivedDelegationChain } = await odinConnect.connect(connectOptions);
+      const { user, delegationChain: receivedDelegationChain } =
+        await odinConnect.connect(connectOptions);
       console.log("Received user:", user);
       console.log("Received delegation chain:", receivedDelegationChain);
       setDelegationChain(receivedDelegationChain || null);
@@ -69,7 +73,6 @@ function Connect() {
     }
     openOdinConnect("tab");
   };
-
 
   return user ? (
     <div>
