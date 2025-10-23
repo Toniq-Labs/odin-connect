@@ -2,6 +2,7 @@ import { useState } from "react";
 import "../App.css";
 import { useOdinContext } from "../OdinContext";
 import { UserInfo } from "../ui/UserInfo";
+import { DEMO_CANISTER_ID } from "../constants";
 
 const centeredWindowFeatures = (width: number, height: number) => {
   const left = (screen.width - width) / 2;
@@ -12,7 +13,9 @@ const centeredWindowFeatures = (width: number, height: number) => {
 function Connect() {
   const [error, setError] = useState<string | null>(null);
   const [requireApi, setRequireApi] = useState(false);
-  const { user, odinConnect, setUser } = useOdinContext();
+  const [requireDelegation, setRequireDelegation] = useState(false);
+  const { odinConnect, user, setUser, setDelegationChain, sessionKey } =
+    useOdinContext();
 
   const openOdinConnect = async (mode: "window" | "tab" = "tab") => {
     setError(null);
@@ -20,14 +23,34 @@ function Connect() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      const user = await odinConnect.connect({
+
+      if (!sessionKey) {
+        throw new Error("Session identity is not initialized");
+      }
+      const baseOptions = {
         open: {
           target: "_blank",
           settings: mode === "window" ? centeredWindowFeatures(400, 600) : "",
         },
         requires_api: requireApi,
-      });
+      };
+
+      const connectOptions: Parameters<typeof odinConnect.connect>[0] =
+        requireDelegation
+          ? {
+              ...baseOptions,
+              requires_delegation: true,
+              session_key: sessionKey,
+              public_key: sessionKey.getPublicKey().toDer(),
+              targets: [DEMO_CANISTER_ID],
+            }
+          : baseOptions;
+
+      const { user, delegationChain: receivedDelegationChain } =
+        await odinConnect.connect(connectOptions);
       console.log("Received user:", user);
+      console.log("Received delegation chain JSON:", receivedDelegationChain?.toJSON());
+      setDelegationChain(receivedDelegationChain || null);
       setUser(user);
     } catch (error) {
       console.error("Connection error:", error);
@@ -52,15 +75,30 @@ function Connect() {
   };
 
   return user ? (
-    <UserInfo user={user} />
-  ) : (
     <div>
-      <input
-        type="checkbox"
-        checked={requireApi}
-        onChange={() => setRequireApi(!requireApi)}
-      />{" "}
-      Require API
+      <UserInfo user={user} />
+    </div>
+  ) : (
+    <div className="container">
+      <div>
+        <label htmlFor="requireApi">Require API</label>
+        <input
+          id="requireApi"
+          type="checkbox"
+          checked={requireApi}
+          onChange={() => setRequireApi(!requireApi)}
+        />
+      </div>
+      <div>
+        <label htmlFor="requireDelegation">Require Delegation</label>
+        <input
+          id="requireDelegation"
+          type="checkbox"
+          checked={requireDelegation}
+          onChange={() => setRequireDelegation(!requireDelegation)}
+        />
+      </div>
+     
       {error && <div className="result">{error}</div>}
       <div className="demo-buttons">
         <button onClick={handleConnectWindow}>Connect Popup</button>

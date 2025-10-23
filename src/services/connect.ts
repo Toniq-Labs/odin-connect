@@ -1,7 +1,12 @@
-import { AxiosError } from "axios";
 import { User } from "../models/user";
 import { OdinApi, Pagination, Sort } from "./api";
 import { createTokenValidators } from "../utils";
+import {
+  DelegationChain,
+  Ed25519KeyIdentity,
+  JsonnableDelegationChain,
+} from "@dfinity/identity";
+import type { DerEncodedPublicKey } from "@dfinity/agent"
 
 const ORIGINS = {
   local: "http://localhost:5173",
@@ -16,14 +21,38 @@ interface AppInitOptions {
   icon?: string;
   env?: keyof typeof ORIGINS;
 }
-interface ConnectOptions {
+interface BaseConnectOptions {
   // options for window.open
   open?: {
     target: string;
     settings: string;
   };
   // whether to request an auth keys upon connection
-  requires_api: boolean;
+  requires_api?: boolean;
+}
+
+interface ConnectOptionsWithDelegation extends BaseConnectOptions {
+  // whether to request an auth keys upon connection
+  requires_delegation: true;
+  targets: string[];
+  session_key: Ed25519KeyIdentity;
+  public_key: DerEncodedPublicKey;
+}
+
+interface ConnectOptionsWithoutDelegation extends BaseConnectOptions {
+  requires_delegation?: false;
+  targets?: never;
+  session_key?: never;
+}
+
+type ConnectOptions =
+  | ConnectOptionsWithDelegation
+  | ConnectOptionsWithoutDelegation;
+
+interface ConnectResult 
+{
+  user: User;
+  delegationChain?: DelegationChain | null;
 }
 
 interface BuyOptions {
@@ -131,8 +160,14 @@ export class Connect {
     return ORIGINS[this._appInfo?.env || "prod"];
   }
 
-  connect({ open, requires_api }: Partial<ConnectOptions>): Promise<User> {
-    return new Promise<User>((resolve, reject) => {
+  connect({
+    open,
+    requires_api,
+    requires_delegation,
+    session_key,
+    targets,
+  }: ConnectOptions): Promise<ConnectResult> {
+    return new Promise<ConnectResult>((resolve, reject) => {
       if (open) {
         this._windowSettings = open;
       }
@@ -145,18 +180,22 @@ export class Connect {
           if (event.data.message != "rejected") {
             // the user accepted the connection
             try {
-              const [userId, jwtToken] = event.data.message.split("::") as [
-                string,
-                string
-              ];
+              const eventData = event.data.message as {
+                principal: string;
+                jwt: string;
+                delegationChain?: JsonnableDelegationChain | null;
+              };
+              const { principal, jwt: jwtToken, delegationChain } = eventData;
+            
               if (requires_api) {
                 // issue a api key
                 // only using JWT for now, it will change in the real implementation
                 this._api.apiKey = jwtToken;
               }
               // we need to fetch user data from the api to get the full user object
-              const user = await this._api.getUser(userId);
-              resolve(user);
+              const user = await this._api.getUser(principal);
+
+              resolve({ user, delegationChain: delegationChain ? DelegationChain.fromJSON(delegationChain) : null });
             } catch (error) {
               reject(new Error("Failed to fetch user data"));
             }
@@ -167,6 +206,12 @@ export class Connect {
       };
       const url = this.createUrl("authorize/connect");
       url.searchParams.append("requires_api", requires_api ? "1" : "0");
+      if (requires_delegation) {
+        url.searchParams.append("requires_delegation", "1");
+        const sessionString = btoa(JSON.stringify(session_key.toJSON()));
+        url.searchParams.append("session_key", sessionString);
+        url.searchParams.append("targets", targets.join(","));
+      }
       this.openWindow(url);
 
       window.addEventListener("message", handleMessage);

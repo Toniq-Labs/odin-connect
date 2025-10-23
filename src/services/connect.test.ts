@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, vi, afterEach } from "vitest";
 import { Connect } from "./connect";
 import { Token } from "../models/token";
 import { User } from "../models/user";
@@ -20,6 +20,10 @@ describe("Connect", () => {
       principal: "user-principal",
       username: "username",
     });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("should initialize Connect instance", () => {
@@ -46,14 +50,17 @@ describe("Connect", () => {
 
   it("should open the connect window", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
-    const getUserSpy = vi.spyOn(connect["_api"], "getUser");
+    const getUserSpy = vi.spyOn(connect["_api"], "getUser").mockResolvedValue({
+      principal: "user-principal",
+      username: "username", 
+    } as User);
     const connectPromise = connect.connect({ requires_api: false });
 
     connectPromise.then(
       (res) => {
         expect(res).toBeDefined();
-        expect(res.username).toBe("username");
-        expect(res.principal).toBe("user-principal");
+        expect(res.user.username).toBe("username");
+        expect(res.user.principal).toBe("user-principal");
         expect(connect.apiClient.apiKey).toBeNull();
       },
       (e) => {
@@ -72,20 +79,30 @@ describe("Connect", () => {
     expect(params.get("referrer")).toBeDefined();
     expect(params.get("requires_api")).toBe("0");
 
-    simulateMessage("authorize/connect", "user-principal");
+    simulateMessage("authorize/connect",{
+      principal: "user-principal",
+      jwt: null,
+    });
 
     expect(getUserSpy).toHaveBeenCalledWith("user-principal");
   });
 
   it("should open connect window with API requirement", () => {
+
+       vi.spyOn(connect["_api"], "getUser").mockResolvedValue({
+      principal: "user-principal",
+      username: "username", 
+    } as User);
+    
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     const connectPromise = connect.connect({ requires_api: true });
 
     connectPromise.then(
       (res) => {
+        console.log(res);
         expect(res).toBeDefined();
-        expect(res.username).toBe("username");
-        expect(res.principal).toBe("user-principal");
+        expect(res.user.username).toBe("username");
+        expect(res.user.principal).toBe("user-principal");
         expect(connect.apiClient.apiKey).toBe("test-jwt");
       },
       () => {
@@ -104,7 +121,10 @@ describe("Connect", () => {
     expect(params.get("referrer")).toBeDefined();
     expect(params.get("requires_api")).toBe("1");
 
-    simulateMessage("authorize/connect", "user-principal::test-jwt");
+    simulateMessage("authorize/connect", {
+      principal: "user-principal",
+      jwt: "test-jwt",
+    });
   });
 
   it("should handle rejected connection", () => {
