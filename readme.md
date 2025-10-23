@@ -19,14 +19,16 @@ const odinConnect = new OdinConnect({ name: "Demo App" });
 ### Request for user connection
 
 ```typescript
-const user = await odinConnect.connect({
+const { user, delegationChain } = await odinConnect.connect({
   // these will be used when window.open is called
   open: {
     target: "_blank",
     settings: "height=800,width=400",
   },
-  // flag to weather or not api keys are required
+  // flag to determine if api key is being requested
   requires_api: true,
+  // flag ot determine if DelegationChain is being requested
+  requires_delegation: true,
 });
 ```
 
