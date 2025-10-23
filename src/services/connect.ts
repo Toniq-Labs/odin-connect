@@ -6,14 +6,12 @@ import {
   Ed25519KeyIdentity,
   JsonnableDelegationChain,
 } from "@dfinity/identity";
-import type { DerEncodedPublicKey } from "@dfinity/agent"
+import type { DerEncodedPublicKey } from "@dfinity/agent";
 
 const ORIGINS = {
   local: "http://localhost:5173",
   prod: "https://odin.fun",
   dev: "https://dev.odin.fun",
-  _deployment_preview:
-    "https://deploy-preview-1047--dev-odin-toniq.netlify.app",
 };
 
 interface AppInitOptions {
@@ -49,8 +47,7 @@ type ConnectOptions =
   | ConnectOptionsWithDelegation
   | ConnectOptionsWithoutDelegation;
 
-interface ConnectResult 
-{
+interface ConnectResult {
   user: User;
   delegationChain?: DelegationChain | null;
 }
@@ -186,7 +183,7 @@ export class Connect {
                 delegationChain?: JsonnableDelegationChain | null;
               };
               const { principal, jwt: jwtToken, delegationChain } = eventData;
-            
+
               if (requires_api) {
                 // issue a api key
                 // only using JWT for now, it will change in the real implementation
@@ -195,7 +192,12 @@ export class Connect {
               // we need to fetch user data from the api to get the full user object
               const user = await this._api.getUser(principal);
 
-              resolve({ user, delegationChain: delegationChain ? DelegationChain.fromJSON(delegationChain) : null });
+              resolve({
+                user,
+                delegationChain: delegationChain
+                  ? DelegationChain.fromJSON(delegationChain)
+                  : null,
+              });
             } catch (error) {
               reject(new Error("Failed to fetch user data"));
             }
