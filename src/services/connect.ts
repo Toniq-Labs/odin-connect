@@ -1,5 +1,4 @@
-import { User } from "../models/user";
-import { OdinApi, Pagination, Sort } from "./api";
+import { OdinApiClient, Pagination, Sort } from "./api";
 import { createTokenValidators } from "../utils";
 import {
   DelegationChain,
@@ -7,9 +6,9 @@ import {
   Ed25519KeyIdentity,
   JsonnableDelegationChain,
 } from "@dfinity/identity";
-import type { DerEncodedPublicKey } from "@dfinity/agent";
 import { ConnectedUser } from "./connect-user";
 import { Environment, ORIGINS } from "../models/environment";
+import { WindowClient, WindowClientSettings } from "./window";
 
 interface AppInitOptions {
   name: string;
@@ -18,10 +17,7 @@ interface AppInitOptions {
 }
 interface BaseConnectOptions {
   // options for window.open
-  open?: {
-    target: string;
-    settings: string;
-  };
+  open?: WindowClientSettings;
   // whether to request an auth keys upon connection
   requires_api?: boolean;
 }
@@ -110,8 +106,8 @@ interface CreateTokenParams {
 
 export class Connect {
   private _appInfo: AppInitOptions | null = null;
-  private _api: OdinApi;
-  private _windowSettings: ConnectOptions["open"];
+  private _api: OdinApiClient;
+  private _window: WindowClient;
 
   constructor(appInfo?: Partial<AppInitOptions>) {
     this._appInfo = {
@@ -119,11 +115,10 @@ export class Connect {
       name: "app_name",
       ...appInfo,
     };
-    this._api = new OdinApi(this._appInfo.env === "prod" ? "prod" : "dev");
-    this._windowSettings = {
-      target: "_blank",
-      settings: "",
-    };
+    this._api = new OdinApiClient(
+      this._appInfo.env === "prod" ? "prod" : "dev"
+    );
+    this._window = new WindowClient();
   }
 
   private createUrl(path: string) {
@@ -133,14 +128,6 @@ export class Connect {
     }
     url.searchParams.append("referrer", window.location.origin);
     return url;
-  }
-
-  private openWindow(url: URL) {
-    return window.open(
-      url,
-      this._windowSettings?.target || "_blank",
-      this._windowSettings?.settings
-    );
   }
 
   get origin() {
@@ -155,7 +142,7 @@ export class Connect {
   }: ConnectOptions): Promise<ConnectedUser> {
     return new Promise<ConnectedUser>((resolve, reject) => {
       if (open) {
-        this._windowSettings = open;
+        this._window.settings = open;
       }
       const sessionKey = Ed25519KeyIdentity.generate();
       const handleMessage = async (event: MessageEvent) => {
@@ -221,7 +208,7 @@ export class Connect {
         url.searchParams.append("session_key", sessionString);
         url.searchParams.append("targets", targets.join(","));
       }
-      this.openWindow(url);
+      this._window.open(url);
 
       window.addEventListener("message", handleMessage);
     });
@@ -432,7 +419,7 @@ export class Connect {
           url.searchParams.append(key, params[key]);
         }
       }
-      this.openWindow(url);
+      this._window.open(url);
       window.addEventListener("message", handleMessage);
     });
   }

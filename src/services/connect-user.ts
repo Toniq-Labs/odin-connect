@@ -1,17 +1,17 @@
 import { DelegationIdentity } from "@dfinity/identity";
-import { OdinApi } from "./api";
+import { OdinApiClient } from "./api";
 import { Connect } from "./connect";
 
 export class ConnectedUser {
   private _identity: DelegationIdentity | null;
-  private _api: OdinApi;
+  private _api: OdinApiClient;
   private _principal: string;
   private _connect: Connect;
 
   constructor(
     principal: string,
     identity: DelegationIdentity | null,
-    api: OdinApi,
+    api: OdinApiClient,
     connect: Connect
   ) {
     this._principal = principal;
