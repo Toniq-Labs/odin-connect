@@ -123,7 +123,7 @@ export class Connect {
   private _api: OdinApi;
   private _windowSettings: ConnectOptions["open"];
 
-  constructor(appInfo: Partial<AppInitOptions> = {}) {
+  constructor(appInfo?: Partial<AppInitOptions>) {
     this._appInfo = {
       env: "prod",
       name: "app_name",
