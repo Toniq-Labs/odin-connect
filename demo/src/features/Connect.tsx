@@ -46,12 +46,21 @@ function Connect() {
             }
           : baseOptions;
 
-      const { user, delegationChain: receivedDelegationChain } =
-        await odinConnect.connect(connectOptions);
+      const connectedUser = await odinConnect.connect(connectOptions);
+      const user = await connectedUser?.getUser();
+
       console.log("Received user:", user);
-      console.log("Received delegation chain JSON:", receivedDelegationChain?.toJSON());
-      setDelegationChain(receivedDelegationChain || null);
-      setUser(user);
+      console.log(
+        "Received delegation chain JSON:",
+        connectedUser?.getIdentity()?.getDelegation().toJSON()
+      );
+      //setDelegationChain(user?.getIdentity()?.getDelegation() || null);
+      if (user) {
+        setUser(user);
+        setDelegationChain(
+          connectedUser?.getIdentity()?.getDelegation() || null
+        );
+      }
     } catch (error) {
       console.error("Connection error:", error);
       setUser(null);
@@ -98,7 +107,7 @@ function Connect() {
           onChange={() => setRequireDelegation(!requireDelegation)}
         />
       </div>
-     
+
       {error && <div className="result">{error}</div>}
       <div className="demo-buttons">
         <button onClick={handleConnectWindow}>Connect Popup</button>

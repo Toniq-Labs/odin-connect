@@ -3,21 +3,18 @@ import { OdinApi, Pagination, Sort } from "./api";
 import { createTokenValidators } from "../utils";
 import {
   DelegationChain,
+  DelegationIdentity,
   Ed25519KeyIdentity,
   JsonnableDelegationChain,
 } from "@dfinity/identity";
 import type { DerEncodedPublicKey } from "@dfinity/agent";
-
-const ORIGINS = {
-  local: "http://localhost:5173",
-  prod: "https://odin.fun",
-  dev: "https://dev.odin.fun",
-};
+import { ConnectedUser } from "./connect-user";
+import { Environment, ORIGINS } from "../models/environment";
 
 interface AppInitOptions {
   name: string;
   icon?: string;
-  env?: keyof typeof ORIGINS;
+  env?: Environment;
 }
 interface BaseConnectOptions {
   // options for window.open
@@ -46,11 +43,6 @@ interface ConnectOptionsWithoutDelegation extends BaseConnectOptions {
 type ConnectOptions =
   | ConnectOptionsWithDelegation
   | ConnectOptionsWithoutDelegation;
-
-interface ConnectResult {
-  user: User;
-  delegationChain?: DelegationChain | null;
-}
 
 interface BuyOptions {
   principal: string;
@@ -163,8 +155,8 @@ export class Connect {
     requires_delegation,
     session_key,
     targets,
-  }: ConnectOptions): Promise<ConnectResult> {
-    return new Promise<ConnectResult>((resolve, reject) => {
+  }: ConnectOptions): Promise<ConnectedUser> {
+    return new Promise<ConnectedUser>((resolve, reject) => {
       if (open) {
         this._windowSettings = open;
       }
@@ -175,6 +167,7 @@ export class Connect {
         ) {
           window.removeEventListener("message", handleMessage);
           if (event.data.message != "rejected") {
+            let connectedUser: ConnectedUser;
             // the user accepted the connection
             try {
               const eventData = event.data.message as {
@@ -189,15 +182,29 @@ export class Connect {
                 // only using JWT for now, it will change in the real implementation
                 this._api.apiKey = jwtToken;
               }
-              // we need to fetch user data from the api to get the full user object
-              const user = await this._api.getUser(principal);
 
-              resolve({
-                user,
-                delegationChain: delegationChain
-                  ? DelegationChain.fromJSON(delegationChain)
-                  : null,
-              });
+              if (requires_delegation) {
+                if (!delegationChain) {
+                  throw new Error("Delegation chain is missing");
+                }
+                const identity = DelegationIdentity.fromDelegation(
+                  session_key,
+                  DelegationChain.fromJSON(delegationChain)
+                );
+                connectedUser = new ConnectedUser(
+                  principal,
+                  identity,
+                  this.apiClient
+                );
+              } else {
+                connectedUser = new ConnectedUser(
+                  principal,
+                  null,
+                  this.apiClient
+                );
+              }
+
+              resolve(connectedUser);
             } catch (error) {
               reject(new Error("Failed to fetch user data"));
             }
@@ -227,20 +234,12 @@ export class Connect {
     return this._api.getBalances(principal, pagination);
   }
 
-  getUser(principal: string) {
-    return this._api.getUser(principal);
+  get apiClient() {
+    return this._api;
   }
 
-  getToken(id: string) {
-    return this._api.getToken(id);
-  }
-
-  getTokens({ pagination, sort }: GetResourcesOptions) {
-    return this._api.getTokens(pagination, sort);
-  }
-
-  getUserActivity({ principal, pagination }: GetUserActivityOptions) {
-    return this._api.getUserActivity(principal, pagination);
+  get currentEnv() {
+    return this._appInfo?.env || "prod";
   }
 
   sell({ token, tokenAmount, principal }: SellOptions) {
