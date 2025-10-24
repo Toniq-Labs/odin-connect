@@ -30,8 +30,6 @@ interface ConnectOptionsWithDelegation extends BaseConnectOptions {
   // whether to request an auth keys upon connection
   requires_delegation: true;
   targets: string[];
-  session_key: Ed25519KeyIdentity;
-  public_key: DerEncodedPublicKey;
 }
 
 interface ConnectOptionsWithoutDelegation extends BaseConnectOptions {
@@ -153,13 +151,13 @@ export class Connect {
     open,
     requires_api,
     requires_delegation,
-    session_key,
     targets,
   }: ConnectOptions): Promise<ConnectedUser> {
     return new Promise<ConnectedUser>((resolve, reject) => {
       if (open) {
         this._windowSettings = open;
       }
+      const sessionKey = Ed25519KeyIdentity.generate();
       const handleMessage = async (event: MessageEvent) => {
         if (
           event.origin === this.origin &&
@@ -188,7 +186,7 @@ export class Connect {
                   throw new Error("Delegation chain is missing");
                 }
                 const identity = DelegationIdentity.fromDelegation(
-                  session_key,
+                  sessionKey,
                   DelegationChain.fromJSON(delegationChain)
                 );
                 connectedUser = new ConnectedUser(
@@ -217,7 +215,7 @@ export class Connect {
       url.searchParams.append("requires_api", requires_api ? "1" : "0");
       if (requires_delegation) {
         url.searchParams.append("requires_delegation", "1");
-        const sessionString = btoa(JSON.stringify(session_key.toJSON()));
+        const sessionString = btoa(JSON.stringify(sessionKey.toJSON()));
         url.searchParams.append("session_key", sessionString);
         url.searchParams.append("targets", targets.join(","));
       }

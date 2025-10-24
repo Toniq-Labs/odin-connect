@@ -39,18 +39,12 @@ const user = await odinConnect.connect({
 ### Request for DelegationCain
 
 ```typescript
-// create session identity
-const session = Ed25519KeyIdentity.generate();
-
 const user = await odinConnect.connect({
   // set to true
   requires_delegation: true,
-  session_key: session,
-  public_key: session.getPublicKey().toDer(),
   // canister ids
   targets: ["aaaa-aa"],
 });
-
 const identity = user.getIdentity();
 ```
 
