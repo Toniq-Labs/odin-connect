@@ -19,9 +19,9 @@ export function Balances() {
       if (!user) {
         throw new Error("No user connected");
       }
-      const balances = await odinConnect.getBalances({
-        principal: user.principal,
-        pagination: { page: 1, limit: 20 },
+      const balances = await odinConnect.api.getBalances(user.principal, {
+        page: 1,
+        limit: 20,
       });
       console.log("Fetched balances:", balances);
       setBalances(balances);

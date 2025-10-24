@@ -30,7 +30,7 @@ export function Swap() {
         amountFrom,
         fromTokenData
       );
-      const result = await odinConnect.swap({
+      const result = await odinConnect.odin.swap({
         principal: user.principal,
         fromToken: tokenFrom,
         toToken: tokenTo,

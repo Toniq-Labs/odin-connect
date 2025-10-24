@@ -114,7 +114,7 @@ export function CreateToken() {
 
             const buyAmount = OdinUtils.convertToOdinAmount(preBuy || "0");
 
-            await odinConnect.createToken({
+            await odinConnect.odin.createToken({
               image,
               principal: user.principal,
               name,

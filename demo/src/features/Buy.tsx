@@ -23,7 +23,7 @@ export function Buy() {
       if (!tokenInfo) {
         throw new Error("Invalid token selected");
       }
-      await odinConnect.buy({
+      await odinConnect.odin.buy({
         btcAmount: OdinUtils.convertToOdinAmount(amount),
         token,
         principal: user.principal,

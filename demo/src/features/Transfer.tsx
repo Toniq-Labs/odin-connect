@@ -27,7 +27,7 @@ export function Transfer() {
         throw new Error(`Token ${token} not found`);
       }
       setResult(null);
-      await odinConnect.transfer({
+      await odinConnect.odin.transfer({
         principal: user.principal,
         destination: recipient,
         token,

@@ -20,7 +20,7 @@ export function AddLiquidity() {
       if (!user) {
         throw new Error("User is not connected");
       }
-      const result = await odinConnect.addLiquidity({
+      const result = await odinConnect.odin.addLiquidity({
         principal: user.principal,
         btcAmount: OdinUtils.convertToOdinAmount(amount),
         token: token,

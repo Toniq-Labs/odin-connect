@@ -25,7 +25,7 @@ export function Sell() {
         throw new Error("Invalid token selected");
       }
 
-      await odinConnect.sell({
+      await odinConnect.odin.sell({
         tokenAmount: OdinUtils.convertToOdinAmount(amount, tokenInfo),
         token,
         principal: user.principal,

@@ -19,7 +19,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     if (odinConnect) {
       const fetchTokens = async () => {
         try {
-          const { data } = await odinConnect.apiClient.getTokens(
+          const { data } = await odinConnect.api.getTokens(
             { page: 1, limit: 50 },
             { field: "marketcap", direction: "desc" }
           );

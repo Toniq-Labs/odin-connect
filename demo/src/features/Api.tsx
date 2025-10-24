@@ -28,7 +28,7 @@ export function Api() {
     }
     try {
       setLoading(true);
-      const token = await odinConnect.getToken("2jj5");
+      const token = await odinConnect.api.getToken("2jj5");
       console.log("Fetched token:", token);
       setResults(token);
       setLoading(false);
@@ -44,7 +44,7 @@ export function Api() {
     }
     try {
       setLoading(true);
-      const data = await odinConnect.getUser(
+      const data = await odinConnect.api.getUser(
         user?.principal ||
           "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe"
       );
@@ -63,12 +63,11 @@ export function Api() {
     }
     try {
       setLoading(true);
-      const activity = await odinConnect.getUserActivity({
-        principal:
-          user?.principal ||
+      const activity = await odinConnect.api.getUserActivity(
+        user?.principal ||
           "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
-        pagination: { page: 1, limit: 2 },
-      });
+        { page: 1, limit: 2 }
+      );
       console.log("Fetched user activity:", activity);
       setResults(activity.data);
       setLoading(false);
@@ -84,7 +83,7 @@ export function Api() {
     }
     try {
       setLoading(true);
-      const liquidity = await odinConnect.apiClient.getUserLiquidity(
+      const liquidity = await odinConnect.api.getUserLiquidity(
         user?.principal ||
           "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
         { page: 1, limit: 10 }
@@ -104,7 +103,7 @@ export function Api() {
     }
     try {
       setLoading(true);
-      const tokens = await odinConnect.apiClient.getUserTokens(
+      const tokens = await odinConnect.api.getUserTokens(
         user?.principal ||
           "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
         { page: 1, limit: 10 }
@@ -124,7 +123,7 @@ export function Api() {
     }
     try {
       setLoading(true);
-      const achievements = await odinConnect.apiClient.getUserAchievements(
+      const achievements = await odinConnect.api.getUserAchievements(
         user?.principal ||
           "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
         { page: 1, limit: 10 }

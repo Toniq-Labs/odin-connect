@@ -24,7 +24,7 @@ export function RemoveLiquidity() {
       if (!tokenData) {
         throw new Error("Invalid token selected");
       }
-      await odinConnect.removeLiquidity({
+      await odinConnect.odin.removeLiquidity({
         principal: user.principal,
         lpAmount: OdinUtils.convertToOdinAmount(amount, tokenData),
         token: token,
