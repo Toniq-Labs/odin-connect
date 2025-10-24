@@ -1,31 +1,28 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { OdinConnect, type OdinToken, type OdinUser } from "odin-connect";
 import { OdinContext } from "./OdinContext";
-import { Ed25519KeyIdentity, type DelegationChain } from "@dfinity/identity";
+import type { DelegationIdentity } from "@dfinity/identity";
 
 export const OdinProvider = ({ children }: { children: ReactNode }) => {
   const [odinConnect, setOdinConnect] = useState<OdinConnect | null>(null);
   const [user, setUser] = useState<OdinUser | null>(null);
-  const [sessionKey, setSessionKey] = useState<Ed25519KeyIdentity | null>(null);
-  const [delegationChain, setDelegationChain] =
-    useState<DelegationChain | null>(null);
   const [tokens, setTokens] = useState<ReadonlyArray<OdinToken>>([]);
+  const [identity, setIdentity] = useState<DelegationIdentity | null>(null);
 
   useEffect(() => {
     // Initialize OdinConnect with your app name and target environment
     const odin = new OdinConnect({ name: "Demo", env: "dev" });
     setOdinConnect(odin);
-    setSessionKey(Ed25519KeyIdentity.generate());
   }, []);
 
   useEffect(() => {
     if (odinConnect) {
       const fetchTokens = async () => {
         try {
-          const { data } = await odinConnect.getTokens({
-            pagination: { page: 1, limit: 50 },
-            sort: { field: "marketcap", direction: "desc" },
-          });
+          const { data } = await odinConnect.apiClient.getTokens(
+            { page: 1, limit: 50 },
+            { field: "marketcap", direction: "desc" }
+          );
           if (data) {
             setTokens(data);
           }
@@ -44,9 +41,9 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
         user,
         setUser,
         tokens,
-        delegationChain,
-        setDelegationChain,
-        sessionKey,
+        setIdentity,
+        identity,
+        setTokens,
       }}
     >
       {children}

@@ -23,7 +23,7 @@ const odinConnect = new OdinConnect({ name: "Demo App" });
 ### Request for user connection
 
 ```typescript
-const { user } = await odinConnect.connect({
+const user = await odinConnect.connect({
   // these will be used when window.open is called
   open: {
     target: "_blank",
@@ -36,24 +36,16 @@ const { user } = await odinConnect.connect({
 });
 ```
 
-### Request for DelegationCain
+### Request for Identity
 
 ```typescript
-// create session identity
-const session = Ed25519KeyIdentity.generate();
-
-const { delegationChain } = await odinConnect.connect({
+const user = await odinConnect.connect({
   // set to true
   requires_delegation: true,
-  session_key: session,
-  public_key: session.getPublicKey().toDer(),
   // canister ids
   targets: ["aaaa-aa"],
 });
-
-if (delegationChain) {
-  const identity = DelegationIdentity.fromDelegation(session, delegationChain);
-}
+const identity = user.getIdentity();
 ```
 
 ### Request for user balances

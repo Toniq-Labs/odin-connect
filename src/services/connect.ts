@@ -3,21 +3,18 @@ import { OdinApi, Pagination, Sort } from "./api";
 import { createTokenValidators } from "../utils";
 import {
   DelegationChain,
+  DelegationIdentity,
   Ed25519KeyIdentity,
   JsonnableDelegationChain,
 } from "@dfinity/identity";
 import type { DerEncodedPublicKey } from "@dfinity/agent";
-
-const ORIGINS = {
-  local: "http://localhost:5173",
-  prod: "https://odin.fun",
-  dev: "https://dev.odin.fun",
-};
+import { ConnectedUser } from "./connect-user";
+import { Environment, ORIGINS } from "../models/environment";
 
 interface AppInitOptions {
   name: string;
   icon?: string;
-  env?: keyof typeof ORIGINS;
+  env?: Environment;
 }
 interface BaseConnectOptions {
   // options for window.open
@@ -33,8 +30,6 @@ interface ConnectOptionsWithDelegation extends BaseConnectOptions {
   // whether to request an auth keys upon connection
   requires_delegation: true;
   targets: string[];
-  session_key: Ed25519KeyIdentity;
-  public_key: DerEncodedPublicKey;
 }
 
 interface ConnectOptionsWithoutDelegation extends BaseConnectOptions {
@@ -46,11 +41,6 @@ interface ConnectOptionsWithoutDelegation extends BaseConnectOptions {
 type ConnectOptions =
   | ConnectOptionsWithDelegation
   | ConnectOptionsWithoutDelegation;
-
-interface ConnectResult {
-  user: User;
-  delegationChain?: DelegationChain | null;
-}
 
 interface BuyOptions {
   principal: string;
@@ -123,7 +113,7 @@ export class Connect {
   private _api: OdinApi;
   private _windowSettings: ConnectOptions["open"];
 
-  constructor(appInfo: Partial<AppInitOptions>) {
+  constructor(appInfo?: Partial<AppInitOptions>) {
     this._appInfo = {
       env: "prod",
       name: "app_name",
@@ -161,13 +151,13 @@ export class Connect {
     open,
     requires_api,
     requires_delegation,
-    session_key,
     targets,
-  }: ConnectOptions): Promise<ConnectResult> {
-    return new Promise<ConnectResult>((resolve, reject) => {
+  }: ConnectOptions): Promise<ConnectedUser> {
+    return new Promise<ConnectedUser>((resolve, reject) => {
       if (open) {
         this._windowSettings = open;
       }
+      const sessionKey = Ed25519KeyIdentity.generate();
       const handleMessage = async (event: MessageEvent) => {
         if (
           event.origin === this.origin &&
@@ -175,6 +165,7 @@ export class Connect {
         ) {
           window.removeEventListener("message", handleMessage);
           if (event.data.message != "rejected") {
+            let connectedUser: ConnectedUser;
             // the user accepted the connection
             try {
               const eventData = event.data.message as {
@@ -189,15 +180,29 @@ export class Connect {
                 // only using JWT for now, it will change in the real implementation
                 this._api.apiKey = jwtToken;
               }
-              // we need to fetch user data from the api to get the full user object
-              const user = await this._api.getUser(principal);
 
-              resolve({
-                user,
-                delegationChain: delegationChain
-                  ? DelegationChain.fromJSON(delegationChain)
-                  : null,
-              });
+              if (requires_delegation) {
+                if (!delegationChain) {
+                  throw new Error("Delegation chain is missing");
+                }
+                const identity = DelegationIdentity.fromDelegation(
+                  sessionKey,
+                  DelegationChain.fromJSON(delegationChain)
+                );
+                connectedUser = new ConnectedUser(
+                  principal,
+                  identity,
+                  this.apiClient
+                );
+              } else {
+                connectedUser = new ConnectedUser(
+                  principal,
+                  null,
+                  this.apiClient
+                );
+              }
+
+              resolve(connectedUser);
             } catch (error) {
               reject(new Error("Failed to fetch user data"));
             }
@@ -210,7 +215,7 @@ export class Connect {
       url.searchParams.append("requires_api", requires_api ? "1" : "0");
       if (requires_delegation) {
         url.searchParams.append("requires_delegation", "1");
-        const sessionString = btoa(JSON.stringify(session_key.toJSON()));
+        const sessionString = btoa(JSON.stringify(sessionKey.toJSON()));
         url.searchParams.append("session_key", sessionString);
         url.searchParams.append("targets", targets.join(","));
       }
@@ -227,25 +232,12 @@ export class Connect {
     return this._api.getBalances(principal, pagination);
   }
 
-  getUser(principal: string) {
-    return this._api.getUser(principal);
-  }
-
-  getToken(id: string) {
-    return this._api.getToken(id);
-  }
-
-  getTokens({ pagination, sort }: GetResourcesOptions) {
-    return this._api.getTokens(pagination, sort);
-  }
-
-  getUserActivity({ principal, pagination }: GetUserActivityOptions) {
-    return this._api.getUserActivity(principal, pagination);
-  }
-
-  // exposes the api client, not sure if this is a good idea
   get apiClient() {
     return this._api;
+  }
+
+  get currentEnv() {
+    return this._appInfo?.env || "prod";
   }
 
   sell({ token, tokenAmount, principal }: SellOptions) {
