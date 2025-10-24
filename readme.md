@@ -1,5 +1,9 @@
 # OdinConnect
 
+## Installation
+
+`npm i odin-connect`
+
 ## Demo
 
 This repository includes a demo. See `demo/` folder
@@ -19,7 +23,7 @@ const odinConnect = new OdinConnect({ name: "Demo App" });
 ### Request for user connection
 
 ```typescript
-const { user, delegationChain } = await odinConnect.connect({
+const { user } = await odinConnect.connect({
   // these will be used when window.open is called
   open: {
     target: "_blank",
@@ -28,8 +32,28 @@ const { user, delegationChain } = await odinConnect.connect({
   // flag to determine if api key is being requested
   requires_api: true,
   // flag ot determine if DelegationChain is being requested
-  requires_delegation: true,
+  requires_delegation: false,
 });
+```
+
+### Request for DelegationCain
+
+```typescript
+// create session identity
+const session = Ed25519KeyIdentity.generate();
+
+const { delegationChain } = await odinConnect.connect({
+  // set to true
+  requires_delegation: true,
+  session_key: session,
+  public_key: session.getPublicKey().toDer(),
+  // canister ids
+  targets: ["aaaa-aa"],
+});
+
+if (delegationChain) {
+  const identity = DelegationIdentity.fromDelegation(session, delegationChain);
+}
 ```
 
 ### Request for user balances
