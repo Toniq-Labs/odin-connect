@@ -36,7 +36,7 @@ const user = await odinConnect.connect({
 });
 ```
 
-### Request for DelegationCain
+### Request for Identity
 
 ```typescript
 const user = await odinConnect.connect({
