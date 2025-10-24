@@ -1,35 +1,25 @@
 import { useEffect, useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { Actor, HttpAgent } from "@dfinity/agent";
-import { DelegationIdentity } from "@dfinity/identity";
 import { idlFactory, type _SERVICE } from "../canister/test";
 import { DEMO_CANISTER_ID, DEMO_IC_HOST } from "../constants";
 import JSONBig from "@apimatic/json-bigint";
 
 export function Canister() {
-  const { user, delegationChain, sessionKey } = useOdinContext();
+  const { user, identity } = useOdinContext();
   const [agent, setAgent] = useState<HttpAgent | null>(null);
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<unknown | null>(null);
 
   useEffect(() => {
-    if (delegationChain && sessionKey) {
-      const delegatedIdentity = DelegationIdentity.fromDelegation(
-        sessionKey,
-        delegationChain
-      );
-      console.log({
-        delegatedIdentity,
-        sessionKey,
-        delegationChain,
-      });
+    if (identity) {
       const agent = HttpAgent.createSync({
-        identity: delegatedIdentity,
+        identity,
         host: DEMO_IC_HOST,
       });
       setAgent(agent);
     }
-  }, [delegationChain, sessionKey]);
+  }, [identity]);
 
   const handleCanisterCall = async () => {
     try {
@@ -56,8 +46,8 @@ export function Canister() {
   if (!user) {
     return <div>Please connect first.</div>;
   }
-  if (!delegationChain) {
-    return <div>No delegation chain available.</div>;
+  if (!identity) {
+    return <div>No identity available.</div>;
   }
   return (
     <div>

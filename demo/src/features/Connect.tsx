@@ -14,8 +14,7 @@ function Connect() {
   const [error, setError] = useState<string | null>(null);
   const [requireApi, setRequireApi] = useState(false);
   const [requireDelegation, setRequireDelegation] = useState(false);
-  const { odinConnect, user, setUser, setDelegationChain, sessionKey } =
-    useOdinContext();
+  const { odinConnect, user, setUser, setIdentity } = useOdinContext();
 
   const openOdinConnect = async (mode: "window" | "tab" = "tab") => {
     setError(null);
@@ -24,9 +23,6 @@ function Connect() {
         throw new Error("OdinConnect is not initialized");
       }
 
-      if (!sessionKey) {
-        throw new Error("Session identity is not initialized");
-      }
       const baseOptions = {
         open: {
           target: "_blank",
@@ -40,8 +36,6 @@ function Connect() {
           ? {
               ...baseOptions,
               requires_delegation: true,
-              session_key: sessionKey,
-              public_key: sessionKey.getPublicKey().toDer(),
               targets: [DEMO_CANISTER_ID],
             }
           : baseOptions;
@@ -57,9 +51,10 @@ function Connect() {
       //setDelegationChain(user?.getIdentity()?.getDelegation() || null);
       if (user) {
         setUser(user);
-        setDelegationChain(
-          connectedUser?.getIdentity()?.getDelegation() || null
-        );
+      }
+      const identity = connectedUser.getIdentity();
+      if (identity) {
+        setIdentity(identity);
       }
     } catch (error) {
       console.error("Connection error:", error);
