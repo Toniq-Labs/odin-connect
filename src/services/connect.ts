@@ -192,13 +192,15 @@ export class Connect {
                 connectedUser = new ConnectedUser(
                   principal,
                   identity,
-                  this.apiClient
+                  this.apiClient,
+                  this
                 );
               } else {
                 connectedUser = new ConnectedUser(
                   principal,
                   null,
-                  this.apiClient
+                  this.apiClient,
+                  this
                 );
               }
 

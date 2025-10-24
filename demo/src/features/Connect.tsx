@@ -48,7 +48,10 @@ function Connect() {
         "Received delegation chain JSON:",
         connectedUser?.getIdentity()?.getDelegation().toJSON()
       );
-      //setDelegationChain(user?.getIdentity()?.getDelegation() || null);
+      connectedUser.sell({
+        token: "example-token-id",
+        tokenAmount: 100n,
+      });
       if (user) {
         setUser(user);
       }
