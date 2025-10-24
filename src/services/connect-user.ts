@@ -1,23 +1,30 @@
 import { DelegationIdentity } from "@dfinity/identity";
 import { OdinApiClient } from "./api";
-import { Connect } from "./connect";
+import {
+  AddLiquidityOptions,
+  BuyOptions,
+  OdinCanisterClient,
+  RemoveLiquidityOptions,
+  SellOptions,
+  TransferOptions,
+} from "./canister";
 
 export class ConnectedUser {
   private _identity: DelegationIdentity | null;
   private _api: OdinApiClient;
   private _principal: string;
-  private _connect: Connect;
+  private _odin: OdinCanisterClient;
 
   constructor(
     principal: string,
     identity: DelegationIdentity | null,
     api: OdinApiClient,
-    connect: Connect
+    odin: OdinCanisterClient
   ) {
     this._principal = principal;
     this._identity = identity;
     this._api = api;
-    this._connect = connect;
+    this._odin = odin;
   }
 
   getIdentity(): DelegationIdentity | null {
@@ -38,40 +45,36 @@ export class ConnectedUser {
 
   /// others
 
-  sell(params: Omit<Parameters<Connect["sell"]>[0], "principal">) {
-    return this._connect.sell({
+  sell(params: Omit<SellOptions, "principal">) {
+    return this._odin.sell({
       ...params,
       principal: this._principal,
     });
   }
 
-  buy(params: Omit<Parameters<Connect["buy"]>[0], "principal">) {
-    return this._connect.buy({
+  buy(params: Omit<BuyOptions, "principal">) {
+    return this._odin.buy({
       ...params,
       principal: this._principal,
     });
   }
 
-  addLiquidity(
-    params: Omit<Parameters<Connect["addLiquidity"]>[0], "principal">
-  ) {
-    return this._connect.addLiquidity({
+  addLiquidity(params: Omit<AddLiquidityOptions, "principal">) {
+    return this._odin.addLiquidity({
       ...params,
       principal: this._principal,
     });
   }
 
-  removeLiquidity(
-    params: Omit<Parameters<Connect["removeLiquidity"]>[0], "principal">
-  ) {
-    return this._connect.removeLiquidity({
+  removeLiquidity(params: Omit<RemoveLiquidityOptions, "principal">) {
+    return this._odin.removeLiquidity({
       ...params,
       principal: this._principal,
     });
   }
 
-  transfer(params: Omit<Parameters<Connect["transfer"]>[0], "principal">) {
-    return this._connect.transfer({
+  transfer(params: Omit<TransferOptions, "principal">) {
+    return this._odin.transfer({
       ...params,
       principal: this._principal,
     });

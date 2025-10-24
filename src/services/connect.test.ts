@@ -139,7 +139,7 @@ describe("Connect", () => {
 
   it("should open the buy authorization window", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
-    const result = connect.buy({
+    const result = connect.odin.buy({
       token: "2jjj",
       btcAmount: 20001n,
       principal: "test-principal",
@@ -162,7 +162,7 @@ describe("Connect", () => {
   it("should open the sell authorization window", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 
-    const sellPromise = connect.sell({
+    const sellPromise = connect.odin.sell({
       token: "2jjj",
       tokenAmount: 32000n,
       principal: "test-principal",
@@ -190,7 +190,7 @@ describe("Connect", () => {
   it("should handle rejected sell", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 
-    const sellPromise = connect.sell({
+    const sellPromise = connect.odin.sell({
       token: "2jjj",
       tokenAmount: 32000n,
       principal: "test-principal",
@@ -213,7 +213,7 @@ describe("Connect", () => {
 
   it("should open the transfer authorization window", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
-    const result = connect.transfer({
+    const result = connect.odin.transfer({
       token: "2jjj",
       amount: 45000n,
       destination: "to-principal",
@@ -239,7 +239,7 @@ describe("Connect", () => {
   it("should handle rejected transfer", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 
-    const transferPromise = connect.transfer({
+    const transferPromise = connect.odin.transfer({
       token: "2jjj",
       amount: 45000n,
       destination: "to-principal",
@@ -262,7 +262,7 @@ describe("Connect", () => {
   it("should open the add liquidity authorization window", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 
-    const addLiquidityPromise = connect.addLiquidity({
+    const addLiquidityPromise = connect.odin.addLiquidity({
       token: "2jjj",
       btcAmount: 10000n,
       principal: "test-principal",
@@ -293,7 +293,7 @@ describe("Connect", () => {
   it("should handle rejected add liquidity", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 
-    const addLiquidityPromise = connect.addLiquidity({
+    const addLiquidityPromise = connect.odin.addLiquidity({
       token: "2jjj",
       btcAmount: 10000n,
       principal: "test-principal",
@@ -315,7 +315,7 @@ describe("Connect", () => {
   it("should open the remove liquidity authorization window", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 
-    const removeLiquidityPromise = connect.removeLiquidity({
+    const removeLiquidityPromise = connect.odin.removeLiquidity({
       token: "2jjj",
       lpAmount: 15000n,
       principal: "test-principal",
@@ -343,7 +343,7 @@ describe("Connect", () => {
   it("should handle rejected remove liquidity", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 
-    const removeLiquidityPromise = connect.removeLiquidity({
+    const removeLiquidityPromise = connect.odin.removeLiquidity({
       token: "2jjj",
       lpAmount: 15000n,
       principal: "test-principal",
@@ -365,7 +365,7 @@ describe("Connect", () => {
   it("should create a base action", async () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     const action = () =>
-      connect["baseAction"]({
+      connect.odin["baseAction"]({
         params: { test: "param" },
         odinPath: "authorize/test_action",
         receivedMessageFromOrigin(message) {
