@@ -16,8 +16,11 @@ To run it, simply do `npm run demo`
 
 Instantiate the OdinConnect class with some information about your application
 
+- `name` - Name of your app
+- `env` - Odin Environment. Accepted values: `prod`, `dev`, local`. Default: `prod`.
+
 ```typescript
-const odinConnect = new OdinConnect({ name: "Demo App" });
+const odinConnect = new OdinConnect({ name: "Demo App", env: "prod" });
 ```
 
 ### Request for user connection
@@ -116,10 +119,10 @@ await user.removeLiquidity({
 
 ### Request for creating new token
 
-Note: require_api must be set set to true
+Note: `require_api` must be set set to true
 
 ```typescript
-const user = await odinConnect.connect();
+const user = await odinConnect.connect({ requires_api: true });
 await user.createToken({
   image: file, // instance of a file
   principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
