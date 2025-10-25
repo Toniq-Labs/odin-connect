@@ -41,8 +41,20 @@ export class ConnectedUser {
     return this._api.getBalances(this._principal, pagination);
   }
 
-  getUserTokens(pagination: { page: number; limit: number }) {
+  getTokens(pagination: { page: number; limit: number }) {
     return this._api.getUserTokens(this._principal, pagination);
+  }
+
+  getActivity(pagination: { page: number; limit: number }) {
+    return this._api.getUserActivity(this._principal, pagination);
+  }
+
+  getLiquidity(pagination: { page: number; limit: number }) {
+    return this._api.getUserLiquidity(this._principal, pagination);
+  }
+
+  getAchievements(pagination: { page: number; limit: number }) {
+    return this._api.getUserAchievements(this._principal, pagination);
   }
 
   /// others

@@ -8,9 +8,10 @@ import { Transfer } from "./features/Transfer";
 import { AddLiquidity } from "./features/AddLiquidity";
 import { RemoveLiquidity } from "./features/RemoveLiquidity";
 import { Swap } from "./features/Swap";
-import { Api } from "./features/Api";
+import { UserApi } from "./features/UserApi";
 import { CreateToken } from "./features/CreateToken";
 import { Canister } from "./features/Canister";
+//import { MySandbox } from "./features/MySandbox";
 
 function App() {
   return (
@@ -57,9 +58,12 @@ function App() {
           <CreateToken />
         </section>
         <section>
-          <h1>Api</h1>
-          <Api />
+          <h1>User Methods</h1>
+          <UserApi />
         </section>
+        {/* <section>
+          <MySandbox />
+        </section> */}
       </div>
     </OdinProvider>
   );
