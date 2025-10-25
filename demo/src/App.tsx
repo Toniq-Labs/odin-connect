@@ -22,6 +22,10 @@ function App() {
           <Connect />
         </section>
         <section>
+          <h1>User Methods</h1>
+          <UserApi />
+        </section>
+        <section>
           <h1>Canister</h1>
           <Canister />
         </section>
@@ -57,10 +61,7 @@ function App() {
           <h1>Create Token</h1>
           <CreateToken />
         </section>
-        <section>
-          <h1>User Methods</h1>
-          <UserApi />
-        </section>
+
         {/* <section>
           <MySandbox />
         </section> */}

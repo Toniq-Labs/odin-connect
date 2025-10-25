@@ -55,17 +55,6 @@ function Connect() {
           : baseOptions;
 
       const connectedUser = await odinConnect.connect(connectOptions);
-      const user = await connectedUser?.getUser();
-
-      console.log("Received user:", user);
-      console.log(
-        "Received delegation chain JSON:",
-        connectedUser?.getIdentity()?.getDelegation().toJSON()
-      );
-      connectedUser.sell({
-        token: "example-token-id",
-        tokenAmount: 100n,
-      });
       setConnectedUser(connectedUser);
       const identity = connectedUser.getIdentity();
       if (identity) {
