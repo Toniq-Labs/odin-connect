@@ -48,14 +48,18 @@ const user = await odinConnect.connect({
 const identity = user.getIdentity();
 ```
 
-### Request for user balances
+### Request for various user data from API
 
 ```typescript
 const user = await odinConnect.connect();
-user.getBalances({
-  principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
-  pagination: { page: 1, limit: 20 },
-});
+// get tokens
+const tokens = await user.getTokens({ page: 1, limit: 10 });
+// get liquidity
+const liquidity = await user.getLiquidity({ page: 1, limit: 10 });
+// get activity
+const activity = await user.getActivity({ page: 1, limit: 10 });
+// get achievements
+const achievements = await user.getAchievements({ page: 1, limit: 10 });
 ```
 
 ### Request for token transfer
@@ -73,40 +77,40 @@ await odinConnect.transfer({
 ### Request for buy authorization
 
 ```typescript
-await odinConnect.buy({
-  btcAmount: 20_000_000n,
+const user = await odinConnect.connect();
+await user.buy({
+  btcAmount: 10_000_000n,
   token: "2jjj",
-  principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
 });
 ```
 
 ### Request for sell authorization
 
 ```typescript
-await odinConnect.sell({
+const user = await odinConnect.connect();
+await user.sell({
   tokenAmount: 20_000_000n,
   token: "2jjj",
-  principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
 });
 ```
 
 ### Request for add liquidity authorization
 
 ```typescript
-await odinConnect.addLiquidity({
+const user = await odinConnect.connect();
+await user.addLiquidity({
   btcAmount: 20_000_000n,
   token: "2jj",
-  principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
 });
 ```
 
 ### Request for remove liquidity authorization
 
 ```typescript
-await odinConnect.removeLiquidity({
+const user = await odinConnect.connect();
+await user.removeLiquidity({
   btcAmount: 20_000_000n,
   token: "2jj",
-  principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
 });
 ```
 
@@ -115,7 +119,8 @@ await odinConnect.removeLiquidity({
 Note: require_api must be set set to true
 
 ```typescript
-await odinConnect.createToken({
+const user = await odinConnect.connect();
+await user.createToken({
   image: file, // instance of a file
   principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
   name: "Test Token",
@@ -133,27 +138,32 @@ await odinConnect.createToken({
 
 ```typescript
 // Get tokens
-const tokens = await odinConnect.getTokens({
+const tokens = await odinConnect.api.getTokens({
   pagination: { page: 1, limit: 50 },
   sort: { field: "marketcap", direction: "desc" },
 });
 
-// Get token info
-const token = await odinConnect.getToken("2jjj");
+// Get activities
+const activity = await odinConnect.api.getUserActivity({
+  pagination: { page: 1, limit: 10 },
+});
 
-// Get user info
-const user = await odinConnect.getUser(
+// Get token by id
+const token = await odinConnect.api.getToken("2jjj");
+
+// Get user data by id
+const user = await odinConnect.api.getUser(
   "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe"
 );
 
-// Get user balance
-const balances = await odinConnect.getBalances({
-  principal: user.principal,
+// Get user balance by user id
+const balances = await odinConnect.api.getBalances({
+  principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
   pagination: { page: 1, limit: 20 },
 });
 
-// Get user activities
-const activity = await odinConnect.getUserActivity({
+// Get activities by  user id
+const activity = await odinConnect.api.getUserActivity({
   principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
   pagination: { page: 1, limit: 10 },
 });
@@ -161,5 +171,4 @@ const activity = await odinConnect.getUserActivity({
 
 ### Notes
 
-- The `principal` sent should match the currently logged in user in ODIN.
 - BTC amounts are in millisatoshis
