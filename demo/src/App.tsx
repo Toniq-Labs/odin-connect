@@ -8,9 +8,10 @@ import { Transfer } from "./features/Transfer";
 import { AddLiquidity } from "./features/AddLiquidity";
 import { RemoveLiquidity } from "./features/RemoveLiquidity";
 import { Swap } from "./features/Swap";
-import { Api } from "./features/Api";
+import { UserApi } from "./features/UserApi";
 import { CreateToken } from "./features/CreateToken";
 import { Canister } from "./features/Canister";
+import { Examples } from "./features/Examples";
 
 function App() {
   return (
@@ -19,6 +20,10 @@ function App() {
         <section>
           <h1>Connect</h1>
           <Connect />
+        </section>
+        <section>
+          <h1>User Methods</h1>
+          <UserApi />
         </section>
         <section>
           <h1>Canister</h1>
@@ -57,8 +62,7 @@ function App() {
           <CreateToken />
         </section>
         <section>
-          <h1>Api</h1>
-          <Api />
+          <Examples />
         </section>
       </div>
     </OdinProvider>

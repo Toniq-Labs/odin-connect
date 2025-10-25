@@ -6,12 +6,13 @@ import { DEMO_CANISTER_ID, DEMO_IC_HOST } from "../constants";
 import JSONBig from "@apimatic/json-bigint";
 
 export function Canister() {
-  const { user, identity } = useOdinContext();
+  const { connectedUser, setConnectedUser, odinConnect } = useOdinContext();
   const [agent, setAgent] = useState<HttpAgent | null>(null);
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<unknown | null>(null);
 
   useEffect(() => {
+    const identity = connectedUser?.getIdentity();
     if (identity) {
       const agent = HttpAgent.createSync({
         identity,
@@ -19,7 +20,7 @@ export function Canister() {
       });
       setAgent(agent);
     }
-  }, [identity]);
+  }, [connectedUser]);
 
   const handleCanisterCall = async () => {
     try {
@@ -43,11 +44,31 @@ export function Canister() {
     }
   };
 
-  if (!user) {
-    return <div>Please connect first.</div>;
-  }
-  if (!identity) {
-    return <div>No identity available.</div>;
+  const handleRequestIdentity = async () => {
+    try {
+      if (!odinConnect) {
+        throw new Error("OdinConnect is not initialized");
+      }
+
+      const user = await odinConnect.connect({
+        requires_delegation: true,
+        targets: [DEMO_CANISTER_ID],
+      });
+
+      console.log("Connected user with delegation:", user);
+      setConnectedUser(user);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  if (!connectedUser?.getIdentity()) {
+    return (
+      <div>
+        No identity available. <br />
+        <button onClick={handleRequestIdentity}>Request</button>
+      </div>
+    );
   }
   return (
     <div>

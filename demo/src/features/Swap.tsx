@@ -4,7 +4,7 @@ import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
 
 export function Swap() {
-  const { odinConnect, tokens, user } = useOdinContext();
+  const { odinConnect, tokens, requestUser } = useOdinContext();
   const [result, setResult] = useState<string | null>(null);
   const [tokenFrom, setTokenFrom] = useState("2jj5");
   const [tokenTo, setTokenTo] = useState("2jjj");
@@ -19,9 +19,6 @@ export function Swap() {
     }
 
     try {
-      if (!user) {
-        throw new Error("No user connected.");
-      }
       const fromTokenData = tokens.find((t) => t.id === tokenFrom);
       if (!fromTokenData) {
         throw new Error("Invalid from token selected.");
@@ -30,8 +27,9 @@ export function Swap() {
         amountFrom,
         fromTokenData
       );
-      const result = await odinConnect.swap({
-        principal: user.principal,
+
+      const user = await requestUser();
+      const result = await user.swap({
         fromToken: tokenFrom,
         toToken: tokenTo,
         fromAmount,

@@ -4,7 +4,7 @@ import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
 
 export function Transfer() {
-  const { tokens, odinConnect, user } = useOdinContext();
+  const { tokens, odinConnect, requestUser } = useOdinContext();
   const [recipient, setRecipient] = useState(
     "fdr2s-q4xug-vi6m7-tlvgs-divc6-hj6sp-xouwu-rmo55-yohcc-rqru4-aqe"
   );
@@ -19,16 +19,14 @@ export function Transfer() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      if (!user) {
-        throw new Error("No user connected");
-      }
+
       const tokenInfo = tokens.find((t) => t.id === token);
       if (!tokenInfo) {
         throw new Error(`Token ${token} not found`);
       }
       setResult(null);
-      await odinConnect.transfer({
-        principal: user.principal,
+      const user = await requestUser();
+      await user.transfer({
         destination: recipient,
         token,
         amount: OdinUtils.convertToOdinAmount(amount, tokenInfo),

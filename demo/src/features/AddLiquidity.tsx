@@ -4,7 +4,7 @@ import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
 
 export function AddLiquidity() {
-  const { odinConnect, user, tokens } = useOdinContext();
+  const { odinConnect, requestUser, tokens } = useOdinContext();
   const [result, setResult] = useState<string | null>(null);
   const [amount, setAmount] = useState("0.0002");
   const [token, setToken] = useState("2jj5");
@@ -17,11 +17,8 @@ export function AddLiquidity() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      if (!user) {
-        throw new Error("User is not connected");
-      }
-      const result = await odinConnect.addLiquidity({
-        principal: user.principal,
+      const user = await requestUser();
+      const result = await user.addLiquidity({
         btcAmount: OdinUtils.convertToOdinAmount(amount),
         token: token,
       });

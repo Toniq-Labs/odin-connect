@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "../App.css";
 import { useOdinContext } from "../OdinContext";
 import { UserInfo } from "../ui/UserInfo";
 import { DEMO_CANISTER_ID } from "../constants";
+import type { OdinUser } from "../../../dist";
 
 const centeredWindowFeatures = (width: number, height: number) => {
   const left = (screen.width - width) / 2;
@@ -14,8 +15,20 @@ function Connect() {
   const [error, setError] = useState<string | null>(null);
   const [requireApi, setRequireApi] = useState(false);
   const [requireDelegation, setRequireDelegation] = useState(false);
-  const { odinConnect, user, setUser, setIdentity } = useOdinContext();
+  const { odinConnect, connectedUser, setConnectedUser } = useOdinContext();
+  const [userInfo, setUserInfo] = useState<OdinUser | null>(null);
 
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      if (connectedUser) {
+        const info = await connectedUser.getUser();
+        setUserInfo(info);
+      } else {
+        setUserInfo(null);
+      }
+    };
+    fetchUserInfo();
+  }, [connectedUser]);
   const openOdinConnect = async (mode: "window" | "tab" = "tab") => {
     setError(null);
     try {
@@ -41,24 +54,10 @@ function Connect() {
           : baseOptions;
 
       const connectedUser = await odinConnect.connect(connectOptions);
-      const user = await connectedUser?.getUser();
-
-      console.log("Received user:", user);
-      console.log(
-        "Received delegation chain JSON:",
-        connectedUser?.getIdentity()?.getDelegation().toJSON()
-      );
-      //setDelegationChain(user?.getIdentity()?.getDelegation() || null);
-      if (user) {
-        setUser(user);
-      }
-      const identity = connectedUser.getIdentity();
-      if (identity) {
-        setIdentity(identity);
-      }
+      setConnectedUser(connectedUser);
     } catch (error) {
       console.error("Connection error:", error);
-      setUser(null);
+      setConnectedUser(null);
       if (error instanceof Error) {
         setError(`Connection error: ${error.message}`);
       } else {
@@ -78,10 +77,8 @@ function Connect() {
     openOdinConnect("tab");
   };
 
-  return user ? (
-    <div>
-      <UserInfo user={user} />
-    </div>
+  return connectedUser ? (
+    <div>{userInfo && <UserInfo user={userInfo} />}</div>
   ) : (
     <div className="container">
       <div>

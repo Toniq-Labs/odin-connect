@@ -30,7 +30,7 @@ export type PaginatedResponse<T> = {
   limit: number;
 };
 
-export class OdinApi {
+export class OdinApiClient {
   private _apiKey: string | null = null;
   private _httpClient: HttpClient;
   readonly BASE_URL: string;

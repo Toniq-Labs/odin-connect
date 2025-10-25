@@ -1,16 +1,14 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { OdinApi } from "./api";
+import { OdinApiClient } from "./api";
 
 describe("ApiClient", () => {
-  let api: OdinApi;
+  let api: OdinApiClient;
   beforeAll(() => {
-    api = new OdinApi("dev");
-    // You can add tests here to verify the functionality of OdinApi methods.
-    // For example, you might want to mock HTTP requests and check responses.
+    api = new OdinApiClient("dev");
   });
 
-  it("should create an instance of OdinApi", () => {
-    expect(api).toBeInstanceOf(OdinApi);
+  it("should create an instance of OdinApiClient", () => {
+    expect(api).toBeInstanceOf(OdinApiClient);
   });
 
   it("it should have the correct base URL for dev environment", () => {
@@ -18,7 +16,7 @@ describe("ApiClient", () => {
   });
 
   it("it should have the correct base URL for prod environment", () => {
-    const prodApi = new OdinApi("prod");
+    const prodApi = new OdinApiClient("prod");
     expect(prodApi.BASE_URL).toBe("https://api.odin.fun/v1");
   });
 
