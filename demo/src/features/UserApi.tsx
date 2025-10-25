@@ -10,7 +10,7 @@ import type {
 import JSONBigInt from "@apimatic/json-bigint";
 
 export function UserApi() {
-  const { odinConnect, connectedUser, setConnectedUser } = useOdinContext();
+  const { odinConnect, requestUser } = useOdinContext();
   const [results, setResults] = useState<
     | OdinToken
     | ReadonlyArray<OdinToken>
@@ -29,10 +29,7 @@ export function UserApi() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      const user = connectedUser ? connectedUser : await odinConnect.connect();
-      if (!connectedUser) {
-        setConnectedUser(user);
-      }
+      const user = await requestUser();
       const data = await user.getUser();
       console.log("Fetched user:", data);
       setResults(data);
@@ -47,10 +44,7 @@ export function UserApi() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      const user = connectedUser ? connectedUser : await odinConnect.connect();
-      if (!connectedUser) {
-        setConnectedUser(user);
-      }
+      const user = await requestUser();
       setLoading(true);
       const activity = await user.getActivity({ page: 1, limit: 10 });
       console.log("Fetched user activity:", activity);
@@ -72,10 +66,7 @@ export function UserApi() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      const user = connectedUser ? connectedUser : await odinConnect.connect();
-      if (!connectedUser) {
-        setConnectedUser(user);
-      }
+      const user = await requestUser();
       const liquidity = await user.getLiquidity({
         page: 1,
         limit: 10,
@@ -94,10 +85,7 @@ export function UserApi() {
         throw new Error("OdinConnect is not initialized");
       }
       setLoading(true);
-      const user = connectedUser ? connectedUser : await odinConnect.connect();
-      if (!connectedUser) {
-        setConnectedUser(user);
-      }
+      const user = await requestUser();
       const tokens = await user.getTokens({ page: 1, limit: 10 });
       console.log("Fetched user tokens:", tokens);
       setResults(tokens.data);
@@ -118,10 +106,7 @@ export function UserApi() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      const user = connectedUser ? connectedUser : await odinConnect.connect();
-      if (!connectedUser) {
-        setConnectedUser(user);
-      }
+      const user = await requestUser();
       const achievements = await user.getAchievements({
         page: 1,
         limit: 10,
@@ -143,7 +128,6 @@ export function UserApi() {
       </div>
       <div className="demo-buttons">
         <button onClick={handleGetUserLiquidity}>getLiquidity()</button>
-
         <button onClick={handleGetUserAchievements}>getAchievements()</button>
       </div>
       <div className="object-result">

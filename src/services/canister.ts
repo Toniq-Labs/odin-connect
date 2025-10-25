@@ -131,7 +131,7 @@ export class OdinCanisterClient {
         reject(
           new Error(
             resolveMessages.didnotopen ??
-              "Failed to open window, please always allow popups and try again"
+              `Failed to open ${odinPath} window, please always allow popups and try again`
           )
         );
         return;

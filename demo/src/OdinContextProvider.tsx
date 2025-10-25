@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   OdinConnect,
   type OdinConnectedUser,
@@ -18,6 +18,18 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     const odin = new OdinConnect({ name: "Demo", env: "dev" });
     setOdinConnect(odin);
   }, []);
+
+  const requestUser = useCallback(async (): Promise<OdinConnectedUser> => {
+    if (!odinConnect) {
+      throw new Error("OdinConnect is not initialized");
+    }
+    if (connectedUser) {
+      return connectedUser;
+    }
+    const user = await odinConnect.connect();
+    setConnectedUser(user);
+    return user;
+  }, [connectedUser, odinConnect]);
 
   useEffect(() => {
     if (odinConnect) {
@@ -46,6 +58,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
         setConnectedUser,
         tokens,
         setTokens,
+        requestUser,
       }}
     >
       {children}

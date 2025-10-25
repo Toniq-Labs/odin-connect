@@ -6,7 +6,7 @@ const randomInt = Math.floor(Math.random() * 1000);
 export function CreateToken() {
   const [image, setImage] = useState<File | null>(null);
   const [result, setResult] = useState<string | null>(null);
-  const { odinConnect, connectedUser } = useOdinContext();
+  const { odinConnect, requestUser } = useOdinContext();
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState("Token " + randomInt);
   const [ticker, setTicker] = useState("TKN" + randomInt);
@@ -104,9 +104,7 @@ export function CreateToken() {
               throw new Error("OdinConnect is not initialized");
             }
 
-            if (!connectedUser) {
-              throw new Error("User is not connected");
-            }
+            const user = await requestUser();
 
             if (!image) {
               throw new Error("No image selected");
@@ -114,7 +112,7 @@ export function CreateToken() {
 
             const buyAmount = OdinUtils.convertToOdinAmount(preBuy || "0");
 
-            await connectedUser.createToken({
+            await user.createToken({
               image,
               name,
               ticker,

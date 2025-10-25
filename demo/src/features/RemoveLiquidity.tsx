@@ -4,7 +4,7 @@ import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
 
 export function RemoveLiquidity() {
-  const { odinConnect, connectedUser, tokens } = useOdinContext();
+  const { odinConnect, requestUser, tokens } = useOdinContext();
   const [result, setResult] = useState<string | null>(null);
   const [amount, setAmount] = useState("100");
   const [token, setToken] = useState("2jj5");
@@ -17,14 +17,14 @@ export function RemoveLiquidity() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      if (!connectedUser) {
-        throw new Error("User is not connected");
-      }
       const tokenData = tokens.find((t) => t.id === token);
       if (!tokenData) {
         throw new Error("Invalid token selected");
       }
-      await connectedUser.removeLiquidity({
+
+      const user = await requestUser();
+
+      await user.removeLiquidity({
         lpAmount: OdinUtils.convertToOdinAmount(amount, tokenData),
         token: token,
       });

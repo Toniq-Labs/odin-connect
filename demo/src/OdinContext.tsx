@@ -7,6 +7,8 @@ type OdinContextType = {
   setConnectedUser: (user: OdinConnectedUser | null) => void;
   tokens: ReadonlyArray<OdinToken>;
   setTokens: (tokens: ReadonlyArray<OdinToken>) => void;
+  /* get the connected user, if not call odinConnect.connect() */
+  requestUser: () => Promise<OdinConnectedUser>;
 };
 
 export const OdinContext = createContext<OdinContextType | undefined>(

@@ -4,7 +4,7 @@ import type { OdinBalance } from "odin-connect";
 import { BalanceTable } from "../ui/BalanceTable";
 
 export function Balances() {
-  const { odinConnect, connectedUser, setConnectedUser } = useOdinContext();
+  const { odinConnect, requestUser } = useOdinContext();
   const [error, setError] = useState<string | null>(null);
   const [balances, setBalances] = useState<ReadonlyArray<OdinBalance>>([]);
   const [loading, setLoading] = useState(false);
@@ -16,11 +16,8 @@ export function Balances() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      const u = connectedUser ? connectedUser : await odinConnect.connect();
-      if (!connectedUser) {
-        setConnectedUser(u);
-      }
-      const balances = await u.getBalances({
+      const user = await requestUser();
+      const balances = await user.getBalances({
         page: 1,
         limit: 20,
       });

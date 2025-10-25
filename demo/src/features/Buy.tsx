@@ -4,7 +4,7 @@ import { TokenSelect } from "../ui/TokenSelect";
 import { OdinUtils } from "odin-connect";
 
 export function Buy() {
-  const { odinConnect, connectedUser, tokens } = useOdinContext();
+  const { odinConnect, requestUser, tokens } = useOdinContext();
   const [amount, setAmount] = useState("0.0002");
   const [token, setToken] = useState("2jj5");
   const [result, setResult] = useState<string | null>(null);
@@ -16,14 +16,12 @@ export function Buy() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      if (!connectedUser) {
-        throw new Error("User is not connected");
-      }
       const tokenInfo = tokens.find((t) => t.id === token);
       if (!tokenInfo) {
         throw new Error("Invalid token selected");
       }
-      await connectedUser.buy({
+      const user = await requestUser();
+      await user.buy({
         btcAmount: OdinUtils.convertToOdinAmount(amount),
         token,
       });
