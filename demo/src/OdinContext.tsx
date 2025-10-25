@@ -1,10 +1,10 @@
 import { createContext, useContext } from "react";
-import type { OdinConnect, OdinToken, OdinUser } from "odin-connect";
+import type { OdinConnect, OdinConnectedUser, OdinToken } from "odin-connect";
 import type { DelegationIdentity } from "@dfinity/identity";
 type OdinContextType = {
   odinConnect: OdinConnect | null;
-  user: OdinUser | null;
-  setUser: (user: OdinUser | null) => void;
+  connectedUser: OdinConnectedUser | null;
+  setConnectedUser: (user: OdinConnectedUser | null) => void;
   tokens: ReadonlyArray<OdinToken>;
   setTokens: (tokens: ReadonlyArray<OdinToken>) => void;
   identity: DelegationIdentity | null;

@@ -4,7 +4,7 @@ import { TokenSelect } from "../ui/TokenSelect";
 import { OdinUtils } from "odin-connect";
 
 export function Sell() {
-  const { odinConnect, user, tokens } = useOdinContext();
+  const { odinConnect, connectedUser, tokens } = useOdinContext();
   const [amount, setAmount] = useState("10000");
   const [token, setToken] = useState("2jj5");
   const [result, setResult] = useState<string | null>(null);
@@ -16,7 +16,7 @@ export function Sell() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      if (!user) {
+      if (!connectedUser) {
         throw new Error("No user connected");
       }
 
@@ -25,10 +25,9 @@ export function Sell() {
         throw new Error("Invalid token selected");
       }
 
-      await odinConnect.odin.sell({
+      await connectedUser.sell({
         tokenAmount: OdinUtils.convertToOdinAmount(amount, tokenInfo),
         token,
-        principal: user.principal,
       });
       setResult(`Successfully sold ${amount} of $${tokenInfo.name}`);
     } catch (error) {

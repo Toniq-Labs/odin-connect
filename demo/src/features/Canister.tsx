@@ -6,7 +6,7 @@ import { DEMO_CANISTER_ID, DEMO_IC_HOST } from "../constants";
 import JSONBig from "@apimatic/json-bigint";
 
 export function Canister() {
-  const { user, identity } = useOdinContext();
+  const { connectedUser, identity } = useOdinContext();
   const [agent, setAgent] = useState<HttpAgent | null>(null);
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<unknown | null>(null);
@@ -43,7 +43,7 @@ export function Canister() {
     }
   };
 
-  if (!user) {
+  if (!connectedUser) {
     return <div>Please connect first.</div>;
   }
   if (!identity) {

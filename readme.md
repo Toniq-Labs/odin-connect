@@ -51,7 +51,8 @@ const identity = user.getIdentity();
 ### Request for user balances
 
 ```typescript
-const balances = await odinConnect.getBalances({
+const user = await odinConnect.connect();
+user.getBalances({
   principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
   pagination: { page: 1, limit: 20 },
 });

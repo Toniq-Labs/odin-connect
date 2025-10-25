@@ -5,7 +5,7 @@ import {
   Ed25519KeyIdentity,
   JsonnableDelegationChain,
 } from "@dfinity/identity";
-import { ConnectedUser } from "./connect-user";
+import { ConnectedUser } from "./connected-user";
 import { Environment, ORIGINS } from "../models/environment";
 import { WindowClient, WindowClientSettings } from "./window";
 import { OdinCanisterClient } from "./canister";
@@ -88,12 +88,17 @@ export class Connect {
     return this._appInfo;
   }
 
-  connect({
-    open,
-    requires_api,
-    requires_delegation,
-    targets,
-  }: ConnectOptions): Promise<ConnectedUser> {
+  connect(
+    {
+      open,
+      requires_api,
+      requires_delegation,
+      targets,
+    }: ConnectOptions | undefined = {
+      requires_delegation: false,
+      requires_api: false,
+    }
+  ): Promise<ConnectedUser> {
     return new Promise<ConnectedUser>((resolve, reject) => {
       if (open) {
         this._window.settings = open;
@@ -160,7 +165,7 @@ export class Connect {
         url.searchParams.append("requires_delegation", "1");
         const sessionString = btoa(JSON.stringify(sessionKey.toJSON()));
         url.searchParams.append("session_key", sessionString);
-        url.searchParams.append("targets", targets.join(","));
+        url.searchParams.append("targets", targets?.join(",") || "");
       }
       this._window.open(url);
 

@@ -1,11 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { OdinConnect, type OdinToken, type OdinUser } from "odin-connect";
+import {
+  OdinConnect,
+  type OdinConnectedUser,
+  type OdinToken,
+} from "odin-connect";
 import { OdinContext } from "./OdinContext";
 import type { DelegationIdentity } from "@dfinity/identity";
 
 export const OdinProvider = ({ children }: { children: ReactNode }) => {
   const [odinConnect, setOdinConnect] = useState<OdinConnect | null>(null);
-  const [user, setUser] = useState<OdinUser | null>(null);
+  const [connectedUser, setConnectedUser] = useState<OdinConnectedUser | null>(
+    null
+  );
   const [tokens, setTokens] = useState<ReadonlyArray<OdinToken>>([]);
   const [identity, setIdentity] = useState<DelegationIdentity | null>(null);
 
@@ -38,8 +44,8 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     <OdinContext.Provider
       value={{
         odinConnect,
-        user,
-        setUser,
+        connectedUser,
+        setConnectedUser,
         tokens,
         setIdentity,
         identity,

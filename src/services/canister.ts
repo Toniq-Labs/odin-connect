@@ -98,6 +98,7 @@ export class OdinCanisterClient {
       success: (message: MessageType) => ResolveType;
       failure: string;
       close: string;
+      didnotopen?: string;
     };
   }) {
     return new Promise<ResolveType>((resolve, reject) => {
@@ -125,7 +126,16 @@ export class OdinCanisterClient {
           url.searchParams.append(key, params[key]);
         }
       }
-      this._window.open(url);
+      const opened = this._window.open(url);
+      if (!opened || opened.closed || typeof opened.closed === "undefined") {
+        reject(
+          new Error(
+            resolveMessages.didnotopen ??
+              "Unable to open window, please always allow popups and try again"
+          )
+        );
+        return;
+      }
       window.addEventListener("message", handleMessage);
     });
   }

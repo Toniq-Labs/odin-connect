@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import type {
   OdinAchievementCategory,
@@ -10,7 +10,7 @@ import type {
 import JSONBigInt from "@apimatic/json-bigint";
 
 export function Api() {
-  const { odinConnect, user } = useOdinContext();
+  const { odinConnect, connectedUser } = useOdinContext();
   const [results, setResults] = useState<
     | OdinToken
     | OdinUser
@@ -20,6 +20,19 @@ export function Api() {
     | null
   >(null);
   const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<OdinUser | null>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      if (connectedUser) {
+        const userInfo = await connectedUser.getUser();
+        setUser(userInfo);
+      } else {
+        setUser(null);
+      }
+    };
+    fetchUser();
+  }, [connectedUser]);
 
   const handleGetToken = async () => {
     if (!odinConnect) {

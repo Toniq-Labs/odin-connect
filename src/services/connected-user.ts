@@ -3,9 +3,11 @@ import { OdinApiClient } from "./api";
 import {
   AddLiquidityOptions,
   BuyOptions,
+  CreateTokenParams,
   OdinCanisterClient,
   RemoveLiquidityOptions,
   SellOptions,
+  SwapOptions,
   TransferOptions,
 } from "./canister";
 
@@ -75,6 +77,20 @@ export class ConnectedUser {
 
   transfer(params: Omit<TransferOptions, "principal">) {
     return this._odin.transfer({
+      ...params,
+      principal: this._principal,
+    });
+  }
+
+  createToken(params: Omit<CreateTokenParams, "principal">) {
+    return this._odin.createToken({
+      ...params,
+      principal: this._principal,
+    });
+  }
+
+  swap(params: Omit<SwapOptions, "principal">) {
+    return this._odin.swap({
       ...params,
       principal: this._principal,
     });
