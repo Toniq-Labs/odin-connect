@@ -11,7 +11,7 @@ import { Swap } from "./features/Swap";
 import { UserApi } from "./features/UserApi";
 import { CreateToken } from "./features/CreateToken";
 import { Canister } from "./features/Canister";
-//import { MySandbox } from "./features/MySandbox";
+import { Examples } from "./features/Examples";
 
 function App() {
   return (
@@ -61,10 +61,9 @@ function App() {
           <h1>Create Token</h1>
           <CreateToken />
         </section>
-
-        {/* <section>
-          <MySandbox />
-        </section> */}
+        <section>
+          <Examples />
+        </section>
       </div>
     </OdinProvider>
   );

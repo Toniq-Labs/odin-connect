@@ -10,7 +10,7 @@ import type {
 import JSONBigInt from "@apimatic/json-bigint";
 
 export function UserApi() {
-  const { odinConnect, connectedUser } = useOdinContext();
+  const { odinConnect, connectedUser, setConnectedUser } = useOdinContext();
   const [results, setResults] = useState<
     | OdinToken
     | ReadonlyArray<OdinToken>
@@ -30,6 +30,9 @@ export function UserApi() {
         throw new Error("OdinConnect is not initialized");
       }
       const user = connectedUser ? connectedUser : await odinConnect.connect();
+      if (!connectedUser) {
+        setConnectedUser(user);
+      }
       const data = await user.getUser();
       console.log("Fetched user:", data);
       setResults(data);
@@ -45,6 +48,9 @@ export function UserApi() {
         throw new Error("OdinConnect is not initialized");
       }
       const user = connectedUser ? connectedUser : await odinConnect.connect();
+      if (!connectedUser) {
+        setConnectedUser(user);
+      }
       setLoading(true);
       const activity = await user.getActivity({ page: 1, limit: 10 });
       console.log("Fetched user activity:", activity);
@@ -67,6 +73,9 @@ export function UserApi() {
         throw new Error("OdinConnect is not initialized");
       }
       const user = connectedUser ? connectedUser : await odinConnect.connect();
+      if (!connectedUser) {
+        setConnectedUser(user);
+      }
       const liquidity = await user.getLiquidity({
         page: 1,
         limit: 10,
@@ -86,6 +95,9 @@ export function UserApi() {
       }
       setLoading(true);
       const user = connectedUser ? connectedUser : await odinConnect.connect();
+      if (!connectedUser) {
+        setConnectedUser(user);
+      }
       const tokens = await user.getTokens({ page: 1, limit: 10 });
       console.log("Fetched user tokens:", tokens);
       setResults(tokens.data);
@@ -106,10 +118,11 @@ export function UserApi() {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
+      const user = connectedUser ? connectedUser : await odinConnect.connect();
       if (!connectedUser) {
-        throw new Error("No user connected");
+        setConnectedUser(user);
       }
-      const achievements = await connectedUser.getAchievements({
+      const achievements = await user.getAchievements({
         page: 1,
         limit: 10,
       });

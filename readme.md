@@ -6,7 +6,7 @@
 
 ## Demo
 
-This repository includes a demo. See `demo/` folder
+This repository includes a demo. See `/demo` folder
 
 To run it, simply do `npm run demo`
 
@@ -17,7 +17,7 @@ To run it, simply do `npm run demo`
 Instantiate the OdinConnect class with some information about your application
 
 - `name` - Name of your app
-- `env` - Odin Environment. Accepted values: `prod`, `dev`, local`. Default: `prod`.
+- `env` - Odin Environment. Accepted values: `prod`, `dev`, `local`. Default: `prod`.
 
 ```typescript
 const odinConnect = new OdinConnect({ name: "Demo App", env: "prod" });
@@ -172,6 +172,6 @@ const activity = await odinConnect.api.getUserActivity({
 });
 ```
 
-### Notes
+## General Notes
 
 - BTC amounts are in millisatoshis

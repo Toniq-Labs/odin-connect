@@ -5,7 +5,6 @@ import {
   type OdinToken,
 } from "odin-connect";
 import { OdinContext } from "./OdinContext";
-import type { DelegationIdentity } from "@dfinity/identity";
 
 export const OdinProvider = ({ children }: { children: ReactNode }) => {
   const [odinConnect, setOdinConnect] = useState<OdinConnect | null>(null);
@@ -13,7 +12,6 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     null
   );
   const [tokens, setTokens] = useState<ReadonlyArray<OdinToken>>([]);
-  const [identity, setIdentity] = useState<DelegationIdentity | null>(null);
 
   useEffect(() => {
     // Initialize OdinConnect with your app name and target environment
@@ -47,8 +45,6 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
         connectedUser,
         setConnectedUser,
         tokens,
-        setIdentity,
-        identity,
         setTokens,
       }}
     >

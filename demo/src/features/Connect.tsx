@@ -15,8 +15,7 @@ function Connect() {
   const [error, setError] = useState<string | null>(null);
   const [requireApi, setRequireApi] = useState(false);
   const [requireDelegation, setRequireDelegation] = useState(false);
-  const { odinConnect, connectedUser, setConnectedUser, setIdentity } =
-    useOdinContext();
+  const { odinConnect, connectedUser, setConnectedUser } = useOdinContext();
   const [userInfo, setUserInfo] = useState<OdinUser | null>(null);
 
   useEffect(() => {
@@ -56,10 +55,6 @@ function Connect() {
 
       const connectedUser = await odinConnect.connect(connectOptions);
       setConnectedUser(connectedUser);
-      const identity = connectedUser.getIdentity();
-      if (identity) {
-        setIdentity(identity);
-      }
     } catch (error) {
       console.error("Connection error:", error);
       setConnectedUser(null);
