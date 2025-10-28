@@ -139,11 +139,31 @@ export function UserApi() {
     }
   };
 
+  const handleGetCreatedTokens = async () => {
+    try {
+      setLoading(true);
+      if (!odinConnect) {
+        throw new Error("OdinConnect is not initialized");
+      }
+      const user = await requestUser();
+      const createdTokens = await user.getCreatedTokens({
+        page: 1,
+        limit: 10,
+      });
+      console.log("Fetched user created tokens:", createdTokens);
+      setResults(createdTokens.data);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error fetching user created tokens:", error);
+    }
+  }
+
   return (
     <div>
       <div className="demo-buttons">
         <button onClick={handleGetUserTokens}>getTokens()</button>
         <button onClick={handleGetUser}>getUser()</button>
+        <button onClick={handleGetCreatedTokens}>getCreatedTokens()</button>
         <button onClick={handleGetUserActivity}>getActivity()</button>
         <button onClick={handleGetUserLiquidity}>getLiquidity()</button>
         <button onClick={handleGetTransactions}>getTransactions()</button>

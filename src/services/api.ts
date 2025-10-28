@@ -213,6 +213,17 @@ export class OdinApiClient {
     );
   }
 
+  getUserCreatedTokens(principal: string, pagination: Pagination) {
+    return this._httpClient.get<PaginatedResponse<Token>>(
+      `${this.BASE_URL}/user/${principal}/created`,
+      {
+        params: {
+          ...pagination,
+        },
+      }
+    );
+  }
+
   set apiKey(key: string) {
     this._apiKey = key;
   }
