@@ -5,6 +5,7 @@ import type {
   OdinActivity,
   OdinToken,
   OdinTokenWithBalance,
+  OdinTransaction,
   OdinUser,
 } from "odin-connect";
 import JSONBigInt from "@apimatic/json-bigint";
@@ -16,7 +17,7 @@ export function UserApi() {
     | ReadonlyArray<OdinToken>
     | OdinUser
     | ReadonlyArray<
-        OdinActivity | OdinTokenWithBalance | OdinAchievementCategory
+        OdinActivity | OdinTokenWithBalance | OdinAchievementCategory | OdinTransaction
       >
     | string
     | null
@@ -119,15 +120,33 @@ export function UserApi() {
     }
   };
 
+  const handleGetTransactions = async () => {
+    try {
+      setLoading(true);
+      if (!odinConnect) {
+        throw new Error("OdinConnect is not initialized");
+      }
+      const user = await requestUser();
+      const transactions = await user.getTransactions({
+        page: 1,
+        limit: 10,
+      });
+      console.log("Fetched user transactions:", transactions);
+      setResults(transactions.data);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error fetching user transactions:", error);
+    }
+  };
+
   return (
     <div>
       <div className="demo-buttons">
         <button onClick={handleGetUserTokens}>getTokens()</button>
         <button onClick={handleGetUser}>getUser()</button>
         <button onClick={handleGetUserActivity}>getActivity()</button>
-      </div>
-      <div className="demo-buttons">
         <button onClick={handleGetUserLiquidity}>getLiquidity()</button>
+        <button onClick={handleGetTransactions}>getTransactions()</button>
         <button onClick={handleGetUserAchievements}>getAchievements()</button>
       </div>
       <div className="object-result">

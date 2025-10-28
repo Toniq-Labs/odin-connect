@@ -6,6 +6,7 @@ import { User } from "../models/user";
 import { HttpClient } from "./http";
 import { createTokenValidators } from "../utils";
 import { AchievementCategory } from "../models/achievement";
+import { Transaction } from "../models/transactions";
 
 const BASE_URL_ENV = {
   dev: "https://api.odin.fun/dev",
@@ -199,6 +200,17 @@ export class OdinApiClient {
       },
     });
     return response.data;
+  }
+
+  getUserTransactions(principal: string, pagination: Pagination) {
+    return this._httpClient.get<PaginatedResponse<Transaction>>(
+      `${this.BASE_URL}/user/${principal}/transactions`,
+      {
+        params: {
+          ...pagination,
+        },
+      }
+    );
   }
 
   set apiKey(key: string) {

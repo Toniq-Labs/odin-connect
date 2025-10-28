@@ -57,6 +57,10 @@ export class ConnectedUser {
     return this._api.getUserAchievements(this._principal, pagination);
   }
 
+  getTransactions(pagination: { page: number; limit: number }) {
+    return this._api.getUserTransactions(this._principal, pagination);
+  }
+
   /// others
 
   sell(params: Omit<SellOptions, "principal">) {
