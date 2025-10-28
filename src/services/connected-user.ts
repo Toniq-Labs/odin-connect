@@ -73,6 +73,10 @@ export class ConnectedUser {
     return this._api.getUserTransactions(this.principal, pagination);
   }
 
+  getStats() {
+    return this._api.getUserStats(this.principal);
+  }
+
   /// others
 
   sell(params: Omit<SellOptions, "principal">) {

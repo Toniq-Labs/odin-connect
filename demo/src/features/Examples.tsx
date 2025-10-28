@@ -20,6 +20,8 @@ export function Examples() {
     const achievements = await user.getAchievements({ page: 1, limit: 10 });
     // get transactions
     const transactions = await user.getTransactions({ page: 1, limit: 10 });
+    // get stats
+    const stats = await user.getStats();
 
     console.log("Balances:", balances);
     console.log("Activity:", activity);
@@ -28,6 +30,7 @@ export function Examples() {
     console.log("Achievements:", achievements);
     console.log("Created Tokens:", createdTokens);
     console.log("Transactions:", transactions);
+    console.log("Stats:", stats);
   };
 
   const testFunction2 = async () => {

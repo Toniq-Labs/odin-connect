@@ -224,6 +224,12 @@ export class OdinApiClient {
     );
   }
 
+  getUserStats(principal: string) {
+    return this._httpClient.get<{ followers: number; following: number }>(
+      `${this.BASE_URL}/user/${principal}/stats`
+    );
+  }
+
   set apiKey(key: string) {
     this._apiKey = key;
   }
