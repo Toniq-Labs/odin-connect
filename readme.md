@@ -54,15 +54,20 @@ const identity = user.getIdentity();
 ### Request for various user data from API
 
 ```typescript
-const user = await odinConnect.connect();
+// get balances
+const balances = await user.getBalances({ page: 1, limit: 10 });
 // get tokens
 const tokens = await user.getTokens({ page: 1, limit: 10 });
+// get created tokens
+const createdTokens = await user.getCreatedTokens({ page: 1, limit: 10 });
 // get liquidity
 const liquidity = await user.getLiquidity({ page: 1, limit: 10 });
 // get activity
 const activity = await user.getActivity({ page: 1, limit: 10 });
 // get achievements
 const achievements = await user.getAchievements({ page: 1, limit: 10 });
+// get transactions
+const transactions = await user.getTransactions({ page: 1, limit: 10 });
 ```
 
 ### Request for token transfer
