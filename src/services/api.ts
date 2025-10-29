@@ -1,7 +1,12 @@
 import { AxiosError } from "axios";
 import { Activity } from "../models/activity";
 import { Balance } from "../models/balance";
-import { Token, TokenFilterFields, TokenWithBalance } from "../models/token";
+import {
+  Token,
+  TokenFilterFields,
+  TokenSortableFields,
+  TokenWithBalance,
+} from "../models/token";
 import { User } from "../models/user";
 import { HttpClient } from "./http";
 import { createTokenValidators } from "../utils";
@@ -19,8 +24,8 @@ export type Pagination = {
   limit: number;
 };
 
-export type Sort = {
-  field: string;
+export type Sort<T = string> = {
+  field: T;
   direction: "asc" | "desc";
 };
 
@@ -58,7 +63,7 @@ export class OdinApiClient {
 
   getTokens(
     pagination: Pagination,
-    sort: Sort = { field: "marketcap", direction: "desc" },
+    sort: Sort<TokenSortableFields> = { field: "marketcap", direction: "desc" },
     filters: Partial<TokenFilterFields> = {}
   ) {
     return this._httpClient.get<PaginatedResponse<Token>>(

@@ -77,3 +77,19 @@ export type TokenFilterFields = {
   price_min: number;
   search: string;
 };
+
+export type TokenSortableFields =
+  | "created_time"
+  | "marketcap"
+  | "volume"
+  | "power_holder_count"
+  | "price"
+  | "holders_count"
+  | "price_delta_5m"
+  | "price_delta_1h"
+  | "price_delta_6h"
+  | "price_delta_1d"
+  | "volume_24"
+  | "txn_count"
+  | "ascension"
+  | "last_action_time";
