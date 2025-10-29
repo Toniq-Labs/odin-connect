@@ -154,6 +154,9 @@ const tokens = await odin.api.getTokens(
   {
     field: "marketcap",
     direction: "desc",
+  },
+  {
+    marketcap_min: 100000000n, // in millisats
   }
 );
 
