@@ -129,16 +129,16 @@ Note: `require_api` must be set set to true
 ```typescript
 const user = await odinConnect.connect({ requires_api: true });
 await user.createToken({
-  image: file, // instance of a file
+  image: file, // a File with supported image type
   principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
   name: "Test Token",
   ticker: "TEST",
-  description: "Test Description", // optional
-  website: "http://test-website.com", // optional
+  description: "Test Description", // optional token description
+  website: "http://test-website.com", // optional 
   telegram: "", // optional
   twitter: "", // optional
-  buy: 20_000_000n, // 20K sats
-  discount: "",
+  buy: 20_000_000n, // pre-buy amount, optional
+  discount: "", // 10 alphanumeric characters
 });
 ```
 
