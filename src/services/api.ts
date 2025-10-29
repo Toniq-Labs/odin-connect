@@ -1,7 +1,7 @@
 import { AxiosError } from "axios";
 import { Activity } from "../models/activity";
 import { Balance } from "../models/balance";
-import { Token, TokenWithBalance } from "../models/token";
+import { Token, TokenFilterFields, TokenWithBalance } from "../models/token";
 import { User } from "../models/user";
 import { HttpClient } from "./http";
 import { createTokenValidators } from "../utils";
@@ -58,7 +58,8 @@ export class OdinApiClient {
 
   getTokens(
     pagination: Pagination,
-    sort: Sort = { field: "marketcap", direction: "desc" }
+    sort: Sort = { field: "marketcap", direction: "desc" },
+    filters: Partial<TokenFilterFields> = {}
   ) {
     return this._httpClient.get<PaginatedResponse<Token>>(
       `${this.BASE_URL}/tokens`,
@@ -66,6 +67,7 @@ export class OdinApiClient {
         params: {
           ...pagination,
           sort: `${sort.field}:${sort.direction}`,
+          ...filters,
         },
       }
     );

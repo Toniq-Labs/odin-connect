@@ -146,10 +146,16 @@ await user.createToken({
 
 ```typescript
 // Get tokens
-const tokens = await odinConnect.api.getTokens({
-  pagination: { page: 1, limit: 50 },
-  sort: { field: "marketcap", direction: "desc" },
-});
+const tokens = await odin.api.getTokens(
+  {
+    page: 1,
+    limit: 10,
+  },
+  {
+    field: "marketcap",
+    direction: "desc",
+  }
+);
 
 // Get activities
 const activity = await odinConnect.api.getUserActivity({

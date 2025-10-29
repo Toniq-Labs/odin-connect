@@ -57,3 +57,23 @@ export interface TokenWithBalance {
   token: Token;
   balance: bigint;
 }
+
+export type TokenFilterFields = {
+  ascended: boolean;
+  etched: boolean;
+  /** External: true - Launched on BitCoin; false - Launched on Odin */
+  external: boolean;
+  verified: boolean;
+  has_website: boolean;
+  has_twitter: boolean;
+  has_telegram: boolean;
+  marketcap_max: bigint;
+  marketcap_min: bigint;
+  volume_max: bigint;
+  volume_min: bigint;
+  holders_max: number;
+  holders_min: number;
+  price_max: number;
+  price_min: number;
+  search: string;
+};
