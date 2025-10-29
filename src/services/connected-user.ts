@@ -29,32 +29,52 @@ export class ConnectedUser {
     this._odin = odin;
   }
 
+  get principal(): string {
+    return this._principal;
+  }
+
+  set principal(principal: string) {
+    this._principal = principal;
+  }
+
   getIdentity(): DelegationIdentity | null {
     return this._identity;
   }
 
   getUser() {
-    return this._api.getUser(this._principal);
+    return this._api.getUser(this.principal);
   }
 
   getBalances(pagination: { page: number; limit: number }) {
-    return this._api.getBalances(this._principal, pagination);
+    return this._api.getBalances(this.principal, pagination);
   }
 
   getTokens(pagination: { page: number; limit: number }) {
-    return this._api.getUserTokens(this._principal, pagination);
+    return this._api.getUserTokens(this.principal, pagination);
+  }
+
+  getCreatedTokens(pagination: { page: number; limit: number }) {
+    return this._api.getUserCreatedTokens(this.principal, pagination);
   }
 
   getActivity(pagination: { page: number; limit: number }) {
-    return this._api.getUserActivity(this._principal, pagination);
+    return this._api.getUserActivity(this.principal, pagination);
   }
 
   getLiquidity(pagination: { page: number; limit: number }) {
-    return this._api.getUserLiquidity(this._principal, pagination);
+    return this._api.getUserLiquidity(this.principal, pagination);
   }
 
   getAchievements(pagination: { page: number; limit: number }) {
-    return this._api.getUserAchievements(this._principal, pagination);
+    return this._api.getUserAchievements(this.principal, pagination);
+  }
+
+  getTransactions(pagination: { page: number; limit: number }) {
+    return this._api.getUserTransactions(this.principal, pagination);
+  }
+
+  getStats() {
+    return this._api.getUserStats(this.principal);
   }
 
   /// others
@@ -62,49 +82,49 @@ export class ConnectedUser {
   sell(params: Omit<SellOptions, "principal">) {
     return this._odin.sell({
       ...params,
-      principal: this._principal,
+      principal: this.principal,
     });
   }
 
   buy(params: Omit<BuyOptions, "principal">) {
     return this._odin.buy({
       ...params,
-      principal: this._principal,
+      principal: this.principal,
     });
   }
 
   addLiquidity(params: Omit<AddLiquidityOptions, "principal">) {
     return this._odin.addLiquidity({
       ...params,
-      principal: this._principal,
+      principal: this.principal,
     });
   }
 
   removeLiquidity(params: Omit<RemoveLiquidityOptions, "principal">) {
     return this._odin.removeLiquidity({
       ...params,
-      principal: this._principal,
+      principal: this.principal,
     });
   }
 
   transfer(params: Omit<TransferOptions, "principal">) {
     return this._odin.transfer({
       ...params,
-      principal: this._principal,
+      principal: this.principal,
     });
   }
 
   createToken(params: Omit<CreateTokenParams, "principal">) {
     return this._odin.createToken({
       ...params,
-      principal: this._principal,
+      principal: this.principal,
     });
   }
 
   swap(params: Omit<SwapOptions, "principal">) {
     return this._odin.swap({
       ...params,
-      principal: this._principal,
+      principal: this.principal,
     });
   }
 }

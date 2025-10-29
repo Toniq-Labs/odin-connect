@@ -7,6 +7,7 @@ export type {
   TokenWithBalance as OdinTokenWithBalance,
 } from "./models/token";
 export type { Activity as OdinActivity } from "./models/activity";
+export type { Transaction as OdinTransaction } from "./models/transactions";
 export type {
   Achievement as OdinAchievement,
   AchievementCategory as OdinAchievementCategory,

@@ -1,11 +1,17 @@
 import { AxiosError } from "axios";
 import { Activity } from "../models/activity";
 import { Balance } from "../models/balance";
-import { Token, TokenWithBalance } from "../models/token";
+import {
+  Token,
+  TokenFilterFields,
+  TokenSortableFields,
+  TokenWithBalance,
+} from "../models/token";
 import { User } from "../models/user";
 import { HttpClient } from "./http";
 import { createTokenValidators } from "../utils";
 import { AchievementCategory } from "../models/achievement";
+import { Transaction } from "../models/transactions";
 
 const BASE_URL_ENV = {
   dev: "https://api.odin.fun/dev",
@@ -18,8 +24,8 @@ export type Pagination = {
   limit: number;
 };
 
-export type Sort = {
-  field: string;
+export type Sort<T = string> = {
+  field: T;
   direction: "asc" | "desc";
 };
 
@@ -57,7 +63,8 @@ export class OdinApiClient {
 
   getTokens(
     pagination: Pagination,
-    sort: Sort = { field: "marketcap", direction: "desc" }
+    sort: Sort<TokenSortableFields> = { field: "marketcap", direction: "desc" },
+    filters: Partial<TokenFilterFields> = {}
   ) {
     return this._httpClient.get<PaginatedResponse<Token>>(
       `${this.BASE_URL}/tokens`,
@@ -65,6 +72,7 @@ export class OdinApiClient {
         params: {
           ...pagination,
           sort: `${sort.field}:${sort.direction}`,
+          ...filters,
         },
       }
     );
@@ -199,6 +207,34 @@ export class OdinApiClient {
       },
     });
     return response.data;
+  }
+
+  getUserTransactions(principal: string, pagination: Pagination) {
+    return this._httpClient.get<PaginatedResponse<Transaction>>(
+      `${this.BASE_URL}/user/${principal}/transactions`,
+      {
+        params: {
+          ...pagination,
+        },
+      }
+    );
+  }
+
+  getUserCreatedTokens(principal: string, pagination: Pagination) {
+    return this._httpClient.get<PaginatedResponse<Token>>(
+      `${this.BASE_URL}/user/${principal}/created`,
+      {
+        params: {
+          ...pagination,
+        },
+      }
+    );
+  }
+
+  getUserStats(principal: string) {
+    return this._httpClient.get<{ followers: number; following: number }>(
+      `${this.BASE_URL}/user/${principal}/stats`
+    );
   }
 
   set apiKey(key: string) {

@@ -54,15 +54,20 @@ const identity = user.getIdentity();
 ### Request for various user data from API
 
 ```typescript
-const user = await odinConnect.connect();
+// get balances
+const balances = await user.getBalances({ page: 1, limit: 10 });
 // get tokens
 const tokens = await user.getTokens({ page: 1, limit: 10 });
+// get created tokens
+const createdTokens = await user.getCreatedTokens({ page: 1, limit: 10 });
 // get liquidity
 const liquidity = await user.getLiquidity({ page: 1, limit: 10 });
 // get activity
 const activity = await user.getActivity({ page: 1, limit: 10 });
 // get achievements
 const achievements = await user.getAchievements({ page: 1, limit: 10 });
+// get transactions
+const transactions = await user.getTransactions({ page: 1, limit: 10 });
 ```
 
 ### Request for token transfer
@@ -141,10 +146,19 @@ await user.createToken({
 
 ```typescript
 // Get tokens
-const tokens = await odinConnect.api.getTokens({
-  pagination: { page: 1, limit: 50 },
-  sort: { field: "marketcap", direction: "desc" },
-});
+const tokens = await odin.api.getTokens(
+  {
+    page: 1,
+    limit: 10,
+  },
+  {
+    field: "marketcap",
+    direction: "desc",
+  },
+  {
+    marketcap_min: 100000000n, // in millisats
+  }
+);
 
 // Get activities
 const activity = await odinConnect.api.getUserActivity({
@@ -160,16 +174,30 @@ const user = await odinConnect.api.getUser(
 );
 
 // Get user balance by user id
-const balances = await odinConnect.api.getBalances({
-  principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
-  pagination: { page: 1, limit: 20 },
-});
+const balances = await odinConnect.api.getBalances(
+  "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
+  { page: 1, limit: 20 }
+);
 
 // Get activities by  user id
-const activity = await odinConnect.api.getUserActivity({
-  principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
-  pagination: { page: 1, limit: 10 },
-});
+const activity = await odinConnect.api.getUserActivity(
+  "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
+  { page: 1, limit: 10 }
+);
+
+// Get transactions by user id
+const transactions = await odinConnecct.api.getUserTransactions(
+  "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
+  {
+    page: 1,
+    limit: 10,
+  }
+);
+
+// Get user stats
+const stats = await odin.api.getUserStats(
+  "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe"
+);
 ```
 
 ## General Notes

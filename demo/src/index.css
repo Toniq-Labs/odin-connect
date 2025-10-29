@@ -50,8 +50,9 @@ h2 {
 
 .demo-buttons {
   margin-top: 8px;
-  display: flex;
+  display: grid;
   gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 .form-group {
   display: flex;

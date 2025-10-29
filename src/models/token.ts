@@ -57,3 +57,39 @@ export interface TokenWithBalance {
   token: Token;
   balance: bigint;
 }
+
+export type TokenFilterFields = {
+  ascended: boolean;
+  etched: boolean;
+  /** External: true - Launched on BitCoin; false - Launched on Odin */
+  external: boolean;
+  verified: boolean;
+  has_website: boolean;
+  has_twitter: boolean;
+  has_telegram: boolean;
+  marketcap_max: bigint;
+  marketcap_min: bigint;
+  volume_max: bigint;
+  volume_min: bigint;
+  holders_max: number;
+  holders_min: number;
+  price_max: number;
+  price_min: number;
+  search: string;
+};
+
+export type TokenSortableFields =
+  | "created_time"
+  | "marketcap"
+  | "volume"
+  | "power_holder_count"
+  | "price"
+  | "holders_count"
+  | "price_delta_5m"
+  | "price_delta_1h"
+  | "price_delta_6h"
+  | "price_delta_1d"
+  | "volume_24"
+  | "txn_count"
+  | "ascension"
+  | "last_action_time";
