@@ -11,6 +11,7 @@ import { Swap } from "./features/Swap";
 import { UserApi } from "./features/UserApi";
 import { CreateToken } from "./features/CreateToken";
 import { Canister } from "./features/Canister";
+import { IcrcApprove } from "./features/IcrcApprove";
 import { Examples } from "./features/Examples";
 
 function App() {
@@ -56,6 +57,10 @@ function App() {
         <section>
           <h1>Swap</h1>
           <Swap />
+        </section>
+        <section>
+          <h1>ICRC Approve</h1>
+          <IcrcApprove />
         </section>
         <section>
           <h1>Create Token</h1>
