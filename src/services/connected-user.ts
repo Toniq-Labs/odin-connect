@@ -4,6 +4,7 @@ import {
   AddLiquidityOptions,
   BuyOptions,
   CreateTokenParams,
+  IcrcApproveOptions,
   OdinCanisterClient,
   RemoveLiquidityOptions,
   SellOptions,
@@ -116,6 +117,13 @@ export class ConnectedUser {
 
   createToken(params: Omit<CreateTokenParams, "principal">) {
     return this._odin.createToken({
+      ...params,
+      principal: this.principal,
+    });
+  }
+
+  icrcApprove(params: Omit<IcrcApproveOptions, "principal">) {
+    return this._odin.icrcApprove({
       ...params,
       principal: this.principal,
     });
