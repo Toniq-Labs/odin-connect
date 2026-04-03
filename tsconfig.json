@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "declaration": true,
-    "declarationMap": false,
+    "declarationMap": true,
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
