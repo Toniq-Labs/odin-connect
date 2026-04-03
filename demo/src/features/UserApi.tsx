@@ -3,6 +3,7 @@ import { useOdinContext } from "../OdinContext";
 import type {
   OdinAchievementCategory,
   OdinActivity,
+  OdinBalance,
   OdinToken,
   OdinTokenWithBalance,
   OdinTransaction,
@@ -13,6 +14,7 @@ import JSONBigInt from "@apimatic/json-bigint";
 export function UserApi() {
   const { odinConnect, requestUser } = useOdinContext();
   const [results, setResults] = useState<
+    | OdinBalance
     | OdinToken
     | ReadonlyArray<OdinToken>
     | OdinUser
@@ -139,6 +141,27 @@ export function UserApi() {
     }
   };
 
+  const handleGetBalance = async () => {
+    try {
+      setLoading(true);
+      if (!odinConnect) {
+        throw new Error("OdinConnect is not initialized");
+      }
+      const user = await requestUser();
+      const balance = await user.getBalance("2jjj");
+      console.log("Fetched balance:", balance);
+      setResults(balance);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error fetching balance:", error);
+      if (error instanceof Error) {
+        setResults(error.message);
+      } else {
+        setResults("Error fetching balance");
+      }
+    }
+  };
+
   const handleGetCreatedTokens = async () => {
     try {
       setLoading(true);
@@ -161,6 +184,7 @@ export function UserApi() {
   return (
     <div>
       <div className="demo-buttons">
+        <button onClick={handleGetBalance}>getBalance()</button>
         <button onClick={handleGetUserTokens}>getTokens()</button>
         <button onClick={handleGetUser}>getUser()</button>
         <button onClick={handleGetCreatedTokens}>getCreatedTokens()</button>
