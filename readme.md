@@ -215,6 +215,7 @@ All data methods accept a `{ page, limit }` pagination object:
 ```typescript
 const profile       = await user.getUser();
 const balances      = await user.getBalances({ page: 1, limit: 10 });
+const balance       = await user.getBalance("2jjj"); // Single token balance (or null)
 const tokens        = await user.getTokens({ page: 1, limit: 10 });
 const createdTokens = await user.getCreatedTokens({ page: 1, limit: 10 });
 const liquidity     = await user.getLiquidity({ page: 1, limit: 10 });
@@ -363,6 +364,12 @@ const user = await odinConnect.api.getUser(
 const balances = await odinConnect.api.getBalances(
   "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
   { page: 1, limit: 20 }
+);
+
+// Get balance for a specific token (returns Balance or null)
+const balance = await odinConnect.api.getBalance(
+  "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
+  "2jjj"
 );
 
 // Get activities by user id
