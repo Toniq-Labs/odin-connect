@@ -55,7 +55,10 @@ describe("ApiClient", () => {
 
   it("it should get balance for a specific token", async () => {
     const getSpy = vi.spyOn(api["_httpClient"], "get").mockResolvedValue({
-      data: [{ id: "token1", balance: 100 }],
+      data: [
+        { id: "other", balance: 50 },
+        { id: "token1", balance: 100 },
+      ],
     });
     const balance = await api.getBalance("some-principal", "token1");
     expect(getSpy).toHaveBeenCalledWith(
