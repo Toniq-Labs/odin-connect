@@ -17,7 +17,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup && node obfuscate.mjs",
+    "build": "tsup",
     "prepublishOnly": "npm run build",
     "test": "vitest",
     "demo:update": "npm run build && cd demo && npm install ../ && cd ..",
@@ -41,7 +41,6 @@
   "devDependencies": {
     "@types/node": "^24.3.1",
     "@vitest/ui": "^3.2.4",
-    "javascript-obfuscator": "^5.4.1",
     "jsdom": "^27.0.0",
     "release-it": "^19.0.5",
     "tsup": "^8.5.1",
