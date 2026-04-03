@@ -61,6 +61,17 @@ export class OdinApiClient {
     return response.data;
   }
 
+  async getBalance(principal: string, tokenId: string) {
+    const response = await this._httpClient.get<{
+      data: ReadonlyArray<Balance>;
+    }>(`${this.BASE_URL}/user/${principal}/balances`, {
+      params: {
+        token_in: tokenId,
+      },
+    });
+    return response.data.find((b) => b.id === tokenId) ?? null;
+  }
+
   getTokens(
     pagination: Pagination,
     sort: Sort<TokenSortableFields> = { field: "marketcap", direction: "desc" },

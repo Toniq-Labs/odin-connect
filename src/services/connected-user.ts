@@ -49,6 +49,10 @@ export class ConnectedUser {
     return this._api.getBalances(this.principal, pagination);
   }
 
+  getBalance(tokenId: string) {
+    return this._api.getBalance(this.principal, tokenId);
+  }
+
   getTokens(pagination: { page: number; limit: number }) {
     return this._api.getUserTokens(this.principal, pagination);
   }
