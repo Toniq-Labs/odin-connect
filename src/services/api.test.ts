@@ -53,6 +53,29 @@ describe("ApiClient", () => {
     ]);
   });
 
+  it("it should get balance for a specific token", async () => {
+    const getSpy = vi.spyOn(api["_httpClient"], "get").mockResolvedValue({
+      data: [
+        { id: "other", balance: 50 },
+        { id: "token1", balance: 100 },
+      ],
+    });
+    const balance = await api.getBalance("some-principal", "token1");
+    expect(getSpy).toHaveBeenCalledWith(
+      "https://api.odin.fun/dev/user/some-principal/balances",
+      { params: { token_in: "token1" } }
+    );
+    expect(balance).toEqual({ id: "token1", balance: 100 });
+  });
+
+  it("it should return null when token balance not found", async () => {
+    vi.spyOn(api["_httpClient"], "get").mockResolvedValue({
+      data: [],
+    });
+    const balance = await api.getBalance("some-principal", "nonexistent");
+    expect(balance).toBeNull();
+  });
+
   it("it should get tokens with pagination and sorting", async () => {
     const getSpy = vi.spyOn(api["_httpClient"], "get").mockResolvedValue({
       data: [
