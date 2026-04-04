@@ -2,3 +2,4 @@ src
 test
 *.log
 tsconfig.json
+tsup.config.ts
