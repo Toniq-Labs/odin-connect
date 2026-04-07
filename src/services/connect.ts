@@ -9,11 +9,21 @@ import { ConnectedUser } from "./connected-user";
 import { Environment, ORIGINS } from "../models/environment";
 import { WindowClient, WindowClientSettings } from "./window";
 import { OdinCanisterClient } from "./canister";
+import { SessionStorage } from "./storage";
+import { isDelegationValid } from "../utils/session";
 
 export interface AppInitOptions {
   name: string;
   icon?: string;
   env?: Environment;
+  slug?: string;
+}
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 interface BaseConnectOptions {
   // options for window.open
@@ -52,6 +62,7 @@ export class Connect {
   private _api: OdinApiClient;
   private _window: WindowClient;
   private _odin: OdinCanisterClient;
+  private _storage: SessionStorage;
 
   constructor(appInfo?: Partial<AppInitOptions>) {
     this._appInfo = {
@@ -59,6 +70,8 @@ export class Connect {
       name: "app_name",
       ...appInfo,
     };
+    this._appInfo.slug =
+      this._appInfo.slug || slugify(this._appInfo.name);
     this._api = new OdinApiClient(
       this._appInfo.env === "prod" ? "prod" : "dev"
     );
@@ -68,6 +81,10 @@ export class Connect {
       this._api,
       this._appInfo,
       ORIGINS[this._appInfo.env || "prod"]
+    );
+    this._storage = new SessionStorage(
+      this._appInfo.slug!,
+      this._appInfo.env || "prod"
     );
   }
 
@@ -86,6 +103,10 @@ export class Connect {
 
   get appInfo() {
     return this._appInfo;
+  }
+
+  get slug() {
+    return this._appInfo?.slug || "";
   }
 
   connect(
@@ -150,6 +171,15 @@ export class Connect {
                 );
               }
 
+              this._storage.save({
+                principal,
+                sessionKey: JSON.stringify(sessionKey.toJSON()),
+                delegationChain: delegationChain
+                  ? JSON.stringify(delegationChain)
+                  : null,
+                jwt: jwtToken || null,
+              });
+
               resolve(connectedUser);
             } catch (error) {
               reject(new Error("Failed to fetch user data"));
@@ -183,6 +213,52 @@ export class Connect {
 
   get currentEnv() {
     return this._appInfo?.env || "prod";
+  }
+
+  restoreSession(): ConnectedUser | null {
+    try {
+      const data = this._storage.load();
+      if (!data) return null;
+
+      if (data.delegationChain) {
+        if (!isDelegationValid(data.delegationChain)) {
+          this._storage.clear();
+          return null;
+        }
+      }
+
+      if (data.jwt) {
+        this._api.apiKey = data.jwt;
+      }
+
+      let identity: DelegationIdentity | null = null;
+      if (data.delegationChain && data.sessionKey) {
+        const sessionKey = Ed25519KeyIdentity.fromJSON(data.sessionKey);
+        const chain = DelegationChain.fromJSON(
+          JSON.parse(data.delegationChain)
+        );
+        identity = DelegationIdentity.fromDelegation(sessionKey, chain);
+      }
+
+      return new ConnectedUser(data.principal, identity, this._api, this._odin);
+    } catch {
+      this._storage.clear();
+      return null;
+    }
+  }
+
+  disconnect(): void {
+    this._storage.clear();
+    this._api.apiKey = null;
+  }
+
+  isSessionValid(): boolean {
+    const data = this._storage.load();
+    if (!data) return false;
+    if (data.delegationChain) {
+      return isDelegationValid(data.delegationChain);
+    }
+    return true;
   }
 
   hello() {

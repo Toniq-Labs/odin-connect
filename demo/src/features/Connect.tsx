@@ -77,8 +77,17 @@ function Connect() {
     openOdinConnect("tab");
   };
 
+  const handleDisconnect = () => {
+    odinConnect?.disconnect();
+    setConnectedUser(null);
+    setUserInfo(null);
+  };
+
   return connectedUser ? (
-    <div>{userInfo && <UserInfo user={userInfo} />}</div>
+    <div>
+      {userInfo && <UserInfo user={userInfo} />}
+      <button onClick={handleDisconnect}>Disconnect</button>
+    </div>
   ) : (
     <div className="container">
       <div>
