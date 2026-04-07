@@ -17,6 +17,12 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     // Initialize OdinConnect with your app name and target environment
     const odin = new OdinConnect({ name: "Demo", env: "dev" });
     setOdinConnect(odin);
+
+    // Attempt to restore a previous session from localStorage
+    const restoredUser = odin.restoreSession();
+    if (restoredUser) {
+      setConnectedUser(restoredUser);
+    }
   }, []);
 
   const requestUser = useCallback(async (): Promise<OdinConnectedUser> => {

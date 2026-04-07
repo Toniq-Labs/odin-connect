@@ -13,4 +13,5 @@ export type {
   AchievementCategory as OdinAchievementCategory,
 } from "./models/achievement";
 export * as OdinUtils from "./utils";
+export type { SessionData } from "./services/storage";
 export type { ConnectedUser as OdinConnectedUser } from "./services/connected-user";

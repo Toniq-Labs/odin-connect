@@ -248,7 +248,7 @@ export class OdinApiClient {
     );
   }
 
-  set apiKey(key: string) {
+  set apiKey(key: string | null) {
     this._apiKey = key;
   }
 

@@ -1,5 +1,7 @@
 import { BaseToken, Token } from "../models/token";
 
+export { isDelegationValid } from "./session";
+
 export function convertToOdinAmount(
   numberStr: string | number,
   token: Pick<BaseToken, "decimals" | "divisibility"> = {
