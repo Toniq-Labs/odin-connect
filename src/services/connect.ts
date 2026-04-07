@@ -19,12 +19,22 @@ export interface AppInitOptions {
   slug?: string;
 }
 
+function hashCode(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0).toString(36).slice(0, 3).padStart(3, "0");
+}
+
 function slugify(text: string): string {
-  return text
+  const base = text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+  return `${base}-${hashCode(text)}`;
 }
+
 interface BaseConnectOptions {
   // options for window.open
   open?: WindowClientSettings;
@@ -171,14 +181,16 @@ export class Connect {
                 );
               }
 
-              this._storage.save({
-                principal,
-                sessionKey: JSON.stringify(sessionKey.toJSON()),
-                delegationChain: delegationChain
-                  ? JSON.stringify(delegationChain)
-                  : null,
-                jwt: jwtToken || null,
-              });
+              if (requires_api || requires_delegation) {
+                this._storage.save({
+                  principal,
+                  sessionKey: JSON.stringify(sessionKey.toJSON()),
+                  delegationChain: delegationChain
+                    ? JSON.stringify(delegationChain)
+                    : null,
+                  jwt: jwtToken || null,
+                });
+              }
 
               resolve(connectedUser);
             } catch (error) {
