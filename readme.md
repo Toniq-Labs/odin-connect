@@ -12,6 +12,7 @@ A TypeScript SDK for integrating with the [Odin](https://odin.fun) decentralized
   - [API Request Flow](#api-request-flow)
 - [Getting Started](#getting-started)
 - [Authentication](#authentication)
+- [Session Restoration](#session-restoration)
 - [Connected User Operations](#connected-user-operations)
   - [Fetching User Data](#fetching-user-data)
   - [Trading](#trading)
@@ -91,6 +92,7 @@ sequenceDiagram
     User->>Popup: Authenticates
     Popup->>SDK: postMessage({ principal, jwt, delegationChain? })
     SDK->>SDK: Create ConnectedUser instance
+    SDK->>SDK: Persist session to localStorage
     SDK->>App: Returns ConnectedUser
 ```
 
@@ -151,10 +153,11 @@ const odinConnect = new OdinConnect({
   env: "prod",
 });
 
-// 2. Authenticate a user
-const user = await odinConnect.connect({
-  requires_api: true,
-});
+// 2. Restore existing session or authenticate
+let user = odinConnect.restoreSession();
+if (!user) {
+  user = await odinConnect.connect({ requires_api: true });
+}
 
 // 3. Fetch data
 const balances = await user.getBalances({ page: 1, limit: 10 });
@@ -203,6 +206,58 @@ const user = await odinConnect.connect({
 const identity = user.getIdentity();
 // Use identity with @dfinity/agent
 ```
+
+## Session Restoration
+
+OdinConnect automatically persists session data to `localStorage` after a successful `connect()`. This allows you to restore sessions on page load without requiring user action.
+
+### Restoring a session
+
+```typescript
+const odinConnect = new OdinConnect({ name: "My App", env: "prod" });
+
+// Attempt to restore a previous session (synchronous, no popup)
+const user = odinConnect.restoreSession();
+if (user) {
+  // Session restored — user is ready
+  const balances = await user.getBalances({ page: 1, limit: 10 });
+} else {
+  // No valid session — prompt the user to connect
+  const user = await odinConnect.connect({ requires_api: true });
+}
+```
+
+### Checking session validity
+
+```typescript
+if (odinConnect.isSessionValid()) {
+  // A non-expired session exists in storage
+}
+```
+
+### Disconnecting
+
+```typescript
+// Clears persisted session data and resets the API key
+odinConnect.disconnect();
+```
+
+### Custom app slug
+
+Storage keys are scoped by a slug derived from your app name (e.g. `"My App"` becomes `"my-app"`). You can provide a custom slug to control the storage key:
+
+```typescript
+const odinConnect = new OdinConnect({
+  name: "My App",
+  slug: "myapp-v2", // Storage key: odin_connect:myapp-v2:prod:session
+  env: "prod",
+});
+```
+
+> **Notes:**
+> - Sessions with a delegation chain are automatically invalidated when the delegation expires.
+> - Calling `disconnect()` in one tab clears the session for all tabs on the same origin.
+> - In environments where `localStorage` is unavailable (SSR, strict privacy mode), session persistence is silently skipped.
 
 ## Connected User Operations
 
@@ -451,6 +506,7 @@ import type {
   OdinAchievement,
   OdinAchievementCategory,
   OdinConnectedUser,
+  SessionData,
 } from "odin-connect";
 ```
 
