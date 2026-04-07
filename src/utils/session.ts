@@ -5,7 +5,7 @@ export function isDelegationValid(chainJson: string): boolean {
     const chain = DelegationChain.fromJSON(JSON.parse(chainJson));
     const nowNs = BigInt(Date.now()) * 1_000_000n;
     return chain.delegations.every(
-      (d) => !d.delegation.expiration || d.delegation.expiration > nowNs
+      (d) => d.delegation.expiration == null || d.delegation.expiration > nowNs
     );
   } catch {
     return false;

@@ -24,10 +24,24 @@ export class SessionStorage {
     try {
       const raw = localStorage.getItem(this._key);
       if (!raw) return null;
-      return JSON.parse(raw) as SessionData;
+      const parsed = JSON.parse(raw);
+      if (!this.isValidSessionData(parsed)) return null;
+      return parsed;
     } catch {
       return null;
     }
+  }
+
+  private isValidSessionData(data: unknown): data is SessionData {
+    if (typeof data !== "object" || data === null) return false;
+    const obj = data as Record<string, unknown>;
+    return (
+      typeof obj.principal === "string" &&
+      typeof obj.sessionKey === "string" &&
+      (obj.delegationChain === null ||
+        typeof obj.delegationChain === "string") &&
+      (obj.jwt === null || typeof obj.jwt === "string")
+    );
   }
 
   clear(): void {

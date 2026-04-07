@@ -55,6 +55,22 @@ describe("SessionStorage", () => {
     expect(storage.load()).toBeNull();
   });
 
+  it("should return null for data with missing required fields", () => {
+    localStorage.setItem(
+      "odin_connect:my-app:prod:session",
+      JSON.stringify({ principal: "abc" })
+    );
+    expect(storage.load()).toBeNull();
+  });
+
+  it("should return null for data with wrong field types", () => {
+    localStorage.setItem(
+      "odin_connect:my-app:prod:session",
+      JSON.stringify({ principal: 123, sessionKey: null, delegationChain: null, jwt: null })
+    );
+    expect(storage.load()).toBeNull();
+  });
+
   it("should not throw when localStorage is unavailable on save", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("localStorage disabled");
