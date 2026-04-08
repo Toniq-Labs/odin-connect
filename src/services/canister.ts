@@ -41,6 +41,13 @@ export interface SwapOptions {
   fromAmount: bigint;
 }
 
+export interface IcrcApproveOptions {
+  principal: string;
+  token: string;
+  spender: string;
+  amount: bigint;
+}
+
 export interface CreateTokenParams {
   principal: string;
   name: string;
@@ -239,6 +246,24 @@ export class OdinCanisterClient {
       resolve: {
         success: () => true,
         failure: "Swap failed or was cancelled",
+        close: "User closed the window",
+      },
+    });
+  }
+
+  icrcApprove({ principal, token, spender, amount }: IcrcApproveOptions) {
+    return this.baseAction<boolean, string>({
+      params: {
+        principal,
+        token,
+        spender,
+        amount: amount.toString(),
+      },
+      odinPath: "authorize/icrc_approve",
+      receivedMessageFromOrigin: "approved",
+      resolve: {
+        success: () => true,
+        failure: "ICRC approve failed or was cancelled",
         close: "User closed the window",
       },
     });
