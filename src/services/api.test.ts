@@ -17,7 +17,7 @@ describe("ApiClient", () => {
 
   it("it should have the correct base URL for prod environment", () => {
     const prodApi = new OdinApiClient("prod");
-    expect(prodApi.BASE_URL).toBe("https://api.odin.fun/v1");
+    expect(prodApi.BASE_URL).toBe("https://api.odin.fun/v2");
   });
 
   it("it should get user by ID", async () => {

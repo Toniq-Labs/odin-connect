@@ -15,7 +15,7 @@ import { Transaction } from "../models/transactions";
 
 const BASE_URL_ENV = {
   dev: "https://api.odin.fun/dev",
-  prod: "https://api.odin.fun/v1",
+  prod: "https://api.odin.fun/v2",
   local: "https://api.odin.fun/dev",
 };
 
