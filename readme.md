@@ -280,6 +280,27 @@ const transactions  = await user.getTransactions({ page: 1, limit: 10 });
 const stats         = await user.getStats();
 ```
 
+#### Getting the BTC balance
+
+BTC is a regular token with the id `"btc"`, so fetch it with `getBalance`:
+
+```typescript
+// Connected user
+const btc = await user.getBalance("btc"); // Balance | null (null = no BTC held)
+
+// Or with the read-only API client (no auth required)
+const btc = await odinConnect.api.getBalance(principal, "btc");
+```
+
+`balance` is a `bigint` in **millisatoshis** (1 BTC = 100,000,000,000 millisats).
+Convert to BTC for display:
+
+```typescript
+const asBtc = btc ? Number(btc.balance) / 1e11 : 0;
+```
+
+> See [General Notes](#general-notes) — all BTC amounts are in millisatoshis.
+
 ### Trading
 
 #### Buy tokens
