@@ -343,6 +343,18 @@ await user.swap({
 });
 ```
 
+#### Approve a spender (ICRC-2)
+
+Authorizes a `spender` to transfer up to `amount` of a token on the user's behalf. The user's `principal` is supplied automatically from the connected session.
+
+```typescript
+await user.icrcApprove({
+  token: "2jjj",       // Token to approve
+  spender: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe", // Principal allowed to spend
+  amount: 20_000_000n, // Allowance in millisatoshis
+});
+```
+
 ### Liquidity
 
 #### Add liquidity
