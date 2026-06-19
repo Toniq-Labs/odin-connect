@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import type { OdinUser } from "odin-connect";
 
-export function UserInfo({ user }: { user: OdinUser }) {
+export function UserInfo({
+  user,
+  avatarUrl,
+}: {
+  user: OdinUser;
+  avatarUrl: string;
+}) {
   const [placeholder, setPlaceholder] = useState(false);
 
   useEffect(() => {
@@ -15,7 +21,7 @@ export function UserInfo({ user }: { user: OdinUser }) {
           <div className="avatar">{user.username.slice(0, 2)}</div>
         ) : (
           <img
-            src={`https://api.odin.fun/dev/user/${user.principal}/image`}
+            src={avatarUrl}
             className="avatar"
             alt="User Avatar"
             onError={() => setPlaceholder(true)}

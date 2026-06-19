@@ -46,6 +46,10 @@ export class ConnectedUser {
     return this._api.getUser(this.principal);
   }
 
+  buildAvatarImageUrl(): string {
+    return this._api.getUserAvatarUrl(this.principal);
+  }
+
   getBalances(pagination: { page: number; limit: number }) {
     return this._api.getBalances(this.principal, pagination);
   }

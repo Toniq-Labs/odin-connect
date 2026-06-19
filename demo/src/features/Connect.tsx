@@ -85,7 +85,12 @@ function Connect() {
 
   return connectedUser ? (
     <div>
-      {userInfo && <UserInfo user={userInfo} />}
+      {userInfo && (
+        <UserInfo
+          user={userInfo}
+          avatarUrl={connectedUser.buildAvatarImageUrl()}
+        />
+      )}
       <button onClick={handleDisconnect}>Disconnect</button>
     </div>
   ) : (
