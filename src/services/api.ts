@@ -19,6 +19,12 @@ const BASE_URL_ENV = {
   local: "https://api.odin.fun/dev",
 };
 
+const IMAGE_CDN_ENV = {
+  dev: "https://images.odin.fun/dev",
+  prod: "https://images.odin.fun/v2",
+  local: "https://images.odin.fun/dev",
+};
+
 export type Pagination = {
   page: number;
   limit: number;
@@ -40,14 +46,20 @@ export class OdinApiClient {
   private _apiKey: string | null = null;
   private _httpClient: HttpClient;
   readonly BASE_URL: string;
+  readonly ENV: "prod" | "dev";
 
   constructor(env: "prod" | "dev" = "prod") {
     this._httpClient = new HttpClient();
     this.BASE_URL = BASE_URL_ENV[env];
+    this.ENV = env;
   }
 
   getUser(id: string) {
     return this._httpClient.get<User>(`${this.BASE_URL}/user/${id}`);
+  }
+
+  getUserAvatarUrl(principal: string): string {
+    return `${IMAGE_CDN_ENV[this.ENV]}/user/${principal}`;
   }
 
   async getBalances(principal: string, pagination: Pagination) {

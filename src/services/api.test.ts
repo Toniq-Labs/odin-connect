@@ -20,6 +20,19 @@ describe("ApiClient", () => {
     expect(prodApi.BASE_URL).toBe("https://api.odin.fun/v2");
   });
 
+  it("it should build the user avatar URL for dev environment", () => {
+    expect(api.getUserAvatarUrl("some-principal")).toBe(
+      "https://images.odin.fun/dev/user/some-principal"
+    );
+  });
+
+  it("it should build the user avatar URL for prod environment", () => {
+    const prodApi = new OdinApiClient("prod");
+    expect(prodApi.getUserAvatarUrl("some-principal")).toBe(
+      "https://images.odin.fun/v2/user/some-principal"
+    );
+  });
+
   it("it should get user by ID", async () => {
     const getUserSpy = vi.spyOn(api["_httpClient"], "get").mockResolvedValue({
       id: "some-id",

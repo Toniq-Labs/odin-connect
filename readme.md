@@ -278,6 +278,7 @@ const activity      = await user.getActivity({ page: 1, limit: 10 });
 const achievements  = await user.getAchievements({ page: 1, limit: 10 });
 const transactions  = await user.getTransactions({ page: 1, limit: 10 });
 const stats         = await user.getStats();
+const avatarUrl     = user.buildAvatarImageUrl(); // sync, env-aware CDN URL
 ```
 
 ### Trading
