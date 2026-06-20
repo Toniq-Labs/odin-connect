@@ -283,13 +283,13 @@ const avatarUrl     = user.buildAvatarImageUrl(); // sync, env-aware CDN URL
 
 #### Token image URL
 
-Token images are not user-scoped, so build them from the `odinConnect` instance (or the read-only API client) with a token id:
+Token images are not user-scoped, so build them with the `OdinUtils.buildTokenImageUrl` utility from a token id. Pass the target env (defaults to `"prod"`):
 
 ```typescript
-const imageUrl = odinConnect.buildTokenImageUrl("2jjj"); // sync, env-aware CDN URL
+import { OdinUtils } from "odin-connect";
 
-// Or via the read-only API client (no auth required)
-const imageUrl = odinConnect.api.getTokenImageUrl("2jjj");
+const imageUrl = OdinUtils.buildTokenImageUrl("2jjj"); // env-aware CDN URL (prod)
+const devUrl   = OdinUtils.buildTokenImageUrl("2jjj", odinConnect.currentEnv);
 ```
 
 #### Getting the BTC balance
