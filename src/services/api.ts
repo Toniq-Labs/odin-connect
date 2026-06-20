@@ -62,6 +62,10 @@ export class OdinApiClient {
     return `${IMAGE_CDN_ENV[this.ENV]}/user/${principal}`;
   }
 
+  getTokenImageUrl(tokenId: string): string {
+    return `${IMAGE_CDN_ENV[this.ENV]}/token/${tokenId}`;
+  }
+
   async getBalances(principal: string, pagination: Pagination) {
     const response = await this._httpClient.get<{
       data: ReadonlyArray<Balance>;

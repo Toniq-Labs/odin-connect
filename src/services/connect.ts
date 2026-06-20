@@ -227,6 +227,10 @@ export class Connect {
     return this._appInfo?.env || "prod";
   }
 
+  buildTokenImageUrl(tokenId: string): string {
+    return this._api.getTokenImageUrl(tokenId);
+  }
+
   restoreSession(): ConnectedUser | null {
     try {
       const data = this._storage.load();
