@@ -39,7 +39,7 @@ Layered. Public surface is small; everything else is internal services composed 
 
 - **BigInt everywhere for token amounts.** API responses parsed with `@apimatic/json-bigint` (`bigIntTransformer` in http.ts) so large numbers survive. `getUserTokens`/`getUserLiquidity` re-cast `balance` to `BigInt`. Canister action params take `bigint` and `.toString()` them into URL params. Keep amounts `bigint` through the whole path.
 - **Popup + postMessage is the auth/action mechanism.** No direct canister calls — the Odin frontend (origin from `ORIGINS`) handles signing in a popup; the SDK only opens the URL and listens for the reply. Always verify `event.origin === this.origin` before trusting a message.
-- **Environments** ([src/models/environment.ts](src/models/environment.ts)): `prod`/`dev`/`local`. `Connect` collapses everything non-`prod` to `dev` for the API base URL but keeps the full env for popup origins.
+- **Environments** ([src/models/environment.ts](src/models/environment.ts)): `prod`/`dev`/`local`/`_preview`. `Connect` collapses everything non-`prod` to `dev` for the API base URL but keeps the full env for popup origins.
 - **Token-creation validators** ([src/utils/index.ts](src/utils/index.ts)): `createTokenValidators` map runs in `createToken`/`uploadImage`; each returns an error string or `undefined`. Add field rules there, not inline.
 
 ## Conventions for changes
