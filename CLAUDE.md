@@ -46,4 +46,4 @@ Layered. Public surface is small; everything else is internal services composed 
 
 - Branch names and commit messages include the ClickUp task ID (e.g. `docs/86aj57792-...`).
 - Release commit format is `chore: release v${version}` (release-it config in package.json).
-- `dist/` is committed/published — rebuild (`npm run build`) when changing the public bundle.
+- `dist/` is gitignored but published to npm (via the `files` field) — rebuild (`npm run build`) when changing the public bundle.
