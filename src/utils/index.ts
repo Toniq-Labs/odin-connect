@@ -1,6 +1,19 @@
 import { BaseToken, Token } from "../models/token";
+import { IMAGE_CDN_ENV, OdinEnv } from "../constants";
 
 export { isDelegationValid } from "./session";
+
+/**
+ * Build a token's image URL from its id using the env-aware image CDN.
+ * @param tokenId Token id (e.g. `Token.id`).
+ * @param env Target environment; defaults to `"prod"`.
+ */
+export function buildTokenImageUrl(
+  tokenId: string,
+  env: OdinEnv = "prod"
+): string {
+  return `${IMAGE_CDN_ENV[env]}/token/${tokenId}`;
+}
 
 export function convertToOdinAmount(
   numberStr: string | number,

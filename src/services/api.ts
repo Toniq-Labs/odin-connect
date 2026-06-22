@@ -12,18 +12,7 @@ import { HttpClient } from "./http";
 import { createTokenValidators } from "../utils";
 import { AchievementCategory } from "../models/achievement";
 import { Transaction } from "../models/transactions";
-
-const BASE_URL_ENV = {
-  dev: "https://api.odin.fun/dev",
-  prod: "https://api.odin.fun/v2",
-  local: "https://api.odin.fun/dev",
-};
-
-const IMAGE_CDN_ENV = {
-  dev: "https://images.odin.fun/dev",
-  prod: "https://images.odin.fun/v2",
-  local: "https://images.odin.fun/dev",
-};
+import { BASE_URL_ENV, IMAGE_CDN_ENV } from "../constants";
 
 export type Pagination = {
   page: number;

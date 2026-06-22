@@ -281,6 +281,17 @@ const stats         = await user.getStats();
 const avatarUrl     = user.buildAvatarImageUrl(); // sync, env-aware CDN URL
 ```
 
+#### Token image URL
+
+Token images are not user-scoped, so build them with the `OdinUtils.buildTokenImageUrl` utility from a token id. Pass the target env (defaults to `"prod"`):
+
+```typescript
+import { OdinUtils } from "odin-connect";
+
+const imageUrl = OdinUtils.buildTokenImageUrl("2jjj"); // env-aware CDN URL (prod)
+const devUrl   = OdinUtils.buildTokenImageUrl("2jjj", odinConnect.currentEnv);
+```
+
 #### Getting the BTC balance
 
 BTC is a regular token with the id `"btc"`, so fetch it with `getBalance`:
