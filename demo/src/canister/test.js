@@ -11,7 +11,7 @@ export const idlFactory = ({ IDL }) => {
     'icrc28_trusted_origins' : IDL.Func(
         [],
         [IDL.Record({ 'trusted_origins' : IDL.Vec(IDL.Text) })],
-        [],
+        ['query'],
       ),
     'withdraw' : IDL.Func([IDL.Text, IDL.Nat], [IDL.Nat], []),
   });
