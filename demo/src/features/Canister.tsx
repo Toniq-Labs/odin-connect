@@ -34,8 +34,8 @@ export function Canister() {
       });
       console.log("Calling canister...");
       console.log("Agent:", agent);
-      const result = await canisterApi.icrc1_name();
-      console.log("Token info:", result);
+      const result = await canisterApi.getOwner();
+      console.log("Owner:", result);
       setResult(result);
     } catch (error) {
       console.error("Error occurred:", error);
@@ -72,7 +72,7 @@ export function Canister() {
   }
   return (
     <div>
-      <button onClick={handleCanisterCall}>Run icrc1_name()</button>
+      <button onClick={handleCanisterCall}>Run getOwner()</button>
       <br />
       <pre style={{ height: 350, overflow: "auto" }}>
         {pending ? "Loading..." : JSONBig.stringify(result, null, 2)}
