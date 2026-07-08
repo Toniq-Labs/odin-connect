@@ -10,6 +10,7 @@ export function CreateToken() {
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState("Token " + randomInt);
   const [ticker, setTicker] = useState("TKN" + randomInt);
+  const [vanityTicker, setVanityTicker] = useState("");
   const [description, setDescription] = useState("This is a test token");
   const [website, setWebsite] = useState("");
   const [telegram, setTelegram] = useState("");
@@ -45,6 +46,14 @@ export function CreateToken() {
           type="text"
           value={ticker}
           onChange={(e) => setTicker(e.target.value)}
+        />
+      </div>
+      <div className="form-group">
+        <label>Vanity Ticker (optional):</label>
+        <input
+          type="text"
+          value={vanityTicker}
+          onChange={(e) => setVanityTicker(e.target.value)}
         />
       </div>
       <div className="form-group">
@@ -116,6 +125,7 @@ export function CreateToken() {
               image,
               name,
               ticker,
+              vanity_ticker: vanityTicker,
               description,
               website,
               telegram,
