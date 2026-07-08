@@ -54,11 +54,15 @@ export function convertToOdinAmount(
 type TokenValue = string | File | null | bigint;
 
 export const createTokenValidators: Partial<
-  Record<keyof Token, (value: TokenValue) => string | undefined>
+  Record<
+    keyof Token | "vanity_ticker",
+    (value: TokenValue) => string | undefined
+  >
 > = {
   name: validateName,
   image: validateImage,
   ticker: validateTicker,
+  vanity_ticker: validateVanityTicker,
   description: validateDescription,
   twitter: validateTwitter,
   website: validateWebsite,
@@ -104,6 +108,23 @@ function validateTicker(ticker: TokenValue): string | undefined {
   }
   if (!/(?=(.*[A-Z].*[A-Z]))/.test(ticker)) {
     return "Ticker must have at least 2 alpha characters.";
+  }
+}
+
+function validateVanityTicker(value: TokenValue): string | undefined {
+  // Optional — undefined, null, or empty string means "no vanity ticker".
+  if (value === undefined || value === null || value === "") {
+    return;
+  }
+  if (typeof value !== "string") {
+    return "Vanity ticker must be a string.";
+  }
+  if (value.trim() !== value) {
+    return "Vanity ticker must not have leading or trailing whitespace.";
+  }
+  // Count Unicode code points so CJK/emoji count as 1 each.
+  if ([...value].length > 10) {
+    return "Vanity ticker must be below 10 characters.";
   }
 }
 

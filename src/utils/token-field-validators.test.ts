@@ -24,6 +24,39 @@ describe("token-field-validators", () => {
     }
   });
 
+  it("should validate vanity_ticker correctly", () => {
+    const validator = createTokenValidators.vanity_ticker;
+
+    if (validator) {
+      // Optional — absent/empty means no vanity ticker.
+      expect(validator(undefined as never)).toBeUndefined();
+      expect(validator(null)).toBeUndefined();
+      expect(validator("")).toBeUndefined();
+      // Any characters allowed, 1-10 code points.
+      expect(validator("A")).toBeUndefined();
+      expect(validator("MyTicker")).toBeUndefined();
+      expect(validator("1234567890")).toBeUndefined(); // exactly 10
+      expect(validator("Tëst🚀")).toBeUndefined(); // non-ASCII + emoji
+      expect(validator("你好世界")).toBeUndefined(); // CJK
+      // Emoji count as 1 code point each — 10 emoji is valid.
+      expect(validator("🚀".repeat(10))).toBeUndefined();
+      // Too long.
+      expect(validator("12345678901")).toBe(
+        "Vanity ticker must be below 10 characters."
+      );
+      expect(validator("🚀".repeat(11))).toBe(
+        "Vanity ticker must be below 10 characters."
+      );
+      // Surrounding whitespace.
+      expect(validator(" AB")).toBe(
+        "Vanity ticker must not have leading or trailing whitespace."
+      );
+      expect(validator("AB ")).toBe(
+        "Vanity ticker must not have leading or trailing whitespace."
+      );
+    }
+  });
+
   it("should validate name correctly", () => {
     const validator = createTokenValidators.name;
 
