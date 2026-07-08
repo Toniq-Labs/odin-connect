@@ -35,9 +35,9 @@ export class OdinApiClient {
   private _apiKey: string | null = null;
   private _httpClient: HttpClient;
   readonly BASE_URL: string;
-  readonly ENV: "prod" | "dev";
+  readonly ENV: "prod" | "dev" | "legacy";
 
-  constructor(env: "prod" | "dev" = "prod") {
+  constructor(env: "prod" | "dev" | "legacy" = "prod") {
     this._httpClient = new HttpClient();
     this.BASE_URL = BASE_URL_ENV[env];
     this.ENV = env;
