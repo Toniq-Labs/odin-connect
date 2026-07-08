@@ -20,6 +20,11 @@ describe("ApiClient", () => {
     expect(prodApi.BASE_URL).toBe("https://api.odin.fun/v2");
   });
 
+  it("it should have the correct base URL for legacy environment", () => {
+    const legacyApi = new OdinApiClient("legacy");
+    expect(legacyApi.BASE_URL).toBe("https://api.odin.fun/v1");
+  });
+
   it("it should build the user avatar URL for dev environment", () => {
     expect(api.getUserAvatarUrl("some-principal")).toBe(
       "https://images.odin.fun/dev/user/some-principal"
@@ -30,6 +35,13 @@ describe("ApiClient", () => {
     const prodApi = new OdinApiClient("prod");
     expect(prodApi.getUserAvatarUrl("some-principal")).toBe(
       "https://images.odin.fun/v2/user/some-principal"
+    );
+  });
+
+  it("it should build the user avatar URL for legacy environment", () => {
+    const legacyApi = new OdinApiClient("legacy");
+    expect(legacyApi.getUserAvatarUrl("some-principal")).toBe(
+      "https://images.odin.fun/user/some-principal"
     );
   });
 
