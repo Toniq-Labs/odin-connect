@@ -25,6 +25,7 @@ A TypeScript SDK for integrating with the [Odin](https://odin.fun) decentralized
 - [Configuration](#configuration)
 - [Types](#types)
 - [Demo](#demo)
+- [Starter Template](#starter-template)
 - [General Notes](#general-notes)
 
 ## Installation
@@ -567,6 +568,10 @@ npm run demo
 # Or run just the demo (if already built)
 npm run demo:start
 ```
+
+## Starter Template
+
+Bootstrap a new app with [odin-app-template](https://github.com/Toniq-Labs/odin-app-template/) — a ready-to-clone scaffold wiring up OdinConnect. Live example: [odin-app-template.netlify.app](https://odin-app-template.netlify.app).
 
 ## General Notes
 
