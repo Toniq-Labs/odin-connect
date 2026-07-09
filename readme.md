@@ -136,7 +136,7 @@ API calls go through the HttpClient, which automatically handles BigInt deserial
 flowchart LR
     A["Your App"] --> B["OdinApiClient"]
     B --> C["HttpClient<br/>(Axios + BigInt parser)"]
-    C --> D["api.odin.fun/v1"]
+    C --> D["api.odin.fun/v2"]
     D --> C
     C --> B
     B --> A
@@ -173,7 +173,7 @@ await user.buy({ token: "2jjj", btcAmount: 10_000_000n });
 ```typescript
 const odinConnect = new OdinConnect({
   name: "Demo App",   // Your app name (shown in auth popup)
-  env: "prod",        // "prod" | "dev" | "local"
+  env: "prod",        // "prod" | "dev" | "local" | "legacy"
 });
 ```
 
@@ -524,9 +524,10 @@ OdinUtils.createTokenValidators.telegram("https://t.me/...");
 
 | Environment | Frontend URL | API Base URL |
 |-------------|-------------|-------------|
-| `prod` (default) | `https://odin.fun` | `https://api.odin.fun/v1` |
+| `prod` (default) | `https://odin.fun` | `https://api.odin.fun/v2` |
 | `dev` | `https://dev.odin.fun` | `https://api.odin.fun/dev` |
 | `local` | `http://localhost:5173` | `https://api.odin.fun/dev` |
+| `legacy` | `https://legacy.odin.fun` | `https://api.odin.fun/v1` |
 
 ```typescript
 const odinConnect = new OdinConnect({

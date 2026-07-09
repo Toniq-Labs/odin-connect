@@ -83,7 +83,11 @@ export class Connect {
     this._appInfo.slug =
       this._appInfo.slug || slugify(this._appInfo.name);
     this._api = new OdinApiClient(
-      this._appInfo.env === "prod" ? "prod" : "dev"
+      this._appInfo.env === "prod"
+        ? "prod"
+        : this._appInfo.env === "legacy"
+          ? "legacy"
+          : "dev"
     );
     this._window = new WindowClient();
     this._odin = new OdinCanisterClient(

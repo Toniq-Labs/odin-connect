@@ -1,10 +1,13 @@
-import type { OdinBalance } from "odin-connect";
+import { OdinUtils, type OdinBalance } from "odin-connect";
+import { useOdinContext } from "../OdinContext";
 
 export function BalanceTable({
   balances,
 }: {
   balances: ReadonlyArray<OdinBalance>;
 }) {
+  const { odinConnect } = useOdinContext();
+  const env = odinConnect?.currentEnv ?? "prod";
   return (
     <div className="balance-table">
       <table>
@@ -23,10 +26,10 @@ export function BalanceTable({
                   src={
                     balance.id == "btc"
                       ? "https://upload.wikimedia.org/wikipedia/commons/thumb/4/46/Bitcoin.svg/64px-Bitcoin.svg.png"
-                      : `https://images.odin.fun/dev/token/${balance.id.replace(
-                          "lp_",
-                          ""
-                        )}`
+                      : OdinUtils.buildTokenImageUrl(
+                          balance.id.replace("lp_", ""),
+                          env
+                        )
                   }
                   alt={balance.ticker}
                   style={{
