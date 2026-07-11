@@ -1,5 +1,10 @@
 import { createContext, useContext } from "react";
-import type { OdinConnect, OdinConnectedUser, OdinToken } from "odin-connect";
+import type {
+  OdinConnect,
+  OdinConnectedUser,
+  OdinLang,
+  OdinToken,
+} from "odin-connect";
 
 type OdinContextType = {
   odinConnect: OdinConnect | null;
@@ -9,6 +14,9 @@ type OdinContextType = {
   setTokens: (tokens: ReadonlyArray<OdinToken>) => void;
   /* get the connected user, if not call odinConnect.connect() */
   requestUser: () => Promise<OdinConnectedUser>;
+  /* popup UI language, applied to the next popup opened */
+  lang: OdinLang;
+  setLang: (lang: OdinLang) => void;
 };
 
 export const OdinContext = createContext<OdinContextType | undefined>(
