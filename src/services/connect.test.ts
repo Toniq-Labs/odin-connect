@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Connect } from "./connect";
 
 describe("Connect env → API base URL mapping", () => {
@@ -69,5 +69,48 @@ describe("Connect lang option", () => {
     expect(canisterUrl(connect).searchParams.get("lang")).toBe("en");
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+describe("Connect lang on opened popup URLs", () => {
+  const openSpy = () =>
+    vi.spyOn(window, "open").mockReturnValue(null);
+
+  const openedUrl = (spy: ReturnType<typeof openSpy>) => {
+    expect(spy).toHaveBeenCalledOnce();
+    return spy.mock.calls[0][0] as URL;
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should open the connect popup with the configured lang", () => {
+    const spy = openSpy();
+    const connect = new Connect({ name: "test", lang: "zh" });
+    connect.connect(); // never settles in jsdom; only the opened URL matters
+    expect(openedUrl(spy).searchParams.get("lang")).toBe("zh");
+  });
+
+  it("should open canister action popups with the configured lang", async () => {
+    const spy = openSpy();
+    const connect = new Connect({ name: "test", lang: "zh" });
+    // popup blocked (open → null) rejects the action; URL is still captured
+    await expect(
+      connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n })
+    ).rejects.toThrow();
+    const url = openedUrl(spy);
+    expect(url.pathname).toBe("/authorize/buy");
+    expect(url.searchParams.get("lang")).toBe("zh");
+  });
+
+  it("should apply a runtime lang switch to the next action popup", async () => {
+    const spy = openSpy();
+    const connect = new Connect({ name: "test" });
+    connect.lang = "zh";
+    await expect(
+      connect.odin.sell({ principal: "p", token: "2jjj", tokenAmount: 1n })
+    ).rejects.toThrow();
+    expect(openedUrl(spy).searchParams.get("lang")).toBe("zh");
   });
 });
