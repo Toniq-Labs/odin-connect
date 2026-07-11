@@ -85,11 +85,20 @@ describe("Connect lang on opened popup URLs", () => {
     vi.restoreAllMocks();
   });
 
-  it("should open the connect popup with the configured lang", () => {
+  it("should open the connect popup with the configured lang", async () => {
     const spy = openSpy();
     const connect = new Connect({ name: "test", lang: "zh" });
-    connect.connect(); // never settles in jsdom; only the opened URL matters
+    const promise = connect.connect();
     expect(openedUrl(spy).searchParams.get("lang")).toBe("zh");
+
+    // settle the promise so the message listener detaches
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: connect.origin,
+        data: { path: "/authorize/connect", message: "rejected" },
+      })
+    );
+    await expect(promise).rejects.toThrow("User rejected the connection");
   });
 
   it("should open canister action popups with the configured lang", async () => {
