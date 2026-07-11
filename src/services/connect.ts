@@ -11,12 +11,14 @@ import { WindowClient, WindowClientSettings } from "./window";
 import { OdinCanisterClient } from "./canister";
 import { SessionStorage } from "./storage";
 import { isDelegationValid } from "../utils/session";
+import { DEFAULT_LANG, normalizeOdinLang, OdinLang } from "../models/lang";
 
 export interface AppInitOptions {
   name: string;
   icon?: string;
   env?: Environment;
   slug?: string;
+  lang?: OdinLang;
 }
 
 function hashCode(str: string): string {
@@ -82,6 +84,7 @@ export class Connect {
     };
     this._appInfo.slug =
       this._appInfo.slug || slugify(this._appInfo.name);
+    this._appInfo.lang = normalizeOdinLang(this._appInfo.lang);
     this._api = new OdinApiClient(
       this._appInfo.env === "prod"
         ? "prod"
@@ -108,11 +111,22 @@ export class Connect {
       url.searchParams.append("app_name", this._appInfo.name);
     }
     url.searchParams.append("referrer", window.location.origin);
+    url.searchParams.append("lang", this.lang);
     return url;
   }
 
   get origin() {
     return ORIGINS[this._appInfo?.env || "prod"];
+  }
+
+  get lang(): OdinLang {
+    return this._appInfo?.lang || DEFAULT_LANG;
+  }
+
+  set lang(value: OdinLang) {
+    if (this._appInfo) {
+      this._appInfo.lang = normalizeOdinLang(value);
+    }
   }
 
   get appInfo() {

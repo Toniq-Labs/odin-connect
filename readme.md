@@ -175,8 +175,23 @@ await user.buy({ token: "2jjj", btcAmount: 10_000_000n });
 const odinConnect = new OdinConnect({
   name: "Demo App",   // Your app name (shown in auth popup)
   env: "prod",        // "prod" | "dev" | "local" | "legacy"
+  lang: "en",         // Popup UI language: "en" | "zh" (default "en")
 });
 ```
+
+### Popup language
+
+All auth and action popups render in the language set via `lang`. It can be
+changed at runtime; the new value applies to the next popup opened:
+
+```typescript
+const odinConnect = new OdinConnect({ name: "Demo App", lang: "zh" });
+
+odinConnect.lang = "en"; // next popup renders in English
+```
+
+Unsupported values fall back to `"en"`. The SDK does not persist `lang` —
+pass it on each construction from your app's own i18n state.
 
 ### Connecting a user
 
