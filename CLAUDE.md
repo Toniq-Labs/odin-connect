@@ -18,7 +18,7 @@ npm run audit          # npm audit, production deps only, fails on moderate+ (al
 npm run release        # release-it: bump version, tag v${version}, npm publish
 ```
 
-CI runs `npm test` (`.github/workflows/pr.yml`) and `npm run audit` in root and `demo/` (`.github/workflows/audit.yml`, also weekly) on every PR. Node 20.18.
+CI runs `npm test` (`.github/workflows/pr.yml`) and `npm run audit` in root and `demo/` (`.github/workflows/audit.yml`) on every PR. Node 20.18.
 
 Tests use `environment: "jsdom"` with `globals: true` — no per-file vitest imports needed. Tests live next to source as `*.test.ts` and are excluded from the build (`tsconfig.json`).
 
