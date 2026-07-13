@@ -11,7 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@dfinity/identity": "^3.3.0",
+    "@dfinity/identity": "^3.4.3",
     "odin-connect": "file:..",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
