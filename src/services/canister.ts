@@ -1,4 +1,5 @@
 import { createTokenValidators } from "../utils";
+import { DEFAULT_LANG } from "../utils/lang";
 import { OdinApiClient } from "./api";
 import { AppInitOptions, Connect } from "./connect";
 import { WindowClient } from "./window";
@@ -90,6 +91,7 @@ export class OdinCanisterClient {
       url.searchParams.append("app_name", this._appInfo.name);
     }
     url.searchParams.append("referrer", window.location.origin);
+    url.searchParams.append("lang", this._appInfo?.lang || DEFAULT_LANG);
     return url;
   }
 

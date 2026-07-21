@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   OdinConnect,
   type OdinConnectedUser,
+  type OdinLang,
   type OdinToken,
 } from "odin-connect";
 import { OdinContext } from "./OdinContext";
@@ -12,10 +13,11 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     null
   );
   const [tokens, setTokens] = useState<ReadonlyArray<OdinToken>>([]);
+  const [lang, setLangState] = useState<OdinLang>("en");
 
   useEffect(() => {
-    // Initialize OdinConnect with your app name and target environment
-    const odin = new OdinConnect({ name: "Demo", env: "dev" });
+    // Initialize OdinConnect with your app name, target environment and popup language
+    const odin = new OdinConnect({ name: "Demo", env: "dev", lang: "en" });
     setOdinConnect(odin);
 
     // Attempt to restore a previous session from localStorage
@@ -24,6 +26,17 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
       setConnectedUser(restoredUser);
     }
   }, []);
+
+  const setLang = useCallback(
+    (value: OdinLang) => {
+      if (odinConnect) {
+        // Runtime switch — applies to the next popup opened
+        odinConnect.lang = value;
+      }
+      setLangState(value);
+    },
+    [odinConnect]
+  );
 
   const requestUser = useCallback(async (): Promise<OdinConnectedUser> => {
     if (!odinConnect) {
@@ -65,6 +78,8 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
         tokens,
         setTokens,
         requestUser,
+        lang,
+        setLang,
       }}
     >
       {children}

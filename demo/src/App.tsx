@@ -13,6 +13,7 @@ import { CreateToken } from "./features/CreateToken";
 import { Canister } from "./features/Canister";
 import { IcrcApprove } from "./features/IcrcApprove";
 import { Examples } from "./features/Examples";
+import { LanguageSelect } from "./ui/LanguageSelect";
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
       <div className="demo-container">
         <section>
           <h1>Connect</h1>
+          <LanguageSelect />
           <Connect />
         </section>
         <section>
