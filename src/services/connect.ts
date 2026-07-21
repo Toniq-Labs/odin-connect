@@ -11,7 +11,8 @@ import { WindowClient, WindowClientSettings } from "./window";
 import { OdinCanisterClient } from "./canister";
 import { SessionStorage } from "./storage";
 import { isDelegationValid } from "../utils/session";
-import { DEFAULT_LANG, normalizeOdinLang, OdinLang } from "../models/lang";
+import { OdinLang } from "../models/lang";
+import { DEFAULT_LANG, normalizeOdinLang } from "../utils/lang";
 
 export interface AppInitOptions {
   name: string;

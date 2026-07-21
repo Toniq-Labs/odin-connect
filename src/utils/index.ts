@@ -2,6 +2,7 @@ import { BaseToken, Token } from "../models/token";
 import { IMAGE_CDN_ENV, OdinEnv } from "../constants";
 
 export { isDelegationValid } from "./session";
+export { DEFAULT_LANG, normalizeOdinLang } from "./lang";
 
 /**
  * Build a token's image URL from its id using the env-aware image CDN.

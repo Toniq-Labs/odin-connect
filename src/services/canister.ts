@@ -1,5 +1,5 @@
 import { createTokenValidators } from "../utils";
-import { DEFAULT_LANG } from "../models/lang";
+import { DEFAULT_LANG } from "../utils/lang";
 import { OdinApiClient } from "./api";
 import { AppInitOptions, Connect } from "./connect";
 import { WindowClient } from "./window";
