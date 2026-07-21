@@ -21,6 +21,7 @@
     "build": "tsup",
     "prepublishOnly": "npm run build",
     "test": "vitest",
+    "audit": "npm audit --omit=dev --audit-level=moderate",
     "demo:update": "npm run build && cd demo && npm install ../ && cd ..",
     "demo:start": "cd demo && npm run dev",
     "demo:build": "npm run demo:update && cd demo && npm run build",

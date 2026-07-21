@@ -15,6 +15,16 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* odin-connect is symlinked (file:..), so its d.ts resolves @dfinity/* from the
+       root node_modules — a second copy whose private fields TS treats as
+       incompatible. Force every @dfinity import to this app's single copy. */
+    "paths": {
+      "@dfinity/agent": ["./node_modules/@dfinity/agent"],
+      "@dfinity/candid": ["./node_modules/@dfinity/candid"],
+      "@dfinity/identity": ["./node_modules/@dfinity/identity"],
+      "@dfinity/principal": ["./node_modules/@dfinity/principal"]
+    },
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,

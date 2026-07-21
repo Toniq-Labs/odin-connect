@@ -14,10 +14,11 @@ npm test               # vitest (watch mode by default)
 npx vitest run         # single non-watch run (what CI effectively needs)
 npx vitest run src/services/api.test.ts   # one test file
 npm run demo           # build SDK, install it into demo/, run demo Vite dev server
+npm run audit          # npm audit, production deps only, fails on moderate+ (also in demo/: fails on high+)
 npm run release        # release-it: bump version, tag v${version}, npm publish
 ```
 
-CI (`.github/workflows/pr.yml`) runs `npm test` on every PR. Node 20.18.
+CI runs `npm test` (`.github/workflows/pr.yml`) and `npm run audit` in root and `demo/` (`.github/workflows/audit.yml`) on every PR. Node 20.18.
 
 Tests use `environment: "jsdom"` with `globals: true` — no per-file vitest imports needed. Tests live next to source as `*.test.ts` and are excluded from the build (`tsconfig.json`).
 

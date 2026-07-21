@@ -1,0 +1,45 @@
+name: Dependency Audit
+
+on:
+  pull_request:
+    branches:
+      - "**"
+
+jobs:
+  audit-sdk:
+    name: Audit SDK (root)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.18"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm run audit
+
+  audit-demo:
+    name: Audit demo app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.18"
+
+      - name: Install dependencies
+        working-directory: demo
+        run: npm ci
+
+      - name: Audit dependencies
+        working-directory: demo
+        run: npm run audit
