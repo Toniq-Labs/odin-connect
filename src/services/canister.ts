@@ -53,6 +53,7 @@ export interface CreateTokenParams {
   name: string;
   ticker: string;
   image: File;
+  vanity_ticker?: string;
   description?: string;
   website?: string;
   twitter?: string;

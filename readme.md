@@ -399,6 +399,7 @@ await user.createToken({
   principal: "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe",
   name: "Test Token",       // 3-30 characters
   ticker: "TEST",           // 3-10 uppercase alphanumeric, at least 2 letters
+  vanity_ticker: "",        // Optional, 1-10 characters (any unicode), no surrounding whitespace
   description: "A test token",  // Optional, max 100 characters
   website: "https://example.com",  // Optional, valid URL
   telegram: "",             // Optional, valid Telegram URL
@@ -512,6 +513,7 @@ import { OdinUtils } from "odin-connect";
 
 OdinUtils.createTokenValidators.name("My Token");        // 3-30 chars
 OdinUtils.createTokenValidators.ticker("TEST");           // 3-10 uppercase alphanumeric
+OdinUtils.createTokenValidators.vanity_ticker("Tëst🚀");   // Optional, max 10 unicode code points, no surrounding whitespace
 OdinUtils.createTokenValidators.image(file);              // PNG/JPEG/WebP/GIF/SVG/AVIF, max 200KB
 OdinUtils.createTokenValidators.description("A token");   // Max 100 chars
 OdinUtils.createTokenValidators.website("https://...");   // Valid URL
