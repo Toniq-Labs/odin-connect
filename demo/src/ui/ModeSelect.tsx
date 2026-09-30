@@ -13,7 +13,7 @@ export const ModeSelect = () => {
         value={mode}
         onChange={(e) => setMode(e.target.value as OdinConnectMode)}
       >
-        <option value="auto">Auto (redirect in OKX)</option>
+        <option value="auto">Auto (redirect in wallet browsers)</option>
         <option value="popup">Popup</option>
         <option value="redirect">Redirect</option>
       </select>

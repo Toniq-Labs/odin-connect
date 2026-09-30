@@ -20,7 +20,8 @@ export const REDIRECT_RESULT_KEY = "odin_connect";
  *   browsers (OKX) that open popups without `window.opener`. The returned
  *   promise never settles because the page unloads; read the result with
  *   `handleRedirectResult()` when the app loads again.
- * - `"auto"`: `"redirect"` inside a known in-app browser, else `"popup"`.
+ * - `"auto"`: `"redirect"` inside a wallet in-app browser or app webview
+ *   (see `isInAppBrowser()`), else `"popup"`.
  */
 export type ConnectMode = "popup" | "redirect" | "auto";
 

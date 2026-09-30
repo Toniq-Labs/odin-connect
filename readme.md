@@ -239,7 +239,7 @@ Set `mode` on the instance; it applies to `connect()` **and every action**
 const odinConnect = new OdinConnect({
   name: "My App",
   env: "prod",
-  mode: "auto", // "popup" (default) | "redirect" | "auto" (redirect in OKX)
+  mode: "auto", // "popup" (default) | "redirect" | "auto" (redirect in wallet browsers)
 });
 
 // On page load: read the outcome of the redirect this load returned from.
@@ -275,7 +275,12 @@ await user.buy({ token: "2jjj", btcAmount: 10_000_000n });
   needs to show after an action (e.g. the token being traded).
 - `requires_api` is not supported in redirect mode (it rejects), so the JWT
   never lands in a URL. Use a delegation instead.
-- `isInAppBrowser()` is exported if you want to choose the mode yourself.
+- `"auto"` redirects when `isInAppBrowser()` is true: a known wallet user
+  agent (OKX), an app webview (Android `; wv)`, iOS WebKit without
+  `Safari/`), or a mobile browser with an injected wallet (`XverseProviders`,
+  `btc_providers`, `unisat`, `okxwallet`, `phantom`, `ethereum`, ...). It errs
+  toward redirect, which works everywhere. Call `isInAppBrowser()` yourself
+  if you want to choose the mode.
 
 ## Session Restoration
 
