@@ -228,6 +228,48 @@ const identity = user.getIdentity();
 >
 > **Failure mode:** if any target does not list your origin (or does not implement ICRC-28), the authorize popup silently hides the action — no delegation is issued and no error is surfaced to your app. Ensure each target canister declares your origin before requesting `requires_delegation: true`.
 
+### Wallet in-app browsers (redirect mode)
+
+Some wallet in-app browsers (OKX) open `window.open` targets as a detached
+page with no `window.opener`, so the popup can never send its result back.
+Pass `mode: "auto"` to use a same-tab redirect there and a popup everywhere
+else:
+
+```typescript
+const odinConnect = new OdinConnect({ name: "My App", env: "prod" });
+
+// On page load: finish a redirect first, so a rejection is visible.
+let user: OdinConnectedUser | null = null;
+try {
+  user = odinConnect.handleRedirectResult();
+} catch (error) {
+  // The user rejected (or the result was stale). Show that state and do NOT
+  // call connect() automatically on this load, or a user who taps Reject is
+  // sent straight back to Odin.
+}
+user ??= odinConnect.restoreSession();
+
+// From a "Connect" button click:
+async function onConnectClick() {
+  // In OKX this navigates to Odin and back; the promise never settles.
+  user = await odinConnect.connect({
+    mode: "auto", // "popup" (default) | "redirect" | "auto"
+    requires_delegation: true,
+    targets: ["aaaa-aa"],
+  });
+}
+```
+
+- The result comes back in the URL fragment of the page that called
+  `connect()`; `restoreSession()` reads it, checks it against a one-time
+  nonce kept in `sessionStorage`, and removes it from the address bar.
+- `restoreSession()` also handles a redirect result, but swallows a
+  rejection and returns `null`; call `handleRedirectResult()` first (as
+  above) when you need to tell "rejected" from "not connected".
+- `requires_api` is not supported in redirect mode (it rejects), so the JWT
+  never lands in a URL. Use a delegation instead.
+- `isInAppBrowser()` is exported if you want to choose the mode yourself.
+
 ## Session Restoration
 
 OdinConnect automatically persists session data to `localStorage` after a successful `connect()`. This allows you to restore sessions on page load without requiring user action.

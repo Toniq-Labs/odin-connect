@@ -13,6 +13,13 @@ import { SessionStorage } from "./storage";
 import { isDelegationValid } from "../utils/session";
 import { OdinLang } from "../models/lang";
 import { DEFAULT_LANG, normalizeOdinLang } from "../utils/lang";
+import { isInAppBrowser } from "../utils/in-app-browser";
+import {
+  consumeRedirectResult,
+  createState,
+  currentReturnUrl,
+  PendingRedirectStorage,
+} from "./redirect";
 
 export interface AppInitOptions {
   name: string;
@@ -38,11 +45,30 @@ function slugify(text: string): string {
   return `${base}-${hashCode(text)}`;
 }
 
+/**
+ * How `connect()` reaches the Odin authorize page.
+ * - `"popup"` (default): `window.open` + `postMessage`.
+ * - `"redirect"`: navigate this tab to Odin and back. For wallet in-app
+ *   browsers (OKX) that open popups without `window.opener`. The returned
+ *   promise never settles because the page unloads; the result is picked up
+ *   by `restoreSession()` / `handleRedirectResult()` when the app reloads.
+ *   Not compatible with `requires_api`.
+ * - `"auto"`: `"redirect"` inside a known in-app browser, else `"popup"`.
+ */
+export type ConnectMode = "popup" | "redirect" | "auto";
+
 interface BaseConnectOptions {
   // options for window.open
   open?: WindowClientSettings;
   // whether to request an auth keys upon connection
   requires_api?: boolean;
+  mode?: ConnectMode;
+}
+
+interface ConnectResult {
+  principal: string;
+  jwt: string | null;
+  delegationChain?: JsonnableDelegationChain | null;
 }
 
 interface ConnectOptionsWithDelegation extends BaseConnectOptions {
@@ -58,8 +84,7 @@ interface ConnectOptionsWithoutDelegation extends BaseConnectOptions {
 }
 
 type ConnectOptions =
-  | ConnectOptionsWithDelegation
-  | ConnectOptionsWithoutDelegation;
+  ConnectOptionsWithDelegation | ConnectOptionsWithoutDelegation;
 
 interface GetResourcesOptions {
   pagination: Pagination;
@@ -76,6 +101,7 @@ export class Connect {
   private _window: WindowClient;
   private _odin: OdinCanisterClient;
   private _storage: SessionStorage;
+  private _pendingRedirect: PendingRedirectStorage;
 
   constructor(appInfo?: Partial<AppInitOptions>) {
     this._appInfo = {
@@ -83,8 +109,7 @@ export class Connect {
       name: "app_name",
       ...appInfo,
     };
-    this._appInfo.slug =
-      this._appInfo.slug || slugify(this._appInfo.name);
+    this._appInfo.slug = this._appInfo.slug || slugify(this._appInfo.name);
     this._appInfo.lang = normalizeOdinLang(this._appInfo.lang);
     this._api = new OdinApiClient(
       this._appInfo.env === "prod"
@@ -101,6 +126,10 @@ export class Connect {
       ORIGINS[this._appInfo.env || "prod"]
     );
     this._storage = new SessionStorage(
+      this._appInfo.slug!,
+      this._appInfo.env || "prod"
+    );
+    this._pendingRedirect = new PendingRedirectStorage(
       this._appInfo.slug!,
       this._appInfo.env || "prod"
     );
@@ -144,11 +173,21 @@ export class Connect {
       requires_api,
       requires_delegation,
       targets,
+      mode = "popup",
     }: ConnectOptions | undefined = {
       requires_delegation: false,
       requires_api: false,
     }
   ): Promise<ConnectedUser> {
+    const useRedirect =
+      mode === "redirect" || (mode === "auto" && isInAppBrowser());
+    if (useRedirect) {
+      return this.connectByRedirect({
+        requires_api,
+        requires_delegation,
+        targets,
+      });
+    }
     return new Promise<ConnectedUser>((resolve, reject) => {
       if (open) {
         this._window.settings = open;
@@ -161,57 +200,15 @@ export class Connect {
         ) {
           window.removeEventListener("message", handleMessage);
           if (event.data.message != "rejected") {
-            let connectedUser: ConnectedUser;
             // the user accepted the connection
             try {
-              const eventData = event.data.message as {
-                principal: string;
-                jwt: string;
-                delegationChain?: JsonnableDelegationChain | null;
-              };
-              const { principal, jwt: jwtToken, delegationChain } = eventData;
-
-              if (requires_api) {
-                // issue a api key
-                // only using JWT for now, it will change in the real implementation
-                this._api.apiKey = jwtToken;
-              }
-
-              if (requires_delegation) {
-                if (!delegationChain) {
-                  throw new Error("Delegation chain is missing");
-                }
-                const identity = DelegationIdentity.fromDelegation(
+              resolve(
+                this.completeConnection(
+                  event.data.message as ConnectResult,
                   sessionKey,
-                  DelegationChain.fromJSON(delegationChain)
-                );
-                connectedUser = new ConnectedUser(
-                  principal,
-                  identity,
-                  this.api,
-                  this._odin
-                );
-              } else {
-                connectedUser = new ConnectedUser(
-                  principal,
-                  null,
-                  this.api,
-                  this._odin
-                );
-              }
-
-              if (requires_api || requires_delegation) {
-                this._storage.save({
-                  principal,
-                  sessionKey: JSON.stringify(sessionKey.toJSON()),
-                  delegationChain: delegationChain
-                    ? JSON.stringify(delegationChain)
-                    : null,
-                  jwt: jwtToken || null,
-                });
-              }
-
-              resolve(connectedUser);
+                  { requires_api, requires_delegation }
+                )
+              );
             } catch (error) {
               reject(new Error("Failed to fetch user data"));
             }
@@ -220,18 +217,139 @@ export class Connect {
           }
         }
       };
-      const url = this.createUrl("authorize/connect");
-      url.searchParams.append("requires_api", requires_api ? "1" : "0");
-      if (requires_delegation) {
-        url.searchParams.append("requires_delegation", "1");
-        const sessionString = btoa(JSON.stringify(sessionKey.toJSON()));
-        url.searchParams.append("session_key", sessionString);
-        url.searchParams.append("targets", targets?.join(",") || "");
-      }
+      const url = this.createConnectUrl(sessionKey, {
+        requires_api,
+        requires_delegation,
+        targets,
+      });
       this._window.open(url);
 
       window.addEventListener("message", handleMessage);
     });
+  }
+
+  private createConnectUrl(
+    sessionKey: Ed25519KeyIdentity,
+    {
+      requires_api,
+      requires_delegation,
+      targets,
+    }: Pick<ConnectOptions, "requires_api" | "requires_delegation" | "targets">
+  ) {
+    const url = this.createUrl("authorize/connect");
+    url.searchParams.append("requires_api", requires_api ? "1" : "0");
+    if (requires_delegation) {
+      url.searchParams.append("requires_delegation", "1");
+      const sessionString = btoa(JSON.stringify(sessionKey.toJSON()));
+      url.searchParams.append("session_key", sessionString);
+      url.searchParams.append("targets", targets?.join(",") || "");
+    }
+    return url;
+  }
+
+  private connectByRedirect(
+    options: Pick<
+      ConnectOptions,
+      "requires_api" | "requires_delegation" | "targets"
+    >
+  ): Promise<ConnectedUser> {
+    if (options.requires_api) {
+      return Promise.reject(
+        new Error("requires_api is not supported in redirect mode")
+      );
+    }
+    const sessionKey = Ed25519KeyIdentity.generate();
+    const state = createState();
+    const saved = this._pendingRedirect.save({
+      state,
+      sessionKey: JSON.stringify(sessionKey.toJSON()),
+      requires_delegation: Boolean(options.requires_delegation),
+    });
+    if (!saved) {
+      return Promise.reject(
+        new Error("Redirect mode needs sessionStorage, which is unavailable")
+      );
+    }
+    const url = this.createConnectUrl(sessionKey, options);
+    url.searchParams.append("return_url", currentReturnUrl());
+    url.searchParams.append("state", state);
+    this._window.navigate(url);
+    // The page unloads; the result arrives via handleRedirectResult().
+    return new Promise<ConnectedUser>(() => {});
+  }
+
+  /**
+   * Complete a redirect-mode `connect()` after Odin sends the user back.
+   * Returns null when the URL carries no redirect result. Throws when the
+   * user rejected, or the result does not match the pending request.
+   * `restoreSession()` calls this first, so most apps need not call it.
+   */
+  handleRedirectResult(): ConnectedUser | null {
+    const result = consumeRedirectResult();
+    if (!result) return null;
+    const pending = this._pendingRedirect.take();
+    if (
+      !pending ||
+      pending.state !== result.state ||
+      result.path !== "/authorize/connect"
+    ) {
+      throw new Error("Unexpected OdinConnect redirect result");
+    }
+    if (result.message === "rejected") {
+      throw new Error("User rejected the connection");
+    }
+    return this.completeConnection(
+      result.message as ConnectResult,
+      Ed25519KeyIdentity.fromJSON(pending.sessionKey),
+      { requires_api: false, requires_delegation: pending.requires_delegation }
+    );
+  }
+
+  private completeConnection(
+    { principal, jwt: jwtToken, delegationChain }: ConnectResult,
+    sessionKey: Ed25519KeyIdentity,
+    {
+      requires_api,
+      requires_delegation,
+    }: { requires_api?: boolean; requires_delegation?: boolean }
+  ): ConnectedUser {
+    let connectedUser: ConnectedUser;
+    if (requires_api) {
+      // issue a api key
+      // only using JWT for now, it will change in the real implementation
+      this._api.apiKey = jwtToken;
+    }
+
+    if (requires_delegation) {
+      if (!delegationChain) {
+        throw new Error("Delegation chain is missing");
+      }
+      const identity = DelegationIdentity.fromDelegation(
+        sessionKey,
+        DelegationChain.fromJSON(delegationChain)
+      );
+      connectedUser = new ConnectedUser(
+        principal,
+        identity,
+        this.api,
+        this._odin
+      );
+    } else {
+      connectedUser = new ConnectedUser(principal, null, this.api, this._odin);
+    }
+
+    if (requires_api || requires_delegation) {
+      this._storage.save({
+        principal,
+        sessionKey: JSON.stringify(sessionKey.toJSON()),
+        delegationChain: delegationChain
+          ? JSON.stringify(delegationChain)
+          : null,
+        jwt: jwtToken || null,
+      });
+    }
+
+    return connectedUser;
   }
 
   get api() {
@@ -247,6 +365,12 @@ export class Connect {
   }
 
   restoreSession(): ConnectedUser | null {
+    try {
+      const redirected = this.handleRedirectResult();
+      if (redirected) return redirected;
+    } catch {
+      // Rejected or mismatched redirect result: fall back to stored session.
+    }
     try {
       const data = this._storage.load();
       if (!data) return null;

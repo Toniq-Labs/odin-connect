@@ -1,4 +1,6 @@
 export { Connect as OdinConnect } from "./services/connect";
+export type { ConnectMode as OdinConnectMode } from "./services/connect";
+export { isInAppBrowser } from "./utils/in-app-browser";
 export type { User as OdinUser } from "./models/user";
 export type { Balance as OdinBalance } from "./models/balance";
 export type {
