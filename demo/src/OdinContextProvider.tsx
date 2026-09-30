@@ -20,8 +20,17 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     const odin = new OdinConnect({ name: "Demo", env: "dev", lang: "en" });
     setOdinConnect(odin);
 
-    // Attempt to restore a previous session from localStorage
-    const restoredUser = odin.restoreSession();
+    // Finish a redirect-mode connect() first, so a rejection is visible
+    // (restoreSession() would swallow it and return null)
+    let restoredUser: OdinConnectedUser | null = null;
+    try {
+      restoredUser = odin.handleRedirectResult();
+    } catch (error) {
+      console.error("Redirect connect failed:", error);
+    }
+
+    // Otherwise attempt to restore a previous session from localStorage
+    restoredUser ??= odin.restoreSession();
     if (restoredUser) {
       setConnectedUser(restoredUser);
     }

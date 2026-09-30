@@ -29,19 +29,25 @@ function Connect() {
     };
     fetchUserInfo();
   }, [connectedUser]);
-  const openOdinConnect = async (mode: "window" | "tab" = "tab") => {
+  const openOdinConnect = async (
+    mode: "window" | "tab" | "redirect" = "tab"
+  ) => {
     setError(null);
     try {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
 
-      const baseOptions = {
+      const baseOptions: Parameters<typeof odinConnect.connect>[0] = {
         open: {
           target: "_blank",
           settings: mode === "window" ? centeredWindowFeatures(400, 600) : "",
         },
         requires_api: requireApi,
+        // "redirect" navigates this tab to Odin and back; the promise never
+        // settles. The result is picked up on reload by handleRedirectResult()
+        // / restoreSession() in OdinContextProvider.
+        mode: mode === "redirect" ? 'redirect' : 'popup',
       };
 
       const connectOptions: Parameters<typeof odinConnect.connect>[0] =
@@ -75,6 +81,10 @@ function Connect() {
       throw new Error("OdinConnect is not initialized");
     }
     openOdinConnect("tab");
+  };
+
+  const handleConnectRedirect = () => {
+    openOdinConnect("redirect");
   };
 
   const handleDisconnect = () => {
@@ -118,6 +128,7 @@ function Connect() {
       <div className="demo-buttons">
         <button onClick={handleConnectWindow}>Connect Popup</button>
         <button onClick={handleConnectTab}>Connect Tab</button>
+        <button onClick={handleConnectRedirect}>Connect Redirect</button>
       </div>
     </div>
   );
