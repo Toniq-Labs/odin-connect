@@ -231,41 +231,48 @@ const identity = user.getIdentity();
 ### Wallet in-app browsers (redirect mode)
 
 Some wallet in-app browsers (OKX) open `window.open` targets as a detached
-page with no `window.opener`, so the popup can never send its result back.
-Pass `mode: "auto"` to use a same-tab redirect there and a popup everywhere
-else:
+page with no `window.opener`, so a popup can never send its result back.
+Set `mode` on the instance; it applies to `connect()` **and every action**
+(buy, sell, transfer, swap, liquidity, ICRC-2 approve, create token):
 
 ```typescript
-const odinConnect = new OdinConnect({ name: "My App", env: "prod" });
+const odinConnect = new OdinConnect({
+  name: "My App",
+  env: "prod",
+  mode: "auto", // "popup" (default) | "redirect" | "auto" (redirect in OKX)
+});
 
-// On page load: finish a redirect first, so a rejection is visible.
-let user: OdinConnectedUser | null = null;
+// On page load: read the outcome of the redirect this load returned from.
 try {
-  user = odinConnect.handleRedirectResult();
+  const result = odinConnect.handleRedirectResult();
+  if (result?.action === "connect" && result.status === "connected") {
+    user = result.user;
+  } else if (result?.action === "connect") {
+    // Rejected. Show that, and do NOT call connect() automatically on this
+    // load, or a user who taps Reject is sent straight back to Odin.
+  } else if (result) {
+    // An action: { action: "buy", status: "success" | "failed" }
+  }
 } catch (error) {
-  // The user rejected (or the result was stale). Show that state and do NOT
-  // call connect() automatically on this load, or a user who taps Reject is
-  // sent straight back to Odin.
+  // Stale or foreign result; ignore.
 }
 user ??= odinConnect.restoreSession();
 
-// From a "Connect" button click:
-async function onConnectClick() {
-  // In OKX this navigates to Odin and back; the promise never settles.
-  user = await odinConnect.connect({
-    mode: "auto", // "popup" (default) | "redirect" | "auto"
-    requires_delegation: true,
-    targets: ["aaaa-aa"],
-  });
-}
+// From a button click. In redirect mode these navigate this tab to Odin and
+// back, and the promise never settles; the outcome arrives via
+// handleRedirectResult() above.
+await odinConnect.connect({ requires_delegation: true, targets: ["aaaa-aa"] });
+await user.buy({ token: "2jjj", btcAmount: 10_000_000n });
 ```
 
-- The result comes back in the URL fragment of the page that called
-  `connect()`; `restoreSession()` reads it, checks it against a one-time
-  nonce kept in `sessionStorage`, and removes it from the address bar.
-- `restoreSession()` also handles a redirect result, but swallows a
-  rejection and returns `null`; call `handleRedirectResult()` first (as
-  above) when you need to tell "rejected" from "not connected".
+- `mode` can be changed at runtime: `odinConnect.mode = "redirect"`.
+- The result comes back in the URL fragment of the page that started the
+  request. `handleRedirectResult()` checks it against a one-time nonce kept
+  in `sessionStorage` and removes it from the address bar.
+- `restoreSession()` finishes a redirected `connect()` on its own, but leaves
+  action results for `handleRedirectResult()`.
+- Page state is lost across the round trip, so persist anything the page
+  needs to show after an action (e.g. the token being traded).
 - `requires_api` is not supported in redirect mode (it rejects), so the JWT
   never lands in a URL. Use a delegation instead.
 - `isInAppBrowser()` is exported if you want to choose the mode yourself.

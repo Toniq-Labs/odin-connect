@@ -15,7 +15,8 @@ function Connect() {
   const [error, setError] = useState<string | null>(null);
   const [requireApi, setRequireApi] = useState(false);
   const [requireDelegation, setRequireDelegation] = useState(false);
-  const { odinConnect, connectedUser, setConnectedUser } = useOdinContext();
+  const { odinConnect, connectedUser, setConnectedUser, setMode } =
+    useOdinContext();
   const [userInfo, setUserInfo] = useState<OdinUser | null>(null);
 
   useEffect(() => {
@@ -29,9 +30,7 @@ function Connect() {
     };
     fetchUserInfo();
   }, [connectedUser]);
-  const openOdinConnect = async (
-    mode: "window" | "tab" | "redirect" = "tab"
-  ) => {
+  const openOdinConnect = async (mode: "window" | "tab" = "tab") => {
     setError(null);
     try {
       if (!odinConnect) {
@@ -44,10 +43,6 @@ function Connect() {
           settings: mode === "window" ? centeredWindowFeatures(400, 600) : "",
         },
         requires_api: requireApi,
-        // "redirect" navigates this tab to Odin and back; the promise never
-        // settles. The result is picked up on reload by handleRedirectResult()
-        // / restoreSession() in OdinContextProvider.
-        mode: mode === "redirect" ? 'redirect' : 'popup',
       };
 
       const connectOptions: Parameters<typeof odinConnect.connect>[0] =
@@ -84,7 +79,11 @@ function Connect() {
   };
 
   const handleConnectRedirect = () => {
-    openOdinConnect("redirect");
+    // Switches the instance to redirect mode (also for later actions), then
+    // navigates this tab to Odin and back; the promise never settles. The
+    // result is picked up on reload in OdinContextProvider.
+    setMode("redirect");
+    openOdinConnect("tab");
   };
 
   const handleDisconnect = () => {
