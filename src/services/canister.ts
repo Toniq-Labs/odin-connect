@@ -2,6 +2,7 @@ import { createTokenValidators } from "../utils";
 import { DEFAULT_LANG } from "../utils/lang";
 import { OdinApiClient } from "./api";
 import { AppInitOptions, Connect } from "./connect";
+import { RedirectClient } from "./redirect";
 import { WindowClient } from "./window";
 
 export interface SellOptions {
@@ -67,15 +68,18 @@ export class OdinCanisterClient {
   private _window: WindowClient;
   private _appInfo: AppInitOptions;
   private _api: OdinApiClient;
+  private _redirect: RedirectClient | null;
   origin: string;
 
   constructor(
     windowClient: WindowClient,
     apiClient: OdinApiClient,
     appInfo: AppInitOptions,
-    origin: string
+    origin: string,
+    redirectClient: RedirectClient | null = null
   ) {
     this._window = windowClient;
+    this._redirect = redirectClient;
     this._api = apiClient;
     this._appInfo = appInfo;
     this.origin = origin;
@@ -111,6 +115,23 @@ export class OdinCanisterClient {
       didnotopen?: string;
     };
   }) {
+    if (this._redirect?.useRedirect) {
+      // Same-tab round trip; the promise never settles. The app reads the
+      // outcome with OdinConnect.handleRedirectResult() on its next load.
+      const url = this.createUrl(odinPath);
+      for (const key in params) {
+        if (params[key]) {
+          url.searchParams.append(key, params[key]);
+        }
+      }
+      return this._redirect.start<ResolveType>(url, {
+        path: "/" + odinPath,
+        successMessage:
+          typeof receivedMessageFromOrigin === "string"
+            ? receivedMessageFromOrigin
+            : undefined,
+      });
+    }
     return new Promise<ResolveType>((resolve, reject) => {
       const handleMessage = async (event: MessageEvent) => {
         if (

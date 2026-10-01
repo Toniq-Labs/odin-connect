@@ -15,7 +15,8 @@ function Connect() {
   const [error, setError] = useState<string | null>(null);
   const [requireApi, setRequireApi] = useState(false);
   const [requireDelegation, setRequireDelegation] = useState(false);
-  const { odinConnect, connectedUser, setConnectedUser } = useOdinContext();
+  const { odinConnect, connectedUser, setConnectedUser, setMode } =
+    useOdinContext();
   const [userInfo, setUserInfo] = useState<OdinUser | null>(null);
 
   useEffect(() => {
@@ -36,7 +37,7 @@ function Connect() {
         throw new Error("OdinConnect is not initialized");
       }
 
-      const baseOptions = {
+      const baseOptions: Parameters<typeof odinConnect.connect>[0] = {
         open: {
           target: "_blank",
           settings: mode === "window" ? centeredWindowFeatures(400, 600) : "",
@@ -74,6 +75,14 @@ function Connect() {
     if (!odinConnect) {
       throw new Error("OdinConnect is not initialized");
     }
+    openOdinConnect("tab");
+  };
+
+  const handleConnectRedirect = () => {
+    // Switches the instance to redirect mode (also for later actions), then
+    // navigates this tab to Odin and back; the promise never settles. The
+    // result is picked up on reload in OdinContextProvider.
+    setMode("redirect");
     openOdinConnect("tab");
   };
 
@@ -118,6 +127,7 @@ function Connect() {
       <div className="demo-buttons">
         <button onClick={handleConnectWindow}>Connect Popup</button>
         <button onClick={handleConnectTab}>Connect Tab</button>
+        <button onClick={handleConnectRedirect}>Connect Redirect</button>
       </div>
     </div>
   );

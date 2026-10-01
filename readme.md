@@ -228,6 +228,60 @@ const identity = user.getIdentity();
 >
 > **Failure mode:** if any target does not list your origin (or does not implement ICRC-28), the authorize popup silently hides the action — no delegation is issued and no error is surfaced to your app. Ensure each target canister declares your origin before requesting `requires_delegation: true`.
 
+### Wallet in-app browsers (redirect mode)
+
+Some wallet in-app browsers (OKX) open `window.open` targets as a detached
+page with no `window.opener`, so a popup can never send its result back.
+Set `mode` on the instance; it applies to `connect()` **and every action**
+(buy, sell, transfer, swap, liquidity, ICRC-2 approve, create token):
+
+```typescript
+const odinConnect = new OdinConnect({
+  name: "My App",
+  env: "prod",
+  mode: "auto", // "popup" (default) | "redirect" | "auto" (redirect in wallet browsers)
+});
+
+// On page load: read the outcome of the redirect this load returned from.
+try {
+  const result = odinConnect.handleRedirectResult();
+  if (result?.action === "connect" && result.status === "connected") {
+    user = result.user;
+  } else if (result?.action === "connect") {
+    // Rejected. Show that, and do NOT call connect() automatically on this
+    // load, or a user who taps Reject is sent straight back to Odin.
+  } else if (result) {
+    // An action: { action: "buy", status: "success" | "failed" }
+  }
+} catch (error) {
+  // Stale or foreign result; ignore.
+}
+user ??= odinConnect.restoreSession();
+
+// From a button click. In redirect mode these navigate this tab to Odin and
+// back, and the promise never settles; the outcome arrives via
+// handleRedirectResult() above.
+await odinConnect.connect({ requires_delegation: true, targets: ["aaaa-aa"] });
+await user.buy({ token: "2jjj", btcAmount: 10_000_000n });
+```
+
+- `mode` can be changed at runtime: `odinConnect.mode = "redirect"`.
+- The result comes back in the URL fragment of the page that started the
+  request. `handleRedirectResult()` checks it against a one-time nonce kept
+  in `sessionStorage` and removes it from the address bar.
+- `restoreSession()` finishes a redirected `connect()` on its own, but leaves
+  action results for `handleRedirectResult()`.
+- Page state is lost across the round trip, so persist anything the page
+  needs to show after an action (e.g. the token being traded).
+- `requires_api` is not supported in redirect mode (it rejects), so the JWT
+  never lands in a URL. Use a delegation instead.
+- `"auto"` redirects when `isInAppBrowser()` is true: a known wallet user
+  agent (OKX), an app webview (Android `; wv)`, iOS WebKit without
+  `Safari/`), or a mobile browser with an injected wallet (`XverseProviders`,
+  `btc_providers`, `unisat`, `okxwallet`, `phantom`, `ethereum`, ...). It errs
+  toward redirect, which works everywhere. Call `isInAppBrowser()` yourself
+  if you want to choose the mode.
+
 ## Session Restoration
 
 OdinConnect automatically persists session data to `localStorage` after a successful `connect()`. This allows you to restore sessions on page load without requiring user action.

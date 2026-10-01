@@ -2,10 +2,19 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   OdinConnect,
   type OdinConnectedUser,
+  type OdinConnectMode,
   type OdinLang,
+  type OdinRedirectResult,
   type OdinToken,
 } from "odin-connect";
 import { OdinContext } from "./OdinContext";
+
+const MODE_KEY = "odin-demo:mode";
+
+const loadMode = (): OdinConnectMode => {
+  const saved = localStorage.getItem(MODE_KEY);
+  return saved === "popup" || saved === "redirect" ? saved : "auto";
+};
 
 export const OdinProvider = ({ children }: { children: ReactNode }) => {
   const [odinConnect, setOdinConnect] = useState<OdinConnect | null>(null);
@@ -14,14 +23,36 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
   );
   const [tokens, setTokens] = useState<ReadonlyArray<OdinToken>>([]);
   const [lang, setLangState] = useState<OdinLang>("en");
+  const [mode, setModeState] = useState<OdinConnectMode>(loadMode);
+  const [redirectResult, setRedirectResult] =
+    useState<OdinRedirectResult | null>(null);
 
   useEffect(() => {
     // Initialize OdinConnect with your app name, target environment and popup language
-    const odin = new OdinConnect({ name: "Demo", env: "dev", lang: "en" });
+    // `mode` applies to connect() and every action
+    const odin = new OdinConnect({
+      name: "Demo",
+      env: "dev",
+      lang: "en",
+      mode: loadMode(),
+    });
     setOdinConnect(odin);
 
-    // Attempt to restore a previous session from localStorage
-    const restoredUser = odin.restoreSession();
+    // Finish a redirect-mode connect() or action first, so its outcome
+    // (including a rejection) is visible
+    let restoredUser: OdinConnectedUser | null = null;
+    try {
+      const result = odin.handleRedirectResult();
+      setRedirectResult(result);
+      if (result?.action === "connect" && result.status === "connected") {
+        restoredUser = result.user;
+      }
+    } catch (error) {
+      console.error("Redirect result failed:", error);
+    }
+
+    // Otherwise attempt to restore a previous session from localStorage
+    restoredUser ??= odin.restoreSession();
     if (restoredUser) {
       setConnectedUser(restoredUser);
     }
@@ -34,6 +65,17 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
         odinConnect.lang = value;
       }
       setLangState(value);
+    },
+    [odinConnect]
+  );
+
+  const setMode = useCallback(
+    (value: OdinConnectMode) => {
+      if (odinConnect) {
+        odinConnect.mode = value;
+      }
+      localStorage.setItem(MODE_KEY, value);
+      setModeState(value);
     },
     [odinConnect]
   );
@@ -80,6 +122,9 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
         requestUser,
         lang,
         setLang,
+        mode,
+        setMode,
+        redirectResult,
       }}
     >
       {children}

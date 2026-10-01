@@ -31,4 +31,9 @@ export class WindowClient {
       this._settings?.settings
     );
   }
+
+  /** Navigate the current tab (redirect mode). */
+  navigate(url: URL) {
+    window.location.assign(url.href);
+  }
 }
