@@ -16,6 +16,7 @@ import { DEFAULT_LANG, normalizeOdinLang } from "../utils/lang";
 import {
   ConnectMode,
   PendingRedirectStorage,
+  RedirectCallOptions,
   RedirectClient,
 } from "./redirect";
 
@@ -43,11 +44,16 @@ export type OdinAction =
   | "icrc_approve"
   | "create_token";
 
-/** What `handleRedirectResult()` found in the URL after a redirect. */
-export type OdinRedirectResult =
+/**
+ * What `handleRedirectResult()` found in the URL after a redirect.
+ * `returnState` is whatever was passed as `returnState` to the call that
+ * redirected (undefined if none).
+ */
+export type OdinRedirectResult<ReturnState = unknown> = (
   | { action: "connect"; status: "connected"; user: ConnectedUser }
   | { action: "connect"; status: "rejected" }
-  | { action: OdinAction; status: "success" | "failed" };
+  | { action: OdinAction; status: "success" | "failed" }
+) & { returnState: ReturnState | undefined };
 
 function hashCode(str: string): string {
   let hash = 0;
@@ -65,7 +71,7 @@ function slugify(text: string): string {
   return `${base}-${hashCode(text)}`;
 }
 
-interface BaseConnectOptions {
+interface BaseConnectOptions extends RedirectCallOptions {
   // options for window.open
   open?: WindowClientSettings;
   // whether to request an auth keys upon connection
@@ -197,6 +203,7 @@ export class Connect {
       requires_api,
       requires_delegation,
       targets,
+      returnState,
     }: ConnectOptions | undefined = {
       requires_delegation: false,
       requires_api: false,
@@ -207,6 +214,7 @@ export class Connect {
         requires_api,
         requires_delegation,
         targets,
+        returnState,
       });
     }
     return new Promise<ConnectedUser>((resolve, reject) => {
@@ -271,7 +279,7 @@ export class Connect {
   private connectByRedirect(
     options: Pick<
       ConnectOptions,
-      "requires_api" | "requires_delegation" | "targets"
+      "requires_api" | "requires_delegation" | "targets" | "returnState"
     >
   ): Promise<ConnectedUser> {
     if (options.requires_api) {
@@ -286,6 +294,7 @@ export class Connect {
         path: "/authorize/connect",
         sessionKey: JSON.stringify(sessionKey.toJSON()),
         requires_delegation: Boolean(options.requires_delegation),
+        returnState: options.returnState,
       }
     );
   }
@@ -300,14 +309,17 @@ export class Connect {
    * `restoreSession()` handles connect results itself, so call this first if
    * you need to tell "rejected" from "not connected" or read action results.
    */
-  handleRedirectResult(): OdinRedirectResult | null {
+  handleRedirectResult<
+    ReturnState = unknown,
+  >(): OdinRedirectResult<ReturnState> | null {
     const consumed = this._redirect.consume();
     if (!consumed) return null;
     const { result, pending } = consumed;
+    const returnState = pending.returnState as ReturnState | undefined;
     const action = pending.path.replace(/^\/authorize\//, "");
     if (action === "connect") {
       if (result.message === "rejected" || !pending.sessionKey) {
-        return { action: "connect", status: "rejected" };
+        return { action: "connect", status: "rejected", returnState };
       }
       const user = this.completeConnection(
         result.message as ConnectResult,
@@ -317,7 +329,7 @@ export class Connect {
           requires_delegation: pending.requires_delegation,
         }
       );
-      return { action: "connect", status: "connected", user };
+      return { action: "connect", status: "connected", user, returnState };
     }
     return {
       action: action as OdinAction,
@@ -326,6 +338,7 @@ export class Connect {
         result.message === pending.successMessage
           ? "success"
           : "failed",
+      returnState,
     };
   }
 
