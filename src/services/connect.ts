@@ -7,7 +7,7 @@ import {
 import { ConnectedUser } from "./connected-user";
 import { Environment, ORIGINS } from "../models/environment";
 import { WindowClient, WindowClientSettings } from "./window";
-import { OdinCanisterClient } from "./canister";
+import { ACTIONS, actionOutcome, OdinCanisterClient, quiet } from "./canister";
 import { SessionStorage } from "./storage";
 import { isDelegationValid } from "../utils/session";
 import { OdinLang } from "../models/lang";
@@ -29,6 +29,14 @@ import {
   ConnectVerificationError,
   signClientBinding,
 } from "./verify-connect";
+import {
+  OdinAction,
+  OdinRequestInput,
+  OdinRequestState,
+  OdinState,
+  OdinStateListener,
+  StateStore,
+} from "./state";
 
 export interface AppInitOptions {
   name: string;
@@ -44,46 +52,6 @@ export interface AppInitOptions {
   mode?: ConnectMode;
 }
 
-/** Authorize actions that can come back through `handleRedirectResult()`. */
-export type OdinAction =
-  | "buy"
-  | "sell"
-  | "transfer"
-  | "swap"
-  | "add_liquidity"
-  | "remove_liquidity"
-  | "icrc_approve"
-  | "create_token";
-
-/**
- * Extra data Odin returns with an action result. `icrc_approve` (redirect
- * mode) carries `block_index` (decimal string) and `memo` (hex of
- * sha256(request_id)); other actions carry nothing today.
- */
-export type OdinActionDetail = {
-  block_index?: string;
-  memo?: string;
-  [key: string]: unknown;
-};
-
-/**
- * What `handleRedirectResult()` found in the URL after a redirect.
- * `returnState` is whatever was passed as `returnState` to the call that
- * redirected (undefined if none). `"unverified"` means Odin's answer could
- * not be verified (forged, tampered or the API refused it); the user is not
- * connected and nothing was stored.
- */
-export type OdinRedirectResult<ReturnState = unknown> = (
-  | { action: "connect"; status: "connected"; user: ConnectedUser }
-  | { action: "connect"; status: "rejected" }
-  | { action: "connect"; status: "unverified"; error: string }
-  | {
-      action: OdinAction;
-      status: "success" | "failed";
-      detail?: OdinActionDetail;
-    }
-) & { returnState: ReturnState | undefined };
-
 /** A connect result that passed every check, before it is bound to an instance. */
 interface VerifiedConnection {
   principal: string;
@@ -93,18 +61,22 @@ interface VerifiedConnection {
   jwt: string | null;
 }
 
-/** What one read of a redirect result produced, shared by every caller. */
-type RedirectOutcome =
-  | { connected: VerifiedConnection; returnState: unknown }
-  | { result: OdinRedirectResult };
+/**
+ * What one read of a redirect result produced, shared by every instance:
+ * the settled request, plus the verified connection for a connect success.
+ */
+type RedirectOutcome = {
+  request: OdinRequestState;
+  connected?: VerifiedConnection;
+};
 
 /**
  * Redirect results read on this page load, per `slug:env`. Reading one
  * consumes the URL fragment and the pending request, so a second
- * `handleRedirectResult()` (React StrictMode runs effects twice, often on a
- * new `OdinConnect`) would otherwise get null. Only the outcome is kept, never
- * the pending request, and only for `REDIRECT_RESULT_REUSE_MS` after it
- * settles (or until `disconnect()`).
+ * `OdinConnect` (React StrictMode creates instances twice) would otherwise
+ * find nothing; it gets the same outcome and odin-api is asked once. Only the
+ * outcome is kept, never the pending request, and only for
+ * `REDIRECT_RESULT_REUSE_MS` after it settles (or until `disconnect()`).
  */
 const redirectOutcomes = new Map<
   string,
@@ -184,7 +156,8 @@ export class Connect {
   private _odin: OdinCanisterClient;
   private _storage: SessionStorage;
   private _redirect: RedirectClient;
-  private _lastRedirectResult: OdinRedirectResult | null = null;
+  private _store = new StateStore();
+  private _ready: Promise<void> | null = null;
 
   constructor(appInfo?: Partial<AppInitOptions>) {
     this._appInfo = {
@@ -215,12 +188,18 @@ export class Connect {
       this._api,
       this._appInfo,
       ORIGINS[this._appInfo.env || "prod"],
-      this._redirect
+      this._redirect,
+      this._store
     );
     this._storage = new SessionStorage(
       this._appInfo.slug!,
       this._appInfo.env || "prod"
     );
+    // Restore the session and apply a redirect result now (non-blocking),
+    // so `state` fills in without the app calling anything. Not on a server.
+    if (typeof window !== "undefined") {
+      void this.ready();
+    }
   }
 
   private createUrl(path: string, requestId: string = createRequestId()) {
@@ -269,6 +248,108 @@ export class Connect {
     return this._appInfo?.slug || "";
   }
 
+  // ---- state ------------------------------------------------------------
+
+  /**
+   * Restore the stored session and, when this page load returned from a
+   * redirect-mode `connect()` or action, consume and verify that result and
+   * apply it as `state.request`. Resolves with the current state once that
+   * is done. Idempotent: started by the constructor, every call shares the
+   * same work (also across `OdinConnect` instances with the same slug and
+   * env, e.g. React StrictMode), and it never rejects. A stale or foreign
+   * result in the URL is dropped (`request: null`, fragment removed).
+   *
+   * Odin returns to the page path without its query string; the original
+   * query is put back here, so read URL query state after `ready()`.
+   *
+   * On a server (no `window`) nothing is restored and the state stays
+   * `"initializing"`.
+   */
+  ready(): Promise<OdinState> {
+    if (typeof window === "undefined") {
+      return Promise.resolve(this.state);
+    }
+    if (!this._ready) {
+      this._ready = this.initialize();
+    }
+    return this._ready.then(() => this.state);
+  }
+
+  /** Current state snapshot; a new object after every change. */
+  get state(): OdinState {
+    return this._store.state;
+  }
+
+  /**
+   * Same as `state`, as a bound function for
+   * `useSyncExternalStore(odin.subscribe, odin.getState)`.
+   */
+  getState = (): OdinState => this._store.state;
+
+  /**
+   * Call `listener` with the new state after every change (not on
+   * subscribe: read `state` after `await ready()`). Returns the unsubscribe
+   * function. Bound, so it can be passed around as is.
+   */
+  subscribe = (listener: OdinStateListener): (() => void) =>
+    this._store.subscribe(listener);
+
+  /** The connected user, or null (`state.user`). */
+  get user(): ConnectedUser | null {
+    return this._store.state.user;
+  }
+
+  /** Synchronous up to the redirect read, so the URL is read right away. */
+  private initialize(): Promise<void> {
+    let outcome: Promise<RedirectOutcome> | null = null;
+    try {
+      outcome = this.redirectOutcome();
+      if (!outcome) {
+        // no result in the URL: this only drops an abandoned pending request
+        this._redirect.consume();
+      }
+    } catch {
+      // sessionStorage or history unavailable: nothing to apply
+    }
+    return this.finishReady(outcome);
+  }
+
+  private async finishReady(
+    outcome: Promise<RedirectOutcome> | null
+  ): Promise<void> {
+    let request: OdinRequestState | null = null;
+    let user: ConnectedUser | null = null;
+    if (outcome) {
+      try {
+        const read = await outcome;
+        request = read.request;
+        if (read.connected) {
+          user = this.bindConnection(read.connected);
+        }
+      } catch {
+        // stale or foreign result (fragment already removed): ignored
+      }
+    }
+    // a rejected or unverified re-connect keeps the stored session
+    this._store.dispatch({
+      type: "ready",
+      user: user ?? this.loadStoredSession(),
+      request,
+    });
+  }
+
+  // ---- connect ----------------------------------------------------------
+
+  /**
+   * Start a connect. `state.request` becomes a pending `"connect"` request
+   * right away and settles as `"success"` (and `state.user` is set),
+   * `"rejected"`, `"failed"` (popup blocked) or `"unverified"`.
+   *
+   * The returned promise is kept for 1.6.0 code in popup mode: it resolves
+   * with the user or rejects. In redirect mode the tab navigates away and it
+   * never settles; render from `subscribe()` / `state` to support both.
+   * Ignoring it never causes an unhandled rejection.
+   */
   connect(
     {
       open,
@@ -281,57 +362,118 @@ export class Connect {
       requires_api: false,
     }
   ): Promise<ConnectedUser> {
+    const sessionKey = Ed25519KeyIdentity.generate();
+    const requestId = createRequestId();
+    const options = { requires_api, requires_delegation, targets };
+    const input: OdinRequestInput["connect"] = {
+      requires_api: Boolean(requires_api),
+      requires_delegation: Boolean(requires_delegation),
+      targets: targets ? [...targets] : [],
+    };
+    this._store.dispatch({
+      type: "request",
+      request: {
+        id: requestId,
+        action: "connect",
+        status: "pending",
+        input,
+        ...(returnState !== undefined ? { returnState } : {}),
+      },
+    });
+    const url = this.createConnectUrl(sessionKey, requestId, options);
     if (this._redirect.useRedirect) {
-      return this.connectByRedirect({
-        requires_api,
-        requires_delegation,
-        targets,
-        returnState,
-      });
+      return quiet(
+        this._redirect
+          .start<ConnectedUser>(
+            url,
+            {
+              path: "/authorize/connect",
+              // Every connect (with or without delegation): the secret waits
+              // in this tab's sessionStorage; Odin only sees session_pubkey.
+              sessionKey: JSON.stringify(sessionKey.toJSON()),
+              requires_delegation: input.requires_delegation,
+              requires_api: input.requires_api,
+              targets,
+              returnState,
+            },
+            requestId
+          )
+          .catch((error) => {
+            throw this.settleError(requestId, "failed", error);
+          })
+      );
     }
-    return new Promise<ConnectedUser>((resolve, reject) => {
-      if (open) {
-        this._window.settings = open;
-      }
-      const sessionKey = Ed25519KeyIdentity.generate();
-      const requestId = createRequestId();
-      const handleMessage = async (event: MessageEvent) => {
-        if (
-          event.origin === this.origin &&
-          event.data?.path === "/authorize/connect"
-        ) {
-          window.removeEventListener("message", handleMessage);
-          if (event.data.message != "rejected") {
+    if (open) {
+      this._window.settings = open;
+    }
+    return quiet(
+      new Promise<ConnectedUser>((resolve, reject) => {
+        const handleMessage = async (event: MessageEvent) => {
+          if (
+            event.origin === this.origin &&
+            event.data?.path === "/authorize/connect"
+          ) {
+            window.removeEventListener("message", handleMessage);
+            if (event.data.message === "rejected") {
+              this._store.dispatch({
+                type: "settle",
+                id: requestId,
+                status: "rejected",
+              });
+              reject(new Error("User rejected the connection"));
+              return;
+            }
             // the user accepted the connection: verify before trusting it
             try {
-              resolve(
-                await this.completeConnection(
-                  event.data.message as ConnectResult,
-                  sessionKey,
-                  { requestId, requires_api, requires_delegation, targets }
-                )
+              const user = await this.completeConnection(
+                event.data.message as ConnectResult,
+                sessionKey,
+                { requestId, ...options }
               );
+              this._store.dispatch({
+                type: "settle",
+                id: requestId,
+                status: "success",
+                user,
+              });
+              resolve(user);
             } catch (error) {
-              reject(
-                error instanceof Error
-                  ? error
-                  : new ConnectVerificationError(String(error))
-              );
+              reject(this.settleError(requestId, "unverified", error));
             }
-          } else {
-            reject(new Error("User rejected the connection"));
           }
+        };
+        const opened = this._window.open(url);
+        if (!opened || opened.closed || typeof opened.closed === "undefined") {
+          reject(
+            this.settleError(
+              requestId,
+              "failed",
+              new Error(
+                "Failed to open authorize/connect window, please always allow popups and try again"
+              )
+            )
+          );
+          return;
         }
-      };
-      const url = this.createConnectUrl(sessionKey, requestId, {
-        requires_api,
-        requires_delegation,
-        targets,
-      });
-      this._window.open(url);
+        window.addEventListener("message", handleMessage);
+      })
+    );
+  }
 
-      window.addEventListener("message", handleMessage);
-    });
+  /** Settle a request as failed/unverified; returns the error to reject with. */
+  private settleError(
+    id: string,
+    status: "failed" | "unverified",
+    error: unknown
+  ): Error {
+    const err =
+      error instanceof Error
+        ? error
+        : status === "unverified"
+          ? new ConnectVerificationError(String(error))
+          : new Error(String(error));
+    this._store.dispatch({ type: "settle", id, status, error: err.message });
+    return err;
   }
 
   private createConnectUrl(
@@ -354,69 +496,6 @@ export class Connect {
       url.searchParams.append("targets", targets?.join(",") || "");
     }
     return url;
-  }
-
-  private connectByRedirect(
-    options: Pick<
-      ConnectOptions,
-      "requires_api" | "requires_delegation" | "targets" | "returnState"
-    >
-  ): Promise<ConnectedUser> {
-    const sessionKey = Ed25519KeyIdentity.generate();
-    const requestId = createRequestId();
-    return this._redirect.start<ConnectedUser>(
-      this.createConnectUrl(sessionKey, requestId, options),
-      {
-        path: "/authorize/connect",
-        // Every connect (with or without delegation): the secret waits in
-        // this tab's sessionStorage; Odin only ever sees session_pubkey.
-        sessionKey: JSON.stringify(sessionKey.toJSON()),
-        requires_delegation: Boolean(options.requires_delegation),
-        requires_api: Boolean(options.requires_api),
-        targets: options.targets,
-        returnState: options.returnState,
-      },
-      requestId
-    );
-  }
-
-  /**
-   * Read the result of a redirect-mode `connect()` or action after Odin sends
-   * the user back. Optional for connect (`await restoreSession()` already
-   * finishes a redirect connect); needed for action results, `returnState`
-   * or to tell a rejected/unverified connect apart from no connect.
-   * Resolves null when the URL carries no redirect result; rejects when the
-   * result does not match the pending request (stale, foreign or replayed).
-   * Reading the result strips the fragment and restores the page's original
-   * query string (Odin returns without it).
-   *
-   * A connect result is verified (locally and with odin-api) before it is
-   * reported as `"connected"` and persisted like a popup connect; when that
-   * fails the status is `"unverified"` and nothing is stored.
-   *
-   * Safe to call more than once per page load (e.g. React StrictMode effects,
-   * even on another `OdinConnect` with the same slug and env), before or
-   * after `restoreSession()`: every call made while the result is being read,
-   * or shortly after, gets the same outcome, and odin-api is asked once.
-   */
-  async handleRedirectResult<
-    ReturnState = unknown,
-  >(): Promise<OdinRedirectResult<ReturnState> | null> {
-    const outcome = this.redirectOutcome();
-    if (!outcome) {
-      // no result in the URL: this only drops an abandoned pending request
-      this._redirect.consume();
-      return null;
-    }
-    return this.bindOutcome(await outcome) as OdinRedirectResult<ReturnState>;
-  }
-
-  /**
-   * The last redirect result this instance read, through
-   * `handleRedirectResult()` or `restoreSession()`; null before that.
-   */
-  get lastRedirectResult(): OdinRedirectResult | null {
-    return this._lastRedirectResult;
   }
 
   /**
@@ -445,54 +524,59 @@ export class Connect {
     return entry?.promise ?? null;
   }
 
-  /** Turn a shared outcome into this instance's result (its own API key). */
-  private bindOutcome(outcome: RedirectOutcome): OdinRedirectResult {
-    let result: OdinRedirectResult;
-    if ("result" in outcome) {
-      result = outcome.result;
-    } else {
-      const { principal, identity, jwt } = outcome.connected;
-      this._api.apiKey = jwt;
-      result = {
-        action: "connect",
-        status: "connected",
-        user: new ConnectedUser(principal, identity, this._api, this._odin),
-        returnState: outcome.returnState,
-      };
-    }
-    this._lastRedirectResult = result;
-    return result;
+  /** Bind a shared verified connection to this instance (its API key). */
+  private bindConnection({
+    principal,
+    identity,
+    jwt,
+  }: VerifiedConnection): ConnectedUser {
+    this._api.apiKey = jwt;
+    return new ConnectedUser(principal, identity, this._api, this._odin);
   }
 
   private get redirectCacheKey(): string {
     return `${this.slug}:${this.currentEnv}`;
   }
 
-  /** Consume the URL's result once and verify/persist a connect result. */
+  /**
+   * Consume the URL's result once and turn it into the settled request; a
+   * connect result is verified and persisted first. Throws for a stale or
+   * foreign result.
+   */
   private async readRedirectResult(): Promise<RedirectOutcome> {
     const consumed = this._redirect.consume();
     if (!consumed) {
       throw new Error("Unexpected OdinConnect redirect result");
     }
     const { result, pending } = consumed;
-    const returnState = pending.returnState;
+    const extra =
+      pending.returnState !== undefined
+        ? { returnState: pending.returnState }
+        : {};
     const action = pending.path.replace(/^\/authorize\//, "");
     if (action === "connect") {
+      const request = {
+        id: pending.state,
+        action: "connect" as const,
+        input: {
+          requires_api: Boolean(pending.requires_api),
+          requires_delegation: Boolean(pending.requires_delegation),
+          targets: pending.targets ?? [],
+        },
+        ...extra,
+      };
       if (result.message === "rejected") {
-        return {
-          result: { action: "connect", status: "rejected", returnState },
-        };
+        return { request: { ...request, status: "rejected" } };
       }
       if (!pending.sessionKey) {
         // every connect saves its key; without it the proof can't be redeemed
         return {
-          result: {
-            action: "connect",
+          request: {
+            ...request,
             status: "unverified",
             error: new ConnectVerificationError(
               "the pending request has no session key"
             ).message,
-            returnState,
           },
         };
       }
@@ -510,35 +594,28 @@ export class Connect {
           options
         );
         this.persistConnection(connected, sessionKey, options);
-        return { connected, returnState };
+        return { request: { ...request, status: "success" }, connected };
       } catch (error) {
         return {
-          result: {
-            action: "connect",
+          request: {
+            ...request,
             status: "unverified",
             error: error instanceof Error ? error.message : String(error),
-            returnState,
           },
         };
       }
     }
-    const detail =
-      result.detail !== null &&
-      typeof result.detail === "object" &&
-      !Array.isArray(result.detail)
-        ? (result.detail as OdinActionDetail)
-        : undefined;
+    if (!(action in ACTIONS)) {
+      throw new Error("Unexpected OdinConnect redirect result");
+    }
     return {
-      result: {
+      request: {
+        id: pending.state,
         action: action as OdinAction,
-        status:
-          pending.successMessage !== undefined &&
-          result.message === pending.successMessage
-            ? "success"
-            : "failed",
-        ...(detail ? { detail } : {}),
-        returnState,
-      },
+        input: pending.input ?? {},
+        ...extra,
+        ...actionOutcome(action as OdinAction, result.message, result.detail),
+      } as OdinRequestState,
     };
   }
 
@@ -675,44 +752,13 @@ export class Connect {
   }
 
   /**
-   * The connected user on page load, or null. Async since 2.0.0.
-   *
-   * If this load returned from a redirect-mode `connect()`, finishes it
-   * (verified like a popup connect, through the same shared read as
-   * `handleRedirectResult()`) and returns that user, or null when it was
-   * rejected or could not be verified (`handleRedirectResult()` or
-   * `lastRedirectResult` tell which; a previously stored session is kept but
-   * not returned on that load). An action result in the URL is left for
-   * `handleRedirectResult()`. Otherwise rehydrates the stored session.
-   *
-   * Odin returns to the page path without its query string; reading the
-   * result restores it, so read URL query state after this resolves.
+   * @deprecated Since 2.0.0: use `(await odin.ready()).user` (or
+   * `odin.state.user` after `ready()`). Kept so 1.6.0 code upgrades by adding
+   * `await`; resolves with `state.user` once `ready()` finished.
    */
   async restoreSession(): Promise<ConnectedUser | null> {
-    const fragment = readFragmentValue();
-    const entry = redirectOutcomes.get(this.redirectCacheKey);
-    const unread = fragment !== null && entry?.fragment !== fragment;
-    // Only take an unread result off the URL when it answers a pending
-    // connect; action (or unmatched) results stay for handleRedirectResult().
-    const outcome =
-      unread && this._redirect.pendingPath !== "/authorize/connect"
-        ? null
-        : this.redirectOutcome();
-    if (outcome) {
-      let result: OdinRedirectResult | null = null;
-      try {
-        result = this.bindOutcome(await outcome);
-      } catch {
-        // stale or foreign result: handleRedirectResult() reports it
-      }
-      if (result?.action === "connect") {
-        return result.status === "connected" ? result.user : null;
-      }
-    } else if (fragment === null) {
-      // no result in the URL: this only drops an abandoned pending request
-      this._redirect.consume();
-    }
-    return this.loadStoredSession();
+    await this.ready();
+    return this.state.user;
   }
 
   private loadStoredSession(): ConnectedUser | null {
@@ -747,10 +793,12 @@ export class Connect {
     }
   }
 
+  /** Forget the stored session; `state.user` and `state.request` become null. */
   disconnect(): void {
     this._storage.clear();
     this._api.apiKey = null;
     redirectOutcomes.delete(this.redirectCacheKey);
+    this._store.dispatch({ type: "disconnect" });
   }
 
   isSessionValid(): boolean {

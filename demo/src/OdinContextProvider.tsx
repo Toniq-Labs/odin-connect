@@ -1,19 +1,13 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   OdinConnect,
   type OdinConnectedUser,
   type OdinConnectMode,
   type OdinLang,
-  type OdinRedirectResult,
   type OdinToken,
 } from "odin-connect";
 import { OdinContext } from "./OdinContext";
+import { useOdinState } from "./useOdinState";
 
 const MODE_KEY = "odin-demo:mode";
 
@@ -24,8 +18,9 @@ const loadMode = (): OdinConnectMode => {
 
 export const OdinProvider = ({ children }: { children: ReactNode }) => {
   // Initialize OdinConnect once with your app name, target environment and
-  // popup language. `mode` applies to connect() and every action
-  const [odinConnect] = useState<OdinConnect | null>(
+  // popup language. `mode` applies to connect() and every action. The
+  // constructor already restores the session and applies a redirect result
+  const [odinConnect] = useState<OdinConnect>(
     () =>
       new OdinConnect({
         name: "Demo",
@@ -34,40 +29,12 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
         mode: loadMode(),
       })
   );
-  const initialized = useRef(false);
-  const [connectedUser, setConnectedUser] = useState<OdinConnectedUser | null>(
-    null
-  );
+  // One source for both modes: a popup result and a redirect result read by
+  // ready() on the next load both land in this state
+  const { user: connectedUser, request } = useOdinState(odinConnect);
   const [tokens, setTokens] = useState<ReadonlyArray<OdinToken>>([]);
   const [lang, setLangState] = useState<OdinLang>("en");
   const [mode, setModeState] = useState<OdinConnectMode>(loadMode);
-  const [redirectResult, setRedirectResult] =
-    useState<OdinRedirectResult | null>(null);
-
-  useEffect(() => {
-    // Restore once per page load. StrictMode runs effects twice; both calls
-    // would return the same outcome anyway, the ref just avoids the second.
-    if (!odinConnect || initialized.current) return;
-    initialized.current = true;
-    const init = async () => {
-      // Finishes a redirect-mode connect() (verified with odin-api), else
-      // restores the stored session. Async since 2.0.0
-      const restoredUser = await odinConnect.restoreSession();
-      if (restoredUser) {
-        setConnectedUser(restoredUser);
-      }
-
-      // Optional: read the outcome for the result banner (a rejected or
-      // unverified connect, an action result, returnState). Same read as
-      // restoreSession(), so odin-api is not asked again
-      try {
-        setRedirectResult(await odinConnect.handleRedirectResult());
-      } catch (error) {
-        console.error("Redirect result failed:", error);
-      }
-    };
-    void init();
-  }, [odinConnect]);
 
   const setLang = useCallback(
     (value: OdinLang) => {
@@ -98,9 +65,8 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     if (connectedUser) {
       return connectedUser;
     }
-    const user = await odinConnect.connect();
-    setConnectedUser(user);
-    return user;
+    // popup: resolves with the user (also in state); redirect: navigates away
+    return odinConnect.connect();
   }, [connectedUser, odinConnect]);
 
   useEffect(() => {
@@ -127,7 +93,6 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
       value={{
         odinConnect,
         connectedUser,
-        setConnectedUser,
         tokens,
         setTokens,
         requestUser,
@@ -135,7 +100,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
         setLang,
         mode,
         setMode,
-        redirectResult,
+        request,
       }}
     >
       {children}

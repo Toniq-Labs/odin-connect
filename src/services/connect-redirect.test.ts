@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DelegationChain, Ed25519KeyIdentity } from "@dfinity/identity";
 import { OdinApiClient } from "./api";
-import { Connect, resetRedirectOutcomes } from "./connect";
+import { AppInitOptions, Connect, resetRedirectOutcomes } from "./connect";
 import { PENDING_REDIRECT_MAX_AGE_MS, REDIRECT_RESULT_KEY } from "./redirect";
 import {
   apiAccepts,
@@ -46,6 +46,34 @@ function spyNavigate(connect: Connect) {
 function navigatedUrl(navigate: ReturnType<typeof spyNavigate>) {
   expect(navigate).toHaveBeenCalledOnce();
   return navigate.mock.calls[0][0] as URL;
+}
+
+/** The app loading again after Odin sent the tab back: a new instance. */
+async function reload(options: Partial<AppInitOptions> = {}) {
+  const connect = new Connect({ name: "test", ...options });
+  const state = await connect.ready();
+  return { connect, state };
+}
+
+/** Start a redirect connect on a fresh instance and come back with `message`. */
+async function returnFromConnect(
+  options: Parameters<Connect["connect"]>[0] = {},
+  message?: unknown
+) {
+  const connect = new Connect({ name: "test", mode: "redirect" });
+  const navigate = spyNavigate(connect);
+  void connect.connect(options);
+  const url = navigatedUrl(navigate);
+  const sent = message ?? (await odinConnectMessage(url));
+  returnWith(url, sent);
+  return {
+    url,
+    message: sent as Awaited<ReturnType<typeof odinConnectMessage>>,
+  };
+}
+
+function spyVerify() {
+  return vi.spyOn(OdinApiClient.prototype, "verifyConnect");
 }
 
 describe("Connect redirect mode", () => {
@@ -110,11 +138,31 @@ describe("Connect redirect mode", () => {
     expect(url.searchParams.get("requires_api")).toBe("1");
   });
 
-  it("completes a delegation round trip through restoreSession", async () => {
+  it("records the connect as pending before navigating", () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
-    const verify = vi
-      .spyOn(connect.api, "verifyConnect")
-      .mockImplementation(apiAccepts());
+    const navigate = spyNavigate(connect);
+    void connect.connect({
+      requires_delegation: true,
+      targets: ["74iy7-xqaaa-aaaaf-qagra-cai"],
+      returnState: { from: "landing" },
+    });
+    const url = navigatedUrl(navigate);
+    expect(connect.state.request).toEqual({
+      id: url.searchParams.get("request_id"),
+      action: "connect",
+      status: "pending",
+      input: {
+        requires_api: false,
+        requires_delegation: true,
+        targets: ["74iy7-xqaaa-aaaaf-qagra-cai"],
+      },
+      returnState: { from: "landing" },
+    });
+  });
+
+  it("completes a delegation round trip in ready() on the next load", async () => {
+    const verify = spyVerify().mockImplementation(apiAccepts());
+    const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.connect({
       requires_delegation: true,
@@ -132,19 +180,25 @@ describe("Connect redirect mode", () => {
     const message = await odinConnectMessage(url);
     returnWith(url, message);
 
-    // restoreSession finishes the redirect connect
-    const restored = await connect.restoreSession();
-    expect(restored?.principal).toBe(message.principal);
-    expect(restored?.getIdentity()?.getPrincipal().toText()).toBe(
+    const { connect: app, state } = await reload();
+    expect(state.status).toBe("ready");
+    expect(state.user?.principal).toBe(message.principal);
+    expect(state.user?.getIdentity()?.getPrincipal().toText()).toBe(
       message.principal
     );
-
-    // handleRedirectResult still reports it, from the same read
-    const result = await connect.handleRedirectResult();
+    expect(state.request).toEqual({
+      id: url.searchParams.get("request_id"),
+      action: "connect",
+      status: "success",
+      input: {
+        requires_api: false,
+        requires_delegation: true,
+        targets: ["74iy7-xqaaa-aaaaf-qagra-cai"],
+      },
+      returnState: { from: "landing" },
+    });
+    expect(app.user).toBe(state.user);
     expect(verify).toHaveBeenCalledOnce();
-    expect(result?.action).toBe("connect");
-    expect(result?.status).toBe("connected");
-    expect(result?.returnState).toEqual({ from: "landing" });
     expect(verify).toHaveBeenCalledWith({
       ...message.proof,
       audience: window.location.origin,
@@ -152,25 +206,22 @@ describe("Connect redirect mode", () => {
       issue_jwt: false,
       client_signature: expect.any(String),
     });
-    if (result?.action === "connect" && result.status === "connected") {
-      expect(result.user.principal).toBe(message.principal);
-      expect(result.user.getIdentity()?.getPrincipal().toText()).toBe(
-        message.principal
-      );
-    }
-    // fragment scrubbed, pending request consumed, session persisted
+    // fragment scrubbed, query restored, pending consumed, session persisted
     expect(window.location.hash).toBe("");
     expect(window.location.search).toBe("?x=1");
     expect(sessionStorage.length).toBe(0);
-    expect(connect.isSessionValid()).toBe(true);
-    expect((await connect.restoreSession())?.principal).toBe(message.principal);
+    expect(app.isSessionValid()).toBe(true);
+    // a later load (no fragment, cache gone) restores it from storage only
+    resetRedirectOutcomes();
+    const later = await reload();
+    expect(later.state.user?.principal).toBe(message.principal);
+    expect(later.state.request).toBeNull();
+    expect(verify).toHaveBeenCalledOnce();
   });
 
   it("binds a connect without delegation to its session key too", async () => {
+    const verify = spyVerify().mockImplementation(apiAccepts());
     const connect = new Connect({ name: "test", mode: "redirect" });
-    const verify = vi
-      .spyOn(connect.api, "verifyConnect")
-      .mockImplementation(apiAccepts());
     const navigate = spyNavigate(connect);
     void connect.connect({ requires_api: true });
     const url = navigatedUrl(navigate);
@@ -181,43 +232,38 @@ describe("Connect redirect mode", () => {
     const pending = JSON.parse(sessionStorage.getItem(sessionStorage.key(0)!)!);
     const secretHex = JSON.parse(pending.sessionKey)[1];
     expect(url.href).not.toContain(secretHex);
+    // and never in the request's input
+    expect(JSON.stringify(pending.input ?? null)).not.toContain(secretHex);
 
     const message = await odinConnectMessage(url);
     expect(JSON.parse(message.proof.payload).sk).toBe(sessionPubkey);
     returnWith(url, message);
-    const result = await connect.handleRedirectResult();
-    expect(result?.status).toBe("connected");
+    const { state } = await reload();
+    expect(state.request?.status).toBe("success");
+    expect(JSON.stringify(state.request)).not.toContain(secretHex);
     const body = verify.mock.calls[0][0];
     expect(body.payload).toBe(message.proof.payload);
     expect(clientSignatureValid(body)).toBe(true);
     expect(JSON.stringify(body)).not.toContain(secretHex);
     // the pending entry (with the secret) is gone after the round trip
     expect(sessionStorage.length).toBe(0);
-    // a second read comes from the outcome cache, which holds no key
-    const again = await new Connect({
-      name: "test",
-      mode: "redirect",
-    }).handleRedirectResult();
-    expect(again?.status).toBe("connected");
-    if (again?.action === "connect" && again.status === "connected") {
-      expect(again.user.getIdentity()).toBeNull();
-    }
+    // a second instance gets the outcome from the cache, which holds no key
+    const again = await reload();
+    expect(again.state.request?.status).toBe("success");
+    expect(again.state.user?.getIdentity()).toBeNull();
     expect(verify).toHaveBeenCalledOnce();
   });
 
   it("drops the pending session key on unverified and mismatched results", async () => {
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    vi.spyOn(connect.api, "verifyConnect").mockRejectedValue(new Error("401"));
-    const navigate = spyNavigate(connect);
-    void connect.connect();
-    const url = navigatedUrl(navigate);
+    spyVerify().mockRejectedValue(new Error("401"));
+    await returnFromConnect();
     expect(sessionStorage.length).toBe(1);
-    returnWith(url, await odinConnectMessage(url));
-    expect((await connect.handleRedirectResult())?.status).toBe("unverified");
+    expect((await reload()).state.request?.status).toBe("unverified");
     expect(sessionStorage.length).toBe(0);
 
     resetRedirectOutcomes();
-    navigate.mockClear();
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
     void connect.connect();
     expect(sessionStorage.length).toBe(1);
     returnWith(
@@ -225,13 +271,13 @@ describe("Connect redirect mode", () => {
       { principal: "aaaaa-aa" },
       { state: "someone-elses-state-value-000000" }
     );
-    await expect(connect.handleRedirectResult()).rejects.toThrow();
+    expect((await reload()).state.request).toBeNull();
     expect(sessionStorage.length).toBe(0);
   });
 
   it("reports unverified when the pending request lost its session key", async () => {
+    const verify = spyVerify();
     const connect = new Connect({ name: "test", mode: "redirect" });
-    const verify = vi.spyOn(connect.api, "verifyConnect");
     const navigate = spyNavigate(connect);
     void connect.connect();
     const url = navigatedUrl(navigate);
@@ -240,79 +286,72 @@ describe("Connect redirect mode", () => {
     delete pending.sessionKey;
     sessionStorage.setItem(key, JSON.stringify(pending));
     returnWith(url, await odinConnectMessage(url));
-    expect(await connect.handleRedirectResult()).toMatchObject({
+    const { state } = await reload();
+    expect(state.request).toMatchObject({
       action: "connect",
       status: "unverified",
       error: expect.stringContaining("no session key"),
     });
+    expect(state.user).toBeNull();
     expect(verify).not.toHaveBeenCalled();
   });
 
   it("gets the JWT for requires_api from odin-api only", async () => {
+    spyVerify().mockImplementation(apiAccepts());
     const connect = new Connect({ name: "test", mode: "redirect" });
-    vi.spyOn(connect.api, "verifyConnect").mockImplementation(apiAccepts());
     const navigate = spyNavigate(connect);
     void connect.connect({ requires_api: true });
     const url = navigatedUrl(navigate);
     const message = await odinConnectMessage(url);
     returnWith(url, { ...message, jwt: "jwt-from-the-page" });
 
-    const result = await connect.handleRedirectResult();
-    expect(result?.status).toBe("connected");
-    expect(connect.api.apiKey).toBe("jwt-from-api");
+    const { connect: app, state } = await reload();
+    expect(state.request?.status).toBe("success");
+    expect(app.api.apiKey).toBe("jwt-from-api");
     expect(JSON.stringify(localStorage)).not.toContain("jwt-from-the-page");
   });
 
   it("reports unverified when odin-api refuses the proof", async () => {
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    vi.spyOn(connect.api, "verifyConnect").mockRejectedValue(
-      new Error("Invalid signature")
-    );
-    const navigate = spyNavigate(connect);
-    void connect.connect({
+    spyVerify().mockRejectedValue(new Error("Invalid signature"));
+    const { url } = await returnFromConnect({
       requires_api: true,
       requires_delegation: true,
       targets: [],
       returnState: { step: 1 },
     });
-    const url = navigatedUrl(navigate);
-    returnWith(url, await odinConnectMessage(url));
 
-    const result = await connect.handleRedirectResult();
-    expect(result).toEqual({
+    const { connect: app, state } = await reload();
+    expect(state.user).toBeNull();
+    expect(state.request).toEqual({
+      id: url.searchParams.get("request_id"),
       action: "connect",
       status: "unverified",
+      input: { requires_api: true, requires_delegation: true, targets: [] },
       error: expect.stringContaining("Invalid signature"),
       returnState: { step: 1 },
     });
     expect(localStorage.length).toBe(0);
-    expect(connect.isSessionValid()).toBe(false);
-    expect(connect.api.apiKey).toBeNull();
+    expect(app.isSessionValid()).toBe(false);
+    expect(app.api.apiKey).toBeNull();
   });
 
   it("reports unverified when odin-api verifies another principal", async () => {
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    vi.spyOn(connect.api, "verifyConnect").mockResolvedValue({
+    spyVerify().mockResolvedValue({
       principal: "aaaaa-aa",
       username: null,
       jwt: "jwt",
     });
-    const navigate = spyNavigate(connect);
-    void connect.connect({ requires_api: true });
-    const url = navigatedUrl(navigate);
-    returnWith(url, await odinConnectMessage(url));
-
-    const result = await connect.handleRedirectResult();
-    expect(result?.status).toBe("unverified");
+    await returnFromConnect({ requires_api: true });
+    const { connect: app, state } = await reload();
+    expect(state.request?.status).toBe("unverified");
+    expect(state.user).toBeNull();
     expect(localStorage.length).toBe(0);
-    expect(connect.api.apiKey).toBeNull();
+    expect(app.api.apiKey).toBeNull();
   });
 
   it("reports unverified for a forged principal without calling the API", async () => {
+    const verify = spyVerify().mockImplementation(apiAccepts());
     const connect = new Connect({ name: "test", mode: "redirect" });
-    const verify = vi
-      .spyOn(connect.api, "verifyConnect")
-      .mockImplementation(apiAccepts());
     const navigate = spyNavigate(connect);
     void connect.connect();
     const url = navigatedUrl(navigate);
@@ -320,42 +359,40 @@ describe("Connect redirect mode", () => {
       "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe";
     returnWith(url, await odinConnectMessage(url, { principal: victim }));
 
-    const result = await connect.handleRedirectResult();
-    expect(result?.status).toBe("unverified");
+    const { state } = await reload();
+    expect(state.request?.status).toBe("unverified");
+    expect(state.user).toBeNull();
     expect(verify).not.toHaveBeenCalled();
   });
 
   it("reports unverified for a hand-crafted result with no proof", async () => {
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    const verify = vi.spyOn(connect.api, "verifyConnect");
-    const navigate = spyNavigate(connect);
-    void connect.connect();
-    returnWith(navigatedUrl(navigate), { principal: "aaaaa-aa", jwt: "x" });
-
-    const result = await connect.handleRedirectResult();
-    expect(result).toMatchObject({
+    const verify = spyVerify();
+    await returnFromConnect({}, { principal: "aaaaa-aa", jwt: "x" });
+    const { state } = await reload();
+    expect(state.request).toMatchObject({
       action: "connect",
       status: "unverified",
       error: expect.stringContaining("no identity proof"),
     });
+    expect(state.user).toBeNull();
     expect(verify).not.toHaveBeenCalled();
     expect(localStorage.length).toBe(0);
   });
 
   it("reports a rejected connect and consumes the pending request", async () => {
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    const navigate = spyNavigate(connect);
-    void connect.connect();
-    returnWith(navigatedUrl(navigate), "rejected");
-    expect(await connect.handleRedirectResult()).toEqual({
+    await returnFromConnect({}, "rejected");
+    const { state } = await reload();
+    expect(state.request).toMatchObject({
       action: "connect",
       status: "rejected",
     });
+    expect(state.request).not.toHaveProperty("error");
+    expect(state.user).toBeNull();
     expect(sessionStorage.length).toBe(0);
     expect(window.location.hash).toBe("");
   });
 
-  it("refuses a result whose state does not match", async () => {
+  it("ignores a result whose state does not match, and strips it", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.connect();
@@ -364,30 +401,26 @@ describe("Connect redirect mode", () => {
       { principal: "aaaaa-aa", jwt: null },
       { state: "someone-elses-state-value-000000" }
     );
-    await expect(connect.handleRedirectResult()).rejects.toThrow(
-      "Unexpected OdinConnect redirect result"
-    );
+    const { state } = await reload();
+    expect(state).toEqual({ status: "ready", user: null, request: null });
+    expect(window.location.hash).toBe("");
   });
 
-  it("returns null when the URL has no redirect result", async () => {
-    const connect = new Connect({ name: "test" });
-    expect(await connect.handleRedirectResult()).toBeNull();
+  it("has no request when the URL has no redirect result", async () => {
+    const { state } = await reload();
+    expect(state).toEqual({ status: "ready", user: null, request: null });
   });
 
   it("reports unverified when requires_api gets no JWT from odin-api", async () => {
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    vi.spyOn(connect.api, "verifyConnect").mockImplementation(apiAccepts(null));
-    const navigate = spyNavigate(connect);
-    void connect.connect({ requires_api: true });
-    const url = navigatedUrl(navigate);
-    returnWith(url, await odinConnectMessage(url));
-
-    expect(await connect.handleRedirectResult()).toMatchObject({
+    spyVerify().mockImplementation(apiAccepts(null));
+    await returnFromConnect({ requires_api: true });
+    const { connect: app, state } = await reload();
+    expect(state.request).toMatchObject({
       action: "connect",
       status: "unverified",
       error: expect.stringContaining("issued no API key"),
     });
-    expect(connect.api.apiKey).toBeNull();
+    expect(app.api.apiKey).toBeNull();
     expect(localStorage.length).toBe(0);
   });
 
@@ -401,11 +434,11 @@ describe("Connect redirect mode", () => {
 
       // back on the app without a result, still within 10 minutes: kept
       vi.setSystemTime(Date.now() + PENDING_REDIRECT_MAX_AGE_MS);
-      expect(await connect.handleRedirectResult()).toBeNull();
+      expect((await reload()).state.request).toBeNull();
       expect(sessionStorage.length).toBe(1);
 
       vi.setSystemTime(Date.now() + 1);
-      expect(await connect.handleRedirectResult()).toBeNull();
+      expect((await reload()).state.request).toBeNull();
       expect(sessionStorage.length).toBe(0);
     } finally {
       vi.useRealTimers();
@@ -420,12 +453,12 @@ describe("Connect redirect mode", () => {
     const { createdAt, ...undated } = JSON.parse(sessionStorage.getItem(key)!);
     expect(typeof createdAt).toBe("number");
     sessionStorage.setItem(key, JSON.stringify(undated));
-    expect(await connect.handleRedirectResult()).toBeNull();
+    await reload();
     expect(sessionStorage.length).toBe(0);
   });
 });
 
-describe("handleRedirectResult is idempotent per page load", () => {
+describe("ready() is shared per page load", () => {
   beforeEach(() => {
     window.history.replaceState(null, "", "/app");
     sessionStorage.clear();
@@ -437,119 +470,105 @@ describe("handleRedirectResult is idempotent per page load", () => {
     vi.restoreAllMocks();
   });
 
-  /** Start a redirect connect on `connect` and come back with a valid result. */
-  async function returnFromConnect(
-    connect: Connect,
-    options: Parameters<Connect["connect"]>[0] = {}
-  ) {
-    const navigate = spyNavigate(connect);
-    void connect.connect(options);
-    const url = navigatedUrl(navigate);
-    const message = await odinConnectMessage(url);
-    returnWith(url, message);
-    navigate.mockRestore();
-    return message;
-  }
+  it("is idempotent and started by the constructor", async () => {
+    const verify = spyVerify().mockImplementation(apiAccepts());
+    const { message } = await returnFromConnect({ requires_api: true });
+    const app = new Connect({ name: "test" });
+    // the constructor already read the URL
+    expect(window.location.hash).toBe("");
+    // initializing until the result is verified
+    expect(app.state.status).toBe("initializing");
+    const listener = vi.fn();
+    app.subscribe(listener);
+    const [a, b] = await Promise.all([app.ready(), app.ready()]);
+    expect(a).toBe(b);
+    expect(await app.ready()).toBe(a);
+    expect(a.user?.principal).toBe(message.principal);
+    // one transition: initializing -> ready (with the result applied)
+    expect(listener).toHaveBeenCalledOnce();
+    expect(verify).toHaveBeenCalledOnce();
+  });
 
-  it("resolves concurrent calls on two instances to one verified connect", async () => {
-    // React StrictMode: the effect runs twice, each with a new OdinConnect
-    const verify = vi
-      .spyOn(OdinApiClient.prototype, "verifyConnect")
-      .mockImplementation(apiAccepts());
-    const first = new Connect({ name: "test", mode: "redirect" });
-    const message = await returnFromConnect(first, {
+  it("two instances (React StrictMode) get one verified connect", async () => {
+    const verify = spyVerify().mockImplementation(apiAccepts());
+    const { message } = await returnFromConnect({
       requires_api: true,
       returnState: { step: 2 },
     });
-    const second = new Connect({ name: "test", mode: "redirect" });
-
-    const [a, b] = await Promise.all([
-      first.handleRedirectResult(),
-      second.handleRedirectResult(),
-    ]);
+    const first = new Connect({ name: "test" });
+    const second = new Connect({ name: "test" });
+    const [a, b] = await Promise.all([first.ready(), second.ready()]);
     expect(verify).toHaveBeenCalledOnce();
-    for (const [result, instance] of [
+    for (const [state, instance] of [
       [a, first],
       [b, second],
     ] as const) {
-      expect(result).toMatchObject({
+      expect(state.request).toMatchObject({
         action: "connect",
-        status: "connected",
+        status: "success",
         returnState: { step: 2 },
       });
-      if (result?.action === "connect" && result.status === "connected") {
-        expect(result.user.principal).toBe(message.principal);
-      }
+      expect(state.user?.principal).toBe(message.principal);
       // each instance gets the API key, not just the one that read the URL
       expect(instance.api.apiKey).toBe("jwt-from-api");
     }
-    expect((await second.restoreSession())?.principal).toBe(message.principal);
   });
 
-  it("returns the same outcome to a call made after the first settled", async () => {
-    const verify = vi
-      .spyOn(OdinApiClient.prototype, "verifyConnect")
-      .mockImplementation(apiAccepts());
-    const first = new Connect({ name: "test", mode: "redirect" });
-    const message = await returnFromConnect(first);
-    const a = await first.handleRedirectResult();
-    const b = await new Connect({ name: "test" }).handleRedirectResult();
-    expect(a?.status).toBe("connected");
-    expect(b?.status).toBe("connected");
-    if (b?.action === "connect" && b.status === "connected") {
-      expect(b.user.principal).toBe(message.principal);
-    }
+  it("returns the same outcome to an instance made after the first settled", async () => {
+    const verify = spyVerify().mockImplementation(apiAccepts());
+    const { message } = await returnFromConnect();
+    const a = await reload();
+    const b = await reload();
+    expect(a.state.request?.status).toBe("success");
+    expect(b.state.request?.status).toBe("success");
+    expect(b.state.user?.principal).toBe(message.principal);
     expect(verify).toHaveBeenCalledOnce();
   });
 
-  it("shares a rejected redirect result too", async () => {
-    const first = new Connect({ name: "test", mode: "redirect" });
-    const navigate = spyNavigate(first);
-    void first.connect();
-    returnWith(
-      navigatedUrl(navigate),
-      { principal: "aaaaa-aa", jwt: null },
-      { state: "someone-elses-state-value-000000" }
-    );
-    const second = new Connect({ name: "test" });
-    await expect(first.handleRedirectResult()).rejects.toThrow(
-      "Unexpected OdinConnect redirect result"
-    );
-    await expect(second.handleRedirectResult()).rejects.toThrow(
-      "Unexpected OdinConnect redirect result"
-    );
+  it("shares an ignored stale result too, without unhandled rejections", async () => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const connect = new Connect({ name: "test", mode: "redirect" });
+      const navigate = spyNavigate(connect);
+      void connect.connect();
+      returnWith(
+        navigatedUrl(navigate),
+        { principal: "aaaaa-aa", jwt: null },
+        { state: "someone-elses-state-value-000000" }
+      );
+      const first = new Connect({ name: "test" });
+      const second = new Connect({ name: "test" });
+      expect((await first.ready()).request).toBeNull();
+      expect((await second.ready()).request).toBeNull();
+      expect(window.location.hash).toBe("");
+      await new Promise((r) => setTimeout(r, 0));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
   });
 
   it("never hands the result to another slug or env", async () => {
-    vi.spyOn(OdinApiClient.prototype, "verifyConnect").mockImplementation(
-      apiAccepts()
-    );
-    const first = new Connect({ name: "test", mode: "redirect" });
-    await returnFromConnect(first);
-    const pending = first.handleRedirectResult();
-    expect(
-      await new Connect({
-        name: "other",
-        mode: "redirect",
-      }).handleRedirectResult()
-    ).toBeNull();
-    expect(
-      await new Connect({ name: "test", env: "dev" }).handleRedirectResult()
-    ).toBeNull();
-    expect((await pending)?.status).toBe("connected");
+    spyVerify().mockImplementation(apiAccepts());
+    await returnFromConnect();
+    const pending = new Connect({ name: "test" }).ready();
+    expect((await reload({ name: "other" })).state.request).toBeNull();
+    expect((await reload({ env: "dev" })).state.request).toBeNull();
+    expect((await pending).request?.status).toBe("success");
   });
 
   it("forgets the shared result on disconnect()", async () => {
-    vi.spyOn(OdinApiClient.prototype, "verifyConnect").mockImplementation(
-      apiAccepts()
-    );
-    const first = new Connect({ name: "test", mode: "redirect" });
-    await returnFromConnect(first);
-    expect((await first.handleRedirectResult())?.status).toBe("connected");
-    first.disconnect();
-    expect(
-      await new Connect({ name: "test" }).handleRedirectResult()
-    ).toBeNull();
+    spyVerify().mockImplementation(apiAccepts());
+    await returnFromConnect();
+    const { connect: app, state } = await reload();
+    expect(state.request?.status).toBe("success");
+    const listener = vi.fn();
+    app.subscribe(listener);
+    app.disconnect();
+    expect(app.state).toEqual({ status: "ready", user: null, request: null });
+    expect(listener).toHaveBeenCalledWith(app.state);
+    expect((await reload()).state.request).toBeNull();
   });
 });
 
@@ -565,7 +584,7 @@ describe("Action redirect mode", () => {
     vi.restoreAllMocks();
   });
 
-  it("redirects every action and reports success", async () => {
+  it("redirects every action and applies success on the next load", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     const navigate = spyNavigate(connect);
@@ -575,15 +594,25 @@ describe("Action redirect mode", () => {
     expect(url.pathname).toBe("/authorize/buy");
     expect(url.searchParams.get("amount")).toBe("5");
     expect(url.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(connect.state.request).toMatchObject({
+      action: "buy",
+      status: "pending",
+    });
 
     returnWith(url, "purchased");
-    expect(await connect.handleRedirectResult()).toEqual({
+    const { state } = await reload();
+    expect(state.request).toEqual({
+      id: url.searchParams.get("request_id"),
       action: "buy",
       status: "success",
+      input: { token: "2jjj", btcAmount: 5n },
     });
+    expect(
+      typeof (state.request?.input as { btcAmount: unknown }).btcAmount
+    ).toBe("bigint");
   });
 
-  it("reports a rejected action as failed", async () => {
+  it("reports a rejected action as rejected", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.odin.icrcApprove({
@@ -593,13 +622,28 @@ describe("Action redirect mode", () => {
       amount: 1n,
     });
     returnWith(navigatedUrl(navigate), "rejected");
-    expect(await connect.handleRedirectResult()).toEqual({
+    const { state } = await reload();
+    expect(state.request).toMatchObject({
       action: "icrc_approve",
+      status: "rejected",
+    });
+    expect(state.request).not.toHaveProperty("error");
+  });
+
+  it("reports any other message as failed", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.odin.sell({ principal: "p", token: "2jjj", tokenAmount: 1n });
+    returnWith(navigatedUrl(navigate), "error");
+    const { state } = await reload();
+    expect(state.request).toMatchObject({
+      action: "sell",
       status: "failed",
+      error: "Sell failed or was cancelled",
     });
   });
 
-  it("exposes the icrc_approve block index from the result detail", async () => {
+  it("exposes the icrc_approve block index as detail", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.odin.icrcApprove({
@@ -619,9 +663,12 @@ describe("Action redirect mode", () => {
       memo: "ab".repeat(32),
     };
     returnWith(url, "approved", { detail });
-    expect(await connect.handleRedirectResult()).toEqual({
+    const { state } = await reload();
+    expect(state.request).toEqual({
+      id: url.searchParams.get("request_id"),
       action: "icrc_approve",
       status: "success",
+      input: { token: "2jjj", spender: "aaaaa-aa", amount: 1n },
       detail,
       returnState: { step: "approve" },
     });
@@ -632,22 +679,32 @@ describe("Action redirect mode", () => {
     const navigate = spyNavigate(connect);
     void connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n });
     returnWith(navigatedUrl(navigate), "purchased", { detail: "junk" });
-    const result = await connect.handleRedirectResult();
-    expect(result).not.toHaveProperty("detail");
+    const { state } = await reload();
+    expect(state.request?.status).toBe("success");
+    expect(state.request).not.toHaveProperty("detail");
   });
 
-  it("restoreSession leaves action results for handleRedirectResult", async () => {
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    const navigate = spyNavigate(connect);
-    void connect.odin.sell({ principal: "p", token: "2jjj", tokenAmount: 1n });
-    returnWith(navigatedUrl(navigate), "sold");
+  it("keeps the stored user next to an action result", async () => {
+    spyVerify().mockImplementation(apiAccepts());
+    const { message } = await returnFromConnect({ requires_api: true });
+    const first = await reload({ mode: "redirect" });
+    expect(first.state.user?.principal).toBe(message.principal);
+    resetRedirectOutcomes();
 
-    expect(await connect.restoreSession()).toBeNull();
-    expect(window.location.hash).not.toBe("");
-    expect(await connect.handleRedirectResult()).toEqual({
+    const navigate = spyNavigate(first.connect);
+    void first.state.user!.sell({ token: "2jjj", tokenAmount: 1n });
+    returnWith(navigatedUrl(navigate), "sold", { detail: { x: "1" } });
+
+    const { connect: app, state } = await reload();
+    expect(state.user?.principal).toBe(message.principal);
+    expect(app.api.apiKey).toBe("jwt-from-api");
+    expect(state.request).toMatchObject({
       action: "sell",
       status: "success",
+      input: { token: "2jjj", tokenAmount: 1n },
+      detail: { x: "1" },
     });
+    expect(window.location.hash).toBe("");
   });
 });
 
@@ -680,13 +737,15 @@ describe("returnState", () => {
     expect(url.href).not.toContain("commit");
 
     returnWith(url, "approved");
-    const result = await connect.handleRedirectResult<typeof returnState>();
-    expect(result).toEqual({
+    const { state } = await reload();
+    expect(state.request).toMatchObject({
       action: "icrc_approve",
       status: "success",
       returnState,
     });
-    expect(typeof result?.returnState?.amount).toBe("bigint");
+    expect(
+      typeof (state.request?.returnState as typeof returnState).amount
+    ).toBe("bigint");
   });
 
   it("returns returnState on a rejected action too", async () => {
@@ -700,34 +759,32 @@ describe("returnState", () => {
       returnState: { step: "transfer" },
     });
     returnWith(navigatedUrl(navigate), "rejected");
-    expect(await connect.handleRedirectResult()).toEqual({
+    expect((await reload()).state.request).toMatchObject({
       action: "transfer",
-      status: "failed",
+      status: "rejected",
+      input: { token: "2jjj", amount: 1n, destination: "aaaaa-aa" },
       returnState: { step: "transfer" },
     });
   });
 
   it("hands connect returnState back", async () => {
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    const navigate = spyNavigate(connect);
-    void connect.connect({ returnState: { from: "landing" } });
-    returnWith(navigatedUrl(navigate), "rejected");
-    expect(await connect.handleRedirectResult()).toEqual({
+    await returnFromConnect({ returnState: { from: "landing" } }, "rejected");
+    expect((await reload()).state.request).toMatchObject({
       action: "connect",
       status: "rejected",
       returnState: { from: "landing" },
     });
   });
 
-  it("is undefined when not provided", async () => {
+  it("is absent when not provided", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n });
     returnWith(navigatedUrl(navigate), "purchased");
-    expect((await connect.handleRedirectResult())?.returnState).toBeUndefined();
+    expect((await reload()).state.request).not.toHaveProperty("returnState");
   });
 
-  it("rejects a non-serializable returnState before navigating", async () => {
+  it("fails a non-serializable returnState before navigating", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     const circular: Record<string, unknown> = {};
@@ -741,9 +798,14 @@ describe("returnState", () => {
       })
     ).rejects.toThrow("returnState must be JSON-serializable");
     expect(navigate).not.toHaveBeenCalled();
+    expect(connect.state.request).toMatchObject({
+      action: "buy",
+      status: "failed",
+      error: expect.stringContaining("returnState must be JSON-serializable"),
+    });
   });
 
-  it("keeps createToken returnState out of the authorize URL", async () => {
+  it("keeps createToken returnState and the File out of the redirect", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     vi.spyOn(connect.api, "uploadImage").mockResolvedValue("https://img");
@@ -751,7 +813,8 @@ describe("returnState", () => {
       principal: "p",
       name: "Token",
       ticker: "TKN",
-      image: new File([], "a.png"),
+      image: new File(["png-bytes"], "a.png"),
+      buy: 1000n,
       returnState: { step: "create" },
     });
     await vi.waitFor(() => expect(navigate).toHaveBeenCalledOnce());
@@ -759,20 +822,18 @@ describe("returnState", () => {
     expect(url.pathname).toBe("/authorize/create_token");
     expect(url.searchParams.has("returnState")).toBe(false);
     expect(url.href).not.toContain("create%22");
-  });
+    const pending = JSON.parse(sessionStorage.getItem(sessionStorage.key(0)!)!);
+    expect(JSON.stringify(pending)).not.toContain("png-bytes");
 
-  it("is ignored in popup mode", async () => {
-    const connect = new Connect({ name: "test" });
-    vi.spyOn(window, "open").mockReturnValue(null);
-    await expect(
-      connect.odin.buy({
-        principal: "p",
-        token: "2jjj",
-        btcAmount: 1n,
-        returnState: { step: "x" },
-      })
-    ).rejects.toThrow();
-    expect(sessionStorage.length).toBe(0);
+    returnWith(url, "tokenCreated");
+    const { state } = await reload();
+    expect(state.request).toEqual({
+      id: url.searchParams.get("request_id"),
+      action: "create_token",
+      status: "success",
+      input: { name: "Token", ticker: "TKN", buy: 1000n, image: "https://img" },
+      returnState: { step: "create" },
+    });
   });
 });
 
@@ -828,7 +889,7 @@ describe("default mode is auto", () => {
   });
 });
 
-describe("restoreSession finishes a redirect connect", () => {
+describe("deprecated restoreSession()", () => {
   beforeEach(() => {
     window.history.replaceState(null, "", "/app?x=1");
     sessionStorage.clear();
@@ -840,245 +901,52 @@ describe("restoreSession finishes a redirect connect", () => {
     vi.restoreAllMocks();
   });
 
-  /** Start a redirect connect and come back with `message` (default: valid). */
-  async function returnFromConnect(
-    connect: Connect,
-    options: Parameters<Connect["connect"]>[0] = {},
-    message?: unknown
-  ) {
-    const navigate = spyNavigate(connect);
-    void connect.connect(options);
-    const url = navigatedUrl(navigate);
-    const sent = message ?? (await odinConnectMessage(url));
-    returnWith(url, sent);
-    navigate.mockRestore();
-    return sent as Awaited<ReturnType<typeof odinConnectMessage>>;
-  }
-
-  it("returns the user of a requires_api + delegation connect", async () => {
-    const verify = vi
-      .spyOn(OdinApiClient.prototype, "verifyConnect")
-      .mockImplementation(apiAccepts());
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    const message = await returnFromConnect(connect, {
+  it("returns the user of a redirect connect, after ready()", async () => {
+    const verify = spyVerify().mockImplementation(apiAccepts());
+    const { message } = await returnFromConnect({
       requires_api: true,
       requires_delegation: true,
       targets: ["74iy7-xqaaa-aaaaf-qagra-cai"],
     });
-
-    const user = await connect.restoreSession();
+    const app = new Connect({ name: "test" });
+    const user = await app.restoreSession();
     expect(user?.principal).toBe(message.principal);
+    expect(user).toBe(app.state.user);
     expect(user?.getIdentity()?.getPrincipal().toText()).toBe(
       message.principal
     );
-    expect(connect.api.apiKey).toBe("jwt-from-api");
+    expect(app.api.apiKey).toBe("jwt-from-api");
     expect(verify).toHaveBeenCalledOnce();
-    expect(window.location.hash).toBe("");
     expect(window.location.search).toBe("?x=1");
-    expect(sessionStorage.length).toBe(0);
-    expect(connect.isSessionValid()).toBe(true);
-    expect(connect.lastRedirectResult).toMatchObject({
-      action: "connect",
-      status: "connected",
-    });
-
-    // a later load (no fragment, cache gone) restores it from storage
-    resetRedirectOutcomes();
-    const later = new Connect({ name: "test" });
-    expect((await later.restoreSession())?.principal).toBe(message.principal);
-    expect(later.api.apiKey).toBe("jwt-from-api");
-    expect(verify).toHaveBeenCalledOnce();
   });
 
-  it("returns the user of a connect without api or delegation (nothing stored)", async () => {
-    const verify = vi
-      .spyOn(OdinApiClient.prototype, "verifyConnect")
-      .mockImplementation(apiAccepts());
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    const message = await returnFromConnect(connect);
+  it("returns null for a rejected or unverified connect without a stored session", async () => {
+    await returnFromConnect({}, "rejected");
+    expect(await new Connect({ name: "test" }).restoreSession()).toBeNull();
 
-    const user = await connect.restoreSession();
-    expect(user?.principal).toBe(message.principal);
-    expect(user?.getIdentity()).toBeNull();
-    expect(connect.api.apiKey).toBeNull();
+    resetRedirectOutcomes();
+    spyVerify().mockRejectedValue(new Error("Invalid signature"));
+    await returnFromConnect({ requires_api: true });
+    expect(await new Connect({ name: "test" }).restoreSession()).toBeNull();
     expect(localStorage.length).toBe(0);
-    expect(verify).toHaveBeenCalledOnce();
   });
 
-  it("returns null for a rejected connect", async () => {
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    await returnFromConnect(connect, { returnState: { step: 1 } }, "rejected");
-    expect(await connect.restoreSession()).toBeNull();
-    expect(window.location.hash).toBe("");
-    expect(sessionStorage.length).toBe(0);
-    expect(connect.lastRedirectResult).toEqual({
-      action: "connect",
-      status: "rejected",
-      returnState: { step: 1 },
-    });
-    // handleRedirectResult still reports the rejection
-    expect(await connect.handleRedirectResult()).toEqual({
-      action: "connect",
-      status: "rejected",
-      returnState: { step: 1 },
-    });
-  });
-
-  it("returns null on a rejected re-connect but keeps the stored session", async () => {
-    vi.spyOn(OdinApiClient.prototype, "verifyConnect").mockImplementation(
-      apiAccepts()
-    );
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    const message = await returnFromConnect(connect, { requires_api: true });
-    expect((await connect.restoreSession())?.principal).toBe(message.principal);
+  it("a rejected re-connect keeps the stored session's user", async () => {
+    spyVerify().mockImplementation(apiAccepts());
+    const { message } = await returnFromConnect({ requires_api: true });
+    expect((await reload()).state.user?.principal).toBe(message.principal);
     resetRedirectOutcomes();
 
-    await returnFromConnect(connect, {}, "rejected");
-    expect(await connect.restoreSession()).toBeNull();
-    expect(connect.isSessionValid()).toBe(true);
-    // the next load, without the result, restores the earlier session
-    resetRedirectOutcomes();
-    expect((await connect.restoreSession())?.principal).toBe(message.principal);
-  });
-
-  it("returns null for an unverified connect and stores nothing", async () => {
-    const verify = vi
-      .spyOn(OdinApiClient.prototype, "verifyConnect")
-      .mockRejectedValue(new Error("Invalid signature"));
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    await returnFromConnect(connect, { requires_api: true });
-    expect(await connect.restoreSession()).toBeNull();
-    expect(localStorage.length).toBe(0);
-    expect(connect.api.apiKey).toBeNull();
-    const result = await connect.handleRedirectResult();
-    expect(result).toMatchObject({
-      action: "connect",
-      status: "unverified",
-      error: expect.stringContaining("Invalid signature"),
-    });
-    expect(verify).toHaveBeenCalledOnce();
-  });
-
-  it("restoreSession then handleRedirectResult share one verified read", async () => {
-    const verify = vi
-      .spyOn(OdinApiClient.prototype, "verifyConnect")
-      .mockImplementation(apiAccepts());
-    const first = new Connect({ name: "test", mode: "redirect" });
-    const message = await returnFromConnect(first, {
-      requires_api: true,
-      returnState: { step: 2 },
-    });
-    expect((await first.restoreSession())?.principal).toBe(message.principal);
-
-    // StrictMode-style second instance, after the fragment is gone
-    const second = new Connect({ name: "test" });
-    const result = await second.handleRedirectResult();
-    expect(result).toMatchObject({
-      action: "connect",
-      status: "connected",
-      returnState: { step: 2 },
-    });
-    if (result?.action === "connect" && result.status === "connected") {
-      expect(result.user.principal).toBe(message.principal);
-    }
-    expect(second.api.apiKey).toBe("jwt-from-api");
-    expect(await first.handleRedirectResult()).toMatchObject({
-      status: "connected",
-    });
-    expect(verify).toHaveBeenCalledOnce();
-  });
-
-  it("handleRedirectResult then restoreSession share one verified read", async () => {
-    const verify = vi
-      .spyOn(OdinApiClient.prototype, "verifyConnect")
-      .mockImplementation(apiAccepts());
-    const first = new Connect({ name: "test", mode: "redirect" });
-    // no api / delegation: nothing is stored, only the shared read has it
-    const message = await returnFromConnect(first);
-    expect((await first.handleRedirectResult())?.status).toBe("connected");
-    expect(window.location.hash).toBe("");
-    expect(localStorage.length).toBe(0);
-
-    expect((await first.restoreSession())?.principal).toBe(message.principal);
-    const second = new Connect({ name: "test" });
-    expect((await second.restoreSession())?.principal).toBe(message.principal);
-    expect(verify).toHaveBeenCalledOnce();
-  });
-
-  it("concurrent restoreSession and handleRedirectResult read once", async () => {
-    const verify = vi
-      .spyOn(OdinApiClient.prototype, "verifyConnect")
-      .mockImplementation(apiAccepts());
-    const first = new Connect({ name: "test", mode: "redirect" });
-    const message = await returnFromConnect(first);
-    const [user, result] = await Promise.all([
-      first.restoreSession(),
-      new Connect({ name: "test" }).handleRedirectResult(),
-    ]);
-    expect(user?.principal).toBe(message.principal);
-    expect(result?.status).toBe("connected");
-    expect(verify).toHaveBeenCalledOnce();
-  });
-
-  it("leaves an action result in the URL and returns the stored session", async () => {
-    vi.spyOn(OdinApiClient.prototype, "verifyConnect").mockImplementation(
-      apiAccepts()
-    );
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    const message = await returnFromConnect(connect, { requires_api: true });
-    await connect.restoreSession();
-    resetRedirectOutcomes();
-
-    const navigate = spyNavigate(connect);
-    void connect.odin.sell({ principal: "p", token: "2jjj", tokenAmount: 1n });
-    returnWith(navigatedUrl(navigate), "sold", { detail: { x: "1" } });
-
-    const fresh = new Connect({ name: "test" });
-    expect((await fresh.restoreSession())?.principal).toBe(message.principal);
-    expect(window.location.hash).not.toBe("");
-    expect(sessionStorage.length).toBe(1);
-    expect(fresh.lastRedirectResult).toBeNull();
-    expect(await fresh.handleRedirectResult()).toEqual({
-      action: "sell",
-      status: "success",
-      detail: { x: "1" },
-    });
-    // an already-read action result is still not a connect
-    expect((await fresh.restoreSession())?.principal).toBe(message.principal);
-  });
-
-  it("falls back to the stored session on a stale connect result", async () => {
-    const connect = new Connect({ name: "test", mode: "redirect" });
-    const navigate = spyNavigate(connect);
-    void connect.connect();
-    returnWith(
-      navigatedUrl(navigate),
-      { principal: "aaaaa-aa", jwt: null },
-      { state: "someone-elses-state-value-000000" }
-    );
-    expect(await connect.restoreSession()).toBeNull();
-    await expect(connect.handleRedirectResult()).rejects.toThrow(
-      "Unexpected OdinConnect redirect result"
-    );
-  });
-
-  it("drops a pending request abandoned for over 10 minutes", async () => {
-    vi.useFakeTimers();
-    try {
-      const connect = new Connect({ name: "test", mode: "redirect" });
-      const navigate = spyNavigate(connect);
-      void connect.connect();
-      navigate.mockRestore();
-      vi.advanceTimersByTime(PENDING_REDIRECT_MAX_AGE_MS + 1);
-      expect(await new Connect({ name: "test" }).restoreSession()).toBeNull();
-      expect(sessionStorage.length).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
+    await returnFromConnect({}, "rejected");
+    const { connect: app, state } = await reload();
+    expect(state.request?.status).toBe("rejected");
+    expect(state.user?.principal).toBe(message.principal);
+    expect((await app.restoreSession())?.principal).toBe(message.principal);
+    expect(app.isSessionValid()).toBe(true);
   });
 });
 
-describe("restoreSession reads sessions stored by 1.6.0 / 1.7.0", () => {
+describe("sessions stored by 1.6.0 / 1.7.0 restore", () => {
   beforeEach(() => {
     window.history.replaceState(null, "", "/app");
     sessionStorage.clear();
@@ -1087,7 +955,7 @@ describe("restoreSession reads sessions stored by 1.6.0 / 1.7.0", () => {
   });
 
   it("restores a delegation + JWT session", async () => {
-    const connect = new Connect({ name: "My App", env: "prod" });
+    const slug = new Connect({ name: "My App", env: "prod" }).slug;
     const root = Ed25519KeyIdentity.generate();
     const sessionKey = Ed25519KeyIdentity.generate();
     const chain = await DelegationChain.create(
@@ -1096,7 +964,7 @@ describe("restoreSession reads sessions stored by 1.6.0 / 1.7.0", () => {
       new Date(Date.now() + 3_600_000)
     );
     localStorage.setItem(
-      `odin_connect:${connect.slug}:prod:session`,
+      `odin_connect:${slug}:prod:session`,
       JSON.stringify({
         principal: root.getPrincipal().toText(),
         sessionKey: JSON.stringify(sessionKey.toJSON()),
@@ -1104,17 +972,19 @@ describe("restoreSession reads sessions stored by 1.6.0 / 1.7.0", () => {
         jwt: "old-jwt",
       })
     );
-    const user = await connect.restoreSession();
+    const connect = new Connect({ name: "My App", env: "prod" });
+    const { user } = await connect.ready();
     expect(user?.principal).toBe(root.getPrincipal().toText());
     expect(user?.getIdentity()?.getPrincipal().toText()).toBe(
       root.getPrincipal().toText()
     );
     expect(connect.api.apiKey).toBe("old-jwt");
+    expect(await connect.restoreSession()).toBe(user);
   });
 
   it("restores a JWT-only session and clears an expired delegation", async () => {
-    const connect = new Connect({ name: "My App", env: "prod" });
-    const key = `odin_connect:${connect.slug}:prod:session`;
+    const slug = new Connect({ name: "My App", env: "prod" }).slug;
+    const key = `odin_connect:${slug}:prod:session`;
     localStorage.setItem(
       key,
       JSON.stringify({
@@ -1125,7 +995,8 @@ describe("restoreSession reads sessions stored by 1.6.0 / 1.7.0", () => {
         jwt: "old-jwt",
       })
     );
-    expect((await connect.restoreSession())?.principal).toBe("aaaaa-aa");
+    const connect = new Connect({ name: "My App", env: "prod" });
+    expect((await connect.ready()).user?.principal).toBe("aaaaa-aa");
     expect(connect.api.apiKey).toBe("old-jwt");
 
     const root = Ed25519KeyIdentity.generate();
@@ -1144,7 +1015,9 @@ describe("restoreSession reads sessions stored by 1.6.0 / 1.7.0", () => {
         jwt: null,
       })
     );
-    expect(await connect.restoreSession()).toBeNull();
+    expect(
+      (await new Connect({ name: "My App", env: "prod" }).ready()).user
+    ).toBeNull();
     expect(localStorage.getItem(key)).toBeNull();
   });
 });
@@ -1180,9 +1053,7 @@ describe("query-less return_url", () => {
   });
 
   it("restores the query after a redirect connect", async () => {
-    vi.spyOn(OdinApiClient.prototype, "verifyConnect").mockImplementation(
-      apiAccepts()
-    );
+    spyVerify().mockImplementation(apiAccepts());
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.connect({ requires_delegation: true });
@@ -1191,14 +1062,14 @@ describe("query-less return_url", () => {
     window.history.replaceState({ app: 1 }, "", window.location.href);
     expect(window.location.search).toBe("");
 
-    const user = await connect.restoreSession();
-    expect(user).not.toBeNull();
+    const { state } = await reload();
+    expect(state.user).not.toBeNull();
     expect(window.location.pathname).toBe("/migrate");
     expect(window.location.search).toBe("?step=2&x=1");
     expect(window.location.hash).toBe("");
     expect(window.history.state).toEqual({ app: 1 });
-    // a later read comes from the outcome cache and leaves the URL alone
-    expect((await connect.handleRedirectResult())?.status).toBe("connected");
+    // a second instance gets the cached outcome and leaves the URL alone
+    expect((await reload()).state.request?.status).toBe("success");
     expect(window.location.search).toBe("?step=2&x=1");
   });
 
@@ -1209,13 +1080,7 @@ describe("query-less return_url", () => {
     returnWith(navigatedUrl(navigate), "purchased");
     expect(window.location.search).toBe("");
 
-    expect(await connect.restoreSession()).toBeNull();
-    // the action result waits for handleRedirectResult()
-    expect(window.location.hash).not.toBe("");
-    expect(await connect.handleRedirectResult()).toEqual({
-      action: "buy",
-      status: "success",
-    });
+    expect((await reload()).state.request?.status).toBe("success");
     expect(window.location.search).toBe("?step=2&x=1");
     expect(window.location.hash).toBe("");
   });
@@ -1229,10 +1094,7 @@ describe("query-less return_url", () => {
     sessionStorage.setItem(pendingKey(), JSON.stringify(old));
     returnWith(navigatedUrl(navigate), "sold");
 
-    expect(await connect.handleRedirectResult()).toEqual({
-      action: "sell",
-      status: "success",
-    });
+    expect((await reload()).state.request?.status).toBe("success");
     expect(window.location.pathname).toBe("/migrate");
     expect(window.location.search).toBe("");
     expect(window.location.hash).toBe("");
@@ -1244,9 +1106,7 @@ describe("query-less return_url", () => {
     void connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n });
     returnWith(navigatedUrl(navigate), "purchased", { state: "other" });
 
-    await expect(connect.handleRedirectResult()).rejects.toThrow(
-      "Unexpected OdinConnect redirect result"
-    );
+    expect((await reload()).state.request).toBeNull();
     expect(window.location.search).toBe("");
     expect(window.location.hash).toBe("");
   });
@@ -1261,7 +1121,7 @@ describe("query-less return_url", () => {
     pending.returnHref = `${window.location.origin}/elsewhere?evil=1`;
     sessionStorage.setItem(key, JSON.stringify(pending));
 
-    expect((await connect.handleRedirectResult())?.status).toBe("success");
+    expect((await reload()).state.request?.status).toBe("success");
     expect(window.location.pathname).toBe("/migrate");
     expect(window.location.search).toBe("");
   });

@@ -29,7 +29,9 @@ async function popupConnect(
     m
   ) => m
 ) {
-  const open = vi.spyOn(window, "open").mockReturnValue(null);
+  const open = vi
+    .spyOn(window, "open")
+    .mockReturnValue({ closed: false } as Window);
   const promise = connect.connect(options);
   expect(open).toHaveBeenCalledOnce();
   const url = open.mock.calls[0][0] as URL;
@@ -85,7 +87,15 @@ describe("verified connect (popup)", () => {
       client_signature: expect.any(String),
     });
     expect(connect.api.apiKey).toBe("jwt-from-api");
-    expect((await connect.restoreSession())?.principal).toBe(message.principal);
+    // the same user is in the state, and a reload restores it
+    expect(connect.state.user).toBe(user);
+    expect(connect.state.request).toMatchObject({
+      action: "connect",
+      status: "success",
+    });
+    expect(
+      (await new Connect({ name: "test", env: "dev" }).ready()).user?.principal
+    ).toBe(message.principal);
   });
 
   it("accepts a SIWB-style delegated Odin identity", async () => {
@@ -362,15 +372,14 @@ describe("verified connect (popup)", () => {
     );
     const a = await popupConnect(connect, { requires_api: true });
     expect(connect.api.apiKey).toBe("jwt-of-user-a");
-    expect((await connect.restoreSession())?.principal).toBe(
-      a.message.principal
-    );
+    expect(connect.state.user?.principal).toBe(a.message.principal);
 
     const b = await popupConnect(connect, {});
     expect(b.user?.principal).toBe(b.message.principal);
+    expect(connect.state.user).toBe(b.user);
     expect(connect.api.apiKey).toBeNull();
     expect(localStorage.length).toBe(0);
-    expect(await connect.restoreSession()).toBeNull();
+    expect(connect.isSessionValid()).toBe(false);
   });
 
   it("a failed re-connect keeps the previous session", async () => {
@@ -382,9 +391,11 @@ describe("verified connect (popup)", () => {
     const b = await popupConnect(connect, { requires_api: true });
     expect(b.error).not.toBeNull();
     expect(connect.api.apiKey).toBe("jwt-from-api");
-    expect((await connect.restoreSession())?.principal).toBe(
-      a.message.principal
-    );
+    expect(connect.state.user).toBe(a.user);
+    expect(connect.state.request).toMatchObject({ status: "unverified" });
+    expect(
+      (await new Connect({ name: "test", env: "dev" }).ready()).user?.principal
+    ).toBe(a.message.principal);
   });
 
   it("rejects a chain issued to a different session key", async () => {

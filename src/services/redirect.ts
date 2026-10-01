@@ -25,10 +25,8 @@ export const REDIRECT_RESULT_KEY = "odin_connect";
  * - `"popup"`: always `window.open` + `postMessage`.
  * - `"redirect"`: always navigate this tab to Odin and back. For wallet
  *   in-app browsers (OKX) that open popups without `window.opener`. The
- *   returned promise never settles because the page unloads; a connect is
- *   finished by `await restoreSession()` (or `handleRedirectResult()`) when
- *   the app loads again, an action result is read with
- *   `handleRedirectResult()`.
+ *   returned promise never settles because the page unloads; on the next
+ *   load `ready()` verifies and applies the result to `OdinConnect.state`.
  */
 export type ConnectMode = "popup" | "redirect" | "auto";
 
@@ -36,8 +34,6 @@ export interface PendingRedirect {
   state: string;
   /** Authorize path, e.g. `/authorize/connect` or `/authorize/buy`. */
   path: string;
-  /** Action message that means success (e.g. `"purchased"`). */
-  successMessage?: string;
   /** connect only: the session key's JSON (never leaves this browser). */
   sessionKey?: string;
   /** connect only */
@@ -46,7 +42,9 @@ export interface PendingRedirect {
   requires_api?: boolean;
   /** connect only: canister targets the delegation may be scoped to. */
   targets?: string[];
-  /** App data handed back by `handleRedirectResult()` (redirect mode only). */
+  /** The request's `input` (no secrets; bigints kept), for `state.request`. */
+  input?: unknown;
+  /** App data handed back as `state.request.returnState`. */
   returnState?: unknown;
   /** `Date.now()` when the redirect started; abandoned entries expire. */
   createdAt?: number;
@@ -65,11 +63,11 @@ export interface PendingRedirect {
 export const PENDING_REDIRECT_MAX_AGE_MS = 10 * 60 * 1000;
 
 /**
- * Per-call option shared by `connect()` and every action. In redirect mode
- * the page unloads, so anything the app needs to resume (current step, token,
- * amounts) can ride along here and comes back as `result.returnState` from
- * `handleRedirectResult()`. Must be JSON-serializable; bigints are preserved.
- * Ignored in popup mode, where the awaited call simply resolves.
+ * Per-call option shared by `connect()` and every action. Comes back as
+ * `state.request.returnState` in both modes; in redirect mode the page
+ * unloads, so anything the app needs to resume (current step, token,
+ * amounts) can ride along here. Must be JSON-serializable in redirect mode;
+ * bigints are preserved. Never sent to Odin.
  */
 export interface RedirectCallOptions {
   returnState?: unknown;
@@ -206,11 +204,6 @@ export function readFragmentValue(): string | null {
   return new URLSearchParams(hash).get(REDIRECT_RESULT_KEY);
 }
 
-/** True when the current URL carries a redirect result. */
-export function hasRedirectResult(): boolean {
-  return readFragmentValue() !== null;
-}
-
 /**
  * Replace the address bar URL (keeping `history.state`) to drop the result
  * fragment. With `returnHref` (the page that started the request, same origin
@@ -303,11 +296,6 @@ export class RedirectClient {
     url.searchParams.append("state", state);
     this._window.navigate(url);
     return new Promise<T>(() => {});
-  }
-
-  /** Authorize path of the pending request, without consuming it. */
-  get pendingPath(): string | null {
-    return this._pending.peek()?.path ?? null;
   }
 
   /**

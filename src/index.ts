@@ -6,8 +6,12 @@ export type {
 export type {
   OdinAction,
   OdinActionDetail,
-  OdinRedirectResult,
-} from "./services/connect";
+  OdinRequestInput,
+  OdinRequestState,
+  OdinRequestStatus,
+  OdinState,
+  OdinStateListener,
+} from "./services/state";
 export { ConnectVerificationError as OdinConnectVerificationError } from "./services/verify-connect";
 export { isInAppBrowser } from "./utils/in-app-browser";
 export type { User as OdinUser } from "./models/user";

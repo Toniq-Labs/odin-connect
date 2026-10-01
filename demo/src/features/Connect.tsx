@@ -15,8 +15,7 @@ function Connect() {
   const [error, setError] = useState<string | null>(null);
   const [requireApi, setRequireApi] = useState(false);
   const [requireDelegation, setRequireDelegation] = useState(false);
-  const { odinConnect, connectedUser, setConnectedUser, setMode } =
-    useOdinContext();
+  const { odinConnect, connectedUser, setMode } = useOdinContext();
   const [userInfo, setUserInfo] = useState<OdinUser | null>(null);
 
   useEffect(() => {
@@ -54,11 +53,11 @@ function Connect() {
             }
           : baseOptions;
 
-      const connectedUser = await odinConnect.connect(connectOptions);
-      setConnectedUser(connectedUser);
+      // The user lands in odinConnect.state (connectedUser re-renders); the
+      // await only surfaces a popup error here
+      await odinConnect.connect(connectOptions);
     } catch (error) {
       console.error("Connection error:", error);
-      setConnectedUser(null);
       if (error instanceof Error) {
         setError(`Connection error: ${error.message}`);
       } else {
@@ -80,15 +79,15 @@ function Connect() {
 
   const handleConnectRedirect = () => {
     // Switches the instance to redirect mode (also for later actions), then
-    // navigates this tab to Odin and back; the promise never settles. The
-    // result is picked up on reload in OdinContextProvider.
+    // navigates this tab to Odin and back; the promise never settles. On
+    // reload ready() verifies the result into state (user + banner).
     setMode("redirect");
     openOdinConnect("tab");
   };
 
   const handleDisconnect = () => {
+    // clears state.user and state.request
     odinConnect?.disconnect();
-    setConnectedUser(null);
     setUserInfo(null);
   };
 
