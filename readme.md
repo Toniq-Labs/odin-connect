@@ -271,8 +271,8 @@ await user.buy({ token: "2jjj", btcAmount: 10_000_000n });
   in `sessionStorage` and removes it from the address bar.
 - `restoreSession()` finishes a redirected `connect()` on its own, but leaves
   action results for `handleRedirectResult()`.
-- Page state is lost across the round trip, so persist anything the page
-  needs to show after an action (e.g. the token being traded).
+- Page state is lost across the round trip. Pass what the page needs to
+  resume as `returnState` (see below).
 - `requires_api` is not supported in redirect mode (it rejects), so the JWT
   never lands in a URL. Use a delegation instead.
 - `"auto"` redirects when `isInAppBrowser()` is true: a known wallet user
@@ -281,6 +281,36 @@ await user.buy({ token: "2jjj", btcAmount: 10_000_000n });
   `btc_providers`, `unisat`, `okxwallet`, `phantom`, `ethereum`, ...). It errs
   toward redirect, which works everywhere. Call `isInAppBrowser()` yourself
   if you want to choose the mode.
+
+#### Resuming after a redirect (`returnState`)
+
+In redirect mode the page reloads, so an awaited `connect()` / action never
+returns and in-memory state is gone. Pass anything you need to continue as
+`returnState`; it is kept with the one-time nonce in `sessionStorage` (never
+sent to Odin) and comes back on `handleRedirectResult()`. Any JSON value
+works, and bigints are preserved. In popup mode it is ignored and the awaited
+call resolves as usual, so the same code works in both modes:
+
+```typescript
+type Resume = { step: "approve"; token: string; amount: bigint };
+
+// 1. Start the action with what the page needs to resume.
+const ok = await user.icrcApprove({
+  token,
+  spender,
+  amount,
+  returnState: { step: "approve", token, amount } satisfies Resume,
+});
+if (ok) goToStep("commit"); // popup mode lands here
+
+// 2. On page load (redirect mode lands here instead).
+const result = odinConnect.handleRedirectResult<Resume>();
+if (result?.action === "icrc_approve" && result.returnState) {
+  const { token, amount } = result.returnState;
+  if (result.status === "success") goToStep("commit", { token, amount });
+  else showError("Approval was rejected");
+}
+```
 
 ## Session Restoration
 

@@ -7,6 +7,10 @@ export const RedirectResult = () => {
   return (
     <div className="result">
       Redirect result: {redirectResult.action} → {redirectResult.status}
+      {redirectResult.returnState !== undefined &&
+        ` (returnState: ${JSON.stringify(redirectResult.returnState, (_k, v) =>
+          typeof v === "bigint" ? `${v}n` : v
+        )})`}
     </div>
   );
 };
