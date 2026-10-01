@@ -528,6 +528,7 @@ describe("ready() is shared per page load", () => {
   it("shares an ignored stale result too, without unhandled rejections", async () => {
     const unhandled = vi.fn();
     process.on("unhandledRejection", unhandled);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const connect = new Connect({ name: "test", mode: "redirect" });
       const navigate = spyNavigate(connect);
@@ -544,6 +545,9 @@ describe("ready() is shared per page load", () => {
       expect(window.location.hash).toBe("");
       await new Promise((r) => setTimeout(r, 0));
       expect(unhandled).not.toHaveBeenCalled();
+      // logged once per read, not once per instance
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn.mock.calls[0][0]).toMatch(/stale or foreign redirect/);
     } finally {
       process.off("unhandledRejection", unhandled);
     }

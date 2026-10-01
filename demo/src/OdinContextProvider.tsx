@@ -31,7 +31,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
   );
   // One source for both modes: a popup result and a redirect result read by
   // ready() on the next load both land in this state
-  const { user: connectedUser, request } = useOdinState(odinConnect);
+  const { status, user: connectedUser, request } = useOdinState(odinConnect);
   const [tokens, setTokens] = useState<ReadonlyArray<OdinToken>>([]);
   const [lang, setLangState] = useState<OdinLang>("en");
   const [mode, setModeState] = useState<OdinConnectMode>(loadMode);
@@ -92,6 +92,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     <OdinContext.Provider
       value={{
         odinConnect,
+        status,
         connectedUser,
         tokens,
         setTokens,

@@ -608,7 +608,7 @@ Details:
 
 ## Connected User Operations
 
-After calling `connect()`, you receive a `ConnectedUser` with the following capabilities:
+Once connected, `odinConnect.user` (`state.user`) is a `ConnectedUser` with the following capabilities:
 
 ### Fetching User Data
 

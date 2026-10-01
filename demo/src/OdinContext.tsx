@@ -10,6 +10,8 @@ import type {
 
 type OdinContextType = {
   odinConnect: OdinConnect | null;
+  /* state.status: "initializing" until ready() restored the session */
+  status: "initializing" | "ready";
   /* state.user: restored, or set by a popup or redirect connect */
   connectedUser: OdinConnectedUser | null;
   tokens: ReadonlyArray<OdinToken>;

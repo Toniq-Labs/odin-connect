@@ -8,7 +8,10 @@ const json = (value: unknown) =>
  * for a popup result and for a redirect result applied by `ready()`.
  */
 export const RequestResult = () => {
-  const { request } = useOdinContext();
+  const { status, request } = useOdinContext();
+  if (status === "initializing") {
+    return <div className="result">Restoring session…</div>;
+  }
   if (!request) return null;
   return (
     <div className="result">

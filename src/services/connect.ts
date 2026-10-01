@@ -518,7 +518,14 @@ export class Connect {
           }
         }, REDIRECT_RESULT_REUSE_MS);
       };
-      created.promise.then(evict, evict);
+      created.promise.then(evict, (error) => {
+        // once per read, however many instances share it
+        console.warn(
+          "OdinConnect: ignored a stale or foreign redirect result",
+          error
+        );
+        evict();
+      });
       return created.promise;
     }
     return entry?.promise ?? null;

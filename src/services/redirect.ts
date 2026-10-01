@@ -8,8 +8,9 @@
  * `/go?to=...` open redirect on the app cannot forward the result). Odin
  * navigates back to
  * `return_url#odin_connect=<base64url({ path, message, detail?, state })>`.
- * The pending request (nonce, path, the page's full URL, and for connect the
- * session key) waits in `sessionStorage`, which survives the round trip in
+ * The pending request (nonce, path, the page's full URL, the request's
+ * `input` and `returnState`, and for connect the session key) waits in
+ * `sessionStorage`, which survives the round trip in
  * the same tab and is single-use. Consuming the result puts the page's
  * original query string back.
  */
