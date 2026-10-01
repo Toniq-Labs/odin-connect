@@ -29,9 +29,8 @@ async function popupConnect(
     m
   ) => m
 ) {
-  const open = vi
-    .spyOn(window, "open")
-    .mockReturnValue({ closed: false } as Window);
+  const popup = { closed: false } as Window;
+  const open = vi.spyOn(window, "open").mockReturnValue(popup);
   const promise = connect.connect(options);
   expect(open).toHaveBeenCalledOnce();
   const url = open.mock.calls[0][0] as URL;
@@ -39,6 +38,7 @@ async function popupConnect(
   window.dispatchEvent(
     new MessageEvent("message", {
       origin: connect.origin,
+      source: popup,
       data: { path: "/authorize/connect", message: edit(message) },
     })
   );

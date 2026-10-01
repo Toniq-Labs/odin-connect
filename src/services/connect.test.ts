@@ -85,7 +85,8 @@ describe("Connect lang on opened popup URLs", () => {
   });
 
   it("should open the connect popup with the configured lang", async () => {
-    const spy = openSpy().mockReturnValue({ closed: false } as Window);
+    const popup = { closed: false } as Window;
+    const spy = openSpy().mockReturnValue(popup);
     const connect = new Connect({ name: "test", lang: "zh" });
     const promise = connect.connect();
     expect(openedUrl(spy).searchParams.get("lang")).toBe("zh");
@@ -94,6 +95,7 @@ describe("Connect lang on opened popup URLs", () => {
     window.dispatchEvent(
       new MessageEvent("message", {
         origin: connect.origin,
+        source: popup,
         data: { path: "/authorize/connect", message: "rejected" },
       })
     );

@@ -12,6 +12,7 @@ export type {
   OdinState,
   OdinStateListener,
 } from "./services/state";
+export { INITIAL_ODIN_STATE } from "./services/state";
 export { ConnectVerificationError as OdinConnectVerificationError } from "./services/verify-connect";
 export { isInAppBrowser } from "./utils/in-app-browser";
 export type { User as OdinUser } from "./models/user";

@@ -209,7 +209,7 @@ function App() {
   const { status, user, request } = useSyncExternalStore(
     odin.subscribe,
     odin.getState,
-    odin.getState // server snapshot: stays "initializing" without a window
+    odin.getServerState // SSR / hydration: always the "initializing" snapshot
   );
   if (status === "initializing") return <Spinner />;
   return (
@@ -227,7 +227,13 @@ function App() {
 }
 ```
 
-`subscribe` and `getState` are bound, so they can be passed as is. Creating
+`subscribe`, `getState` and `getServerState` are bound, so they can be passed
+as is. `getServerState()` always returns the same frozen
+`{ status: "initializing", user: null, request: null }` (also exported as
+`INITIAL_ODIN_STATE` and `OdinConnect.serverState`): that is what a server
+renders, so passing it as the third argument keeps hydration from
+mismatching; React switches to `getState` right after. Do not pass
+`getState` there: in the browser it can already be `"ready"`. Creating
 the instance twice (React StrictMode) is fine: both share one redirect read
 and odin-api is asked once.
 
@@ -417,7 +423,20 @@ render(odin.state.user, odin.state.request);
   session: `state.user` is that user, `state.request` tells what happened.
 - Several `OdinConnect` instances for the same `slug` and `env` on one page
   load (React StrictMode) all get the same outcome, and odin-api is asked
-  once. An app with another `slug` or `env` never sees it.
+  once, as long as they exist while the result is being read and verified
+  (in practice: created in the same render). Once it has been delivered, an
+  instance created later on that page load (e.g. one per route) does not
+  get it again: its `request` is `null` and its `user` is the stored
+  session (`null` after a connect with neither `requires_api` nor
+  `requires_delegation`, which is not stored). Keep one instance per app (a
+  module-level `const odin = new OdinConnect(...)`) if several parts of the
+  page need the result. An app with another `slug` or `env` never sees it.
+- `disconnect()` wins over a connect still in flight: a popup or redirect
+  connect that finishes verifying after `disconnect()` is neither stored nor
+  applied. So does a newer request: when a connect succeeds after another
+  `connect()` or action replaced it as `state.request`, its promise still
+  resolves with that user (1.6.0), but `state.user`, the stored session and
+  the instance's API key are left as they are.
 - A pending request that never got its result (the user left Odin) is
   deleted after 10 minutes, the next time the app loads without a result.
 - In-memory page state is lost across the round trip (the query string is
@@ -488,6 +507,8 @@ type OdinRequestState = {
 |--------|-|
 | `ready(): Promise<OdinState>` | Restores the stored session and applies a redirect result. Started by the constructor; idempotent; never rejects. Without a redirect result the state is `"ready"` right after construction. |
 | `state` / `getState()` | The current snapshot. A new frozen object after every change, the same object in between (what `useSyncExternalStore` needs). |
+| `getServerState()` | Always `INITIAL_ODIN_STATE` (`"initializing"`, no user, no request); `useSyncExternalStore`'s `getServerSnapshot`. |
+| `restoreSession()` | Deprecated (1.6.0). Synchronous: the stored session's user (`state.user` once `ready()` finished). Does not apply a redirect result. |
 | `subscribe(listener)` | Calls `listener(state)` after every change, not on subscribe (read `state` after `await ready()`). Returns the unsubscribe function. |
 | `user` | `state.user`. |
 | `disconnect()` | Clears the stored session and the API key; `user` and `request` become `null`. |
@@ -555,56 +576,94 @@ supports wallet in-app browsers by default, and delivers every result
 through one state store. It needs the Odin frontend and odin-api that
 support `v=2` (already deployed before this release).
 
-Upgrading from 1.6.0 / 1.7.0:
+### From 1.6.0
 
-1. `npm install odin-connect@2`.
-2. Replace `odinConnect.restoreSession()` with
-   `const { user } = await odinConnect.ready();`. Or keep
-   `await odinConnect.restoreSession()` (now async and deprecated; it
-   resolves with `state.user` after `ready()`). Stored sessions from 1.6.0 /
-   1.7.0 still restore.
-3. Popup-only code that awaits `connect()` and actions keeps working
-   unchanged.
-4. To support wallet in-app browsers (redirect mode, the default there),
-   render results from `state` / `subscribe()` as in
-   [Getting Started](#getting-started): a redirect reloads the page, so an
-   awaited call never returns there. To keep popups everywhere instead, pass
-   `mode: "popup"`.
-5. If your page reads URL query state on load, read it after
-   `await odinConnect.ready()`: Odin returns to the page path without the
-   query, and the SDK restores it.
+Popup code keeps working unchanged: `restoreSession()` is still synchronous
+and returns the stored session's user, `connect()` still resolves with the
+user or rejects, and actions still resolve `true` or reject. No `await` or
+other edit is needed.
 
-Details:
+```typescript
+// 1.6.0 code, unchanged in 2.0 (popup mode)
+const odin = new OdinConnect({ name: "My App", env: "prod" });
+let user = odin.restoreSession(); // deprecated, still synchronous
+connectButton.onclick = async () => {
+  user = await odin.connect({ requires_api: true });
+};
+```
 
-- **Default `mode` is `"auto"`** (was `"popup"`): redirect mode inside wallet
-  in-app browsers and app webviews (`isInAppBrowser()`), popups elsewhere.
-  `"popup"` and `"redirect"` remain explicit overrides.
-- **New state API:** `ready()`, `state`, `getState()`, `subscribe()`, `user`
-  (see [State and sessions](#state-and-sessions)). Popup and redirect results
+Then, in order of importance:
+
+1. **Wallet in-app browsers** (the new default `mode: "auto"` redirects
+   there): a redirect reloads the page, so an awaited `connect()` or action
+   never returns, and `restoreSession()` does not see the result. Render
+   from `state` as in [Getting Started](#getting-started):
+
+   ```typescript
+   odin.subscribe(({ user, request }) => render(user, request));
+   const { user, request } = await odin.ready(); // applies a redirect result
+   render(user, request);
+   ```
+
+   To keep popups everywhere instead (they cannot return a result inside
+   those wallet browsers), pass `mode: "popup"`.
+2. Replace `restoreSession()` with `(await odin.ready()).user` or
+   `odin.state.user` when convenient; it is deprecated.
+3. If your page reads URL query state on load, read it after
+   `await odin.ready()`: Odin returns to the page path without the query,
+   and the SDK restores it.
+4. Make sure the app can reach `api.odin.fun` (CSP `connect-src`): every
+   connect is verified by odin-api.
+
+### From 1.7.0
+
+As above, plus: `handleRedirectResult()` and the `OdinRedirectResult` type
+are gone, and `restoreSession()` no longer finishes a redirect-mode connect
+(1.7.0 did). Read redirect outcomes from `(await odin.ready()).request` /
+`subscribe()` instead (`status: "success"` replaces `"connected"`, and the
+user is `state.user`). If you passed `mode: "redirect"` or `"auto"`,
+nothing else changes; `"popup"` was the 1.7.0 default.
+
+### Breaking changes in 2.0
+
+Relative to 1.6.0 and 1.7.0:
+
+- **Default `mode` is `"auto"`** (1.7.0 defaulted to `"popup"`; 1.6.0 had
+  popups only): redirect mode inside wallet in-app browsers and app
+  webviews (`isInAppBrowser()`), popups elsewhere.
+- **Connect results are verified.** Every connect sends `v=2`, a
+  `request_id` and `session_pubkey`, and is checked locally and by odin-api
+  (`POST /connect/verify`). A result that fails is `"unverified"`: popup
+  `connect()` rejects with an `OdinConnectVerificationError`, nothing is
+  stored. `requires_api` fails when odin-api issues no JWT. The JWT comes
+  only from odin-api, never from the Odin page.
+- **`session_key` is no longer sent**; Odin only receives the public key.
+- **A blocked connect popup rejects** ("Failed to open authorize/connect
+  window, please always allow popups and try again") and settles
+  `state.request` as `"failed"`. In 1.6.0 / 1.7.0 the promise never settled.
+- **A new verified connect replaces the stored session**, even when it asks
+  for neither `requires_api` nor `requires_delegation` (the previous user's
+  JWT and delegation are cleared).
+- **Only the latest request updates the state.** A connect that succeeds
+  after a newer `connect()` / action replaced it, or after `disconnect()`,
+  still resolves its promise but no longer sets the user or the stored
+  session.
+- **1.7.0 only:** `handleRedirectResult()` / `OdinRedirectResult` were
+  removed (use `ready()` / `state.request`), and `restoreSession()` no
+  longer consumes redirect connect results.
+- Redirect mode returns to `origin + pathname` (no query, no fragment) and
+  restores the query once the result is read.
+
+### New in 2.0
+
+- State API: `ready()`, `state`, `getState()`, `getServerState()`,
+  `subscribe()`, `user`, `INITIAL_ODIN_STATE` (see
+  [State and sessions](#state-and-sessions)). Popup and redirect results
   both land in `state.request`.
-- **`restoreSession()` is async and deprecated** (`Promise<OdinConnectedUser
-  | null>`, the same as `(await ready()).user`).
-- **`connect()` rejects when its popup is blocked** ("Failed to open
-  authorize/connect window, please always allow popups and try again"), like
-  the actions always did.
-- **A new connect replaces the stored session.** The previous user's JWT
-  and delegation are cleared once the new connect is verified, even if the
-  new connect asks for neither. `requires_api` fails verification when
-  odin-api issues no JWT.
-- **New request status `"unverified"`**: the connect result could not be
-  verified, the user is not connected and nothing was stored. Popup
-  `connect()` rejects with an `OdinConnectVerificationError` in the same
-  cases.
-- **`requires_api` is allowed in redirect mode.** The JWT is issued by
-  odin-api (`POST /connect/verify`) and never appears in a URL or message.
-- **`session_key` is no longer sent.** Odin receives `session_pubkey` (public
-  key only) on every connect, and the identity proof is bound to it. Every
-  authorize URL carries `v=2` and a `request_id`.
-- **Action results can carry `detail`.** `icrc_approve` results expose
-  `state.request.detail.block_index` and `detail.memo`. Popup actions still
-  resolve `true`.
-- `connect()` now calls odin-api once per connection, so the app must be able
-  to reach `api.odin.fun` (CSP `connect-src`).
+- `requires_api` works in redirect mode (1.7.0 rejected it).
+- `returnState` on every call; action results can carry `detail`
+  (`icrc_approve`: `block_index`, `memo`). Popup actions still resolve
+  `true`.
 
 ## Connected User Operations
 

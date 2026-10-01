@@ -30,6 +30,7 @@ import {
   signClientBinding,
 } from "./verify-connect";
 import {
+  INITIAL_ODIN_STATE,
   OdinAction,
   OdinRequestInput,
   OdinRequestState,
@@ -74,16 +75,30 @@ type RedirectOutcome = {
  * Redirect results read on this page load, per `slug:env`. Reading one
  * consumes the URL fragment and the pending request, so a second
  * `OdinConnect` (React StrictMode creates instances twice) would otherwise
- * find nothing; it gets the same outcome and odin-api is asked once. Only the
- * outcome is kept, never the pending request, and only for
- * `REDIRECT_RESULT_REUSE_MS` after it settles (or until `disconnect()`).
+ * find nothing. Every instance whose `ready()` starts while the result is
+ * still being read (and verified) shares the same outcome, and odin-api is
+ * asked once. Once it has settled, it was delivered: an instance created
+ * later (e.g. one per route) gets `request: null` and the stored session.
+ * The entry is kept for `REDIRECT_RESULT_REUSE_MS` after settling (or until
+ * `disconnect()`) so the same fragment is never read twice; only the outcome
+ * is kept, never the pending request.
  */
 const redirectOutcomes = new Map<
   string,
-  { fragment: string; promise: Promise<RedirectOutcome> }
+  { fragment: string; promise: Promise<RedirectOutcome>; settled: boolean }
 >();
 
 const REDIRECT_RESULT_REUSE_MS = 10_000;
+
+/**
+ * `disconnect()` calls per `slug:env` on this page load. A redirect result
+ * that was being read (verified) when `disconnect()` ran is neither stored
+ * nor applied: `ready()` captures the count when it starts and checks it
+ * before persisting or applying anything. Module-level because instances
+ * share the session storage and the redirect outcome. (A popup connect is
+ * dropped the same way because `disconnect()` clears `state.request`.)
+ */
+const disconnects = new Map<string, number>();
 
 /** Test helper: forget redirect results read so far. Not exported publicly. */
 export function resetRedirectOutcomes(): void {
@@ -127,7 +142,6 @@ interface ConnectOptionsWithDelegation extends BaseConnectOptions {
 interface ConnectOptionsWithoutDelegation extends BaseConnectOptions {
   requires_delegation?: false;
   targets?: never;
-  session_key?: never;
 }
 
 type ConnectOptions =
@@ -150,6 +164,12 @@ interface GetUserActivityOptions extends GetResourcesOptions {
 }
 
 export class Connect {
+  /**
+   * The state on a server and before `ready()` restored anything; the same
+   * frozen object every time (`INITIAL_ODIN_STATE`).
+   */
+  static readonly serverState: OdinState = INITIAL_ODIN_STATE;
+
   private _appInfo: AppInitOptions | null = null;
   private _api: OdinApiClient;
   private _window: WindowClient;
@@ -167,13 +187,7 @@ export class Connect {
     };
     this._appInfo.slug = this._appInfo.slug || slugify(this._appInfo.name);
     this._appInfo.lang = normalizeOdinLang(this._appInfo.lang);
-    this._api = new OdinApiClient(
-      this._appInfo.env === "prod"
-        ? "prod"
-        : this._appInfo.env === "legacy"
-          ? "legacy"
-          : "dev"
-    );
+    this._api = new OdinApiClient(this.apiEnv);
     this._window = new WindowClient();
     this._redirect = new RedirectClient(
       this._window,
@@ -287,6 +301,13 @@ export class Connect {
   getState = (): OdinState => this._store.state;
 
   /**
+   * `Connect.serverState`, as a bound function: the third argument of
+   * `useSyncExternalStore(odin.subscribe, odin.getState, odin.getServerState)`
+   * so hydration matches the server render ("initializing").
+   */
+  getServerState = (): OdinState => INITIAL_ODIN_STATE;
+
+  /**
    * Call `listener` with the new state after every change (not on
    * subscribe: read `state` after `await ready()`). Returns the unsubscribe
    * function. Bound, so it can be passed around as is.
@@ -301,6 +322,7 @@ export class Connect {
 
   /** Synchronous up to the redirect read, so the URL is read right away. */
   private initialize(): Promise<void> {
+    const generation = this.disconnectGeneration;
     let outcome: Promise<RedirectOutcome> | null = null;
     try {
       outcome = this.redirectOutcome();
@@ -311,20 +333,24 @@ export class Connect {
     } catch {
       // sessionStorage or history unavailable: nothing to apply
     }
-    return this.finishReady(outcome);
+    return this.finishReady(outcome, generation);
   }
 
   private async finishReady(
-    outcome: Promise<RedirectOutcome> | null
+    outcome: Promise<RedirectOutcome> | null,
+    generation: number
   ): Promise<void> {
     let request: OdinRequestState | null = null;
     let user: ConnectedUser | null = null;
     if (outcome) {
       try {
         const read = await outcome;
-        request = read.request;
-        if (read.connected) {
-          user = this.bindConnection(read.connected);
+        // disconnect() while it was being read: drop it (nothing was stored)
+        if (generation === this.disconnectGeneration) {
+          request = read.request;
+          if (read.connected) {
+            user = this.bindConnection(read.connected);
+          }
         }
       } catch {
         // stale or foreign result (fragment already removed): ignored
@@ -344,6 +370,10 @@ export class Connect {
    * Start a connect. `state.request` becomes a pending `"connect"` request
    * right away and settles as `"success"` (and `state.user` is set),
    * `"rejected"`, `"failed"` (popup blocked) or `"unverified"`.
+   *
+   * Only this request's popup is listened to (`event.source`). If a newer
+   * `connect()` / action replaced it as `state.request`, or `disconnect()`
+   * ran, its success leaves `state.user` and the stored session alone.
    *
    * The returned promise is kept for 1.6.0 code in popup mode: it resolves
    * with the user or rejects. In redirect mode the tab navigates away and it
@@ -408,9 +438,13 @@ export class Connect {
     }
     return quiet(
       new Promise<ConnectedUser>((resolve, reject) => {
+        let opened: Window | null = null;
         const handleMessage = async (event: MessageEvent) => {
           if (
             event.origin === this.origin &&
+            // only this request's popup: another connect's popup (or any
+            // other Odin window) is not this request's answer
+            event.source === opened &&
             event.data?.path === "/authorize/connect"
           ) {
             window.removeEventListener("message", handleMessage);
@@ -424,25 +458,37 @@ export class Connect {
               return;
             }
             // the user accepted the connection: verify before trusting it
+            const connectionOptions = { requestId, ...options };
+            let connected: VerifiedConnection;
             try {
-              const user = await this.completeConnection(
+              connected = await this.verifyConnection(
                 event.data.message as ConnectResult,
                 sessionKey,
-                { requestId, ...options }
+                connectionOptions
               );
-              this._store.dispatch({
-                type: "settle",
-                id: requestId,
-                status: "success",
-                user,
-              });
-              resolve(user);
             } catch (error) {
               reject(this.settleError(requestId, "unverified", error));
+              return;
             }
+            if (this._store.state.request?.id !== requestId) {
+              // superseded by a newer request, or disconnect() cleared it:
+              // the promise still resolves (1.6.0), but state, storage and
+              // this instance's API key stay as they are
+              resolve(this.detachedUser(connected));
+              return;
+            }
+            this.persistConnection(connected, sessionKey, connectionOptions);
+            const user = this.bindConnection(connected);
+            this._store.dispatch({
+              type: "settle",
+              id: requestId,
+              status: "success",
+              user,
+            });
+            resolve(user);
           }
         };
-        const opened = this._window.open(url);
+        opened = this._window.open(url);
         if (!opened || opened.closed || typeof opened.closed === "undefined") {
           reject(
             this.settleError(
@@ -509,9 +555,15 @@ export class Connect {
     const fragment = readFragmentValue();
     const entry = redirectOutcomes.get(cacheKey);
     if (fragment !== null && entry?.fragment !== fragment) {
-      const created = { fragment, promise: this.readRedirectResult() };
+      const created = {
+        fragment,
+        promise: this.readRedirectResult(),
+        settled: false,
+      };
       redirectOutcomes.set(cacheKey, created);
       const evict = () => {
+        // delivered to every instance that was waiting for it
+        created.settled = true;
         setTimeout(() => {
           if (redirectOutcomes.get(cacheKey) === created) {
             redirectOutcomes.delete(cacheKey);
@@ -528,7 +580,8 @@ export class Connect {
       });
       return created.promise;
     }
-    return entry?.promise ?? null;
+    // still being read: share it; already delivered: not a fresh result
+    return entry && !entry.settled ? entry.promise : null;
   }
 
   /** Bind a shared verified connection to this instance (its API key). */
@@ -551,6 +604,7 @@ export class Connect {
    * foreign result.
    */
   private async readRedirectResult(): Promise<RedirectOutcome> {
+    const generation = this.disconnectGeneration;
     const consumed = this._redirect.consume();
     if (!consumed) {
       throw new Error("Unexpected OdinConnect redirect result");
@@ -600,6 +654,10 @@ export class Connect {
           sessionKey,
           options
         );
+        if (generation !== this.disconnectGeneration) {
+          // disconnect() while verifying: not stored; ready() drops it too
+          return { request: { ...request, status: "success" } };
+        }
         this.persistConnection(connected, sessionKey, options);
         return { request: { ...request, status: "success" }, connected };
       } catch (error) {
@@ -627,24 +685,26 @@ export class Connect {
   }
 
   /**
-   * Verify a connect result and only then persist and return the user.
-   * Throws a `ConnectVerificationError` (or the API's error) on any mismatch;
-   * nothing is stored and no API key is set in that case.
+   * A superseded verified connection, for the 1.6.0 promise only: its own API
+   * client, so its JWT never becomes this instance's API key.
    */
-  private async completeConnection(
-    message: ConnectResult,
-    sessionKey: Ed25519KeyIdentity,
-    options: ConnectionOptions
-  ): Promise<ConnectedUser> {
-    const connected = await this.verifyConnection(message, sessionKey, options);
-    this.persistConnection(connected, sessionKey, options);
-    this._api.apiKey = connected.jwt;
-    return new ConnectedUser(
-      connected.principal,
-      connected.identity,
-      this.api,
-      this._odin
-    );
+  private detachedUser({
+    principal,
+    identity,
+    jwt,
+  }: VerifiedConnection): ConnectedUser {
+    const api = new OdinApiClient(this.apiEnv);
+    api.apiKey = jwt;
+    return new ConnectedUser(principal, identity, api, this._odin);
+  }
+
+  private get apiEnv(): "prod" | "dev" | "legacy" {
+    const env = this._appInfo?.env;
+    return env === "prod" ? "prod" : env === "legacy" ? "legacy" : "dev";
+  }
+
+  private get disconnectGeneration(): number {
+    return disconnects.get(this.redirectCacheKey) ?? 0;
   }
 
   /** Every local and odin-api check; no side effects. */
@@ -759,13 +819,16 @@ export class Connect {
   }
 
   /**
-   * @deprecated Since 2.0.0: use `(await odin.ready()).user` (or
-   * `odin.state.user` after `ready()`). Kept so 1.6.0 code upgrades by adding
-   * `await`; resolves with `state.user` once `ready()` finished.
+   * @deprecated Since 2.0.0: use `(await odin.ready()).user`, or `state` /
+   * `subscribe()`. Kept with its 1.6.0 behavior: synchronous, returns the
+   * stored session's user (`state.user` once `ready()` finished). It does not
+   * wait for or apply a redirect result; `ready()` does.
    */
-  async restoreSession(): Promise<ConnectedUser | null> {
-    await this.ready();
-    return this.state.user;
+  restoreSession(): ConnectedUser | null {
+    if (this.state.status === "ready") {
+      return this.state.user;
+    }
+    return this.loadStoredSession();
   }
 
   private loadStoredSession(): ConnectedUser | null {
@@ -802,9 +865,11 @@ export class Connect {
 
   /** Forget the stored session; `state.user` and `state.request` become null. */
   disconnect(): void {
+    const key = this.redirectCacheKey;
+    disconnects.set(key, (disconnects.get(key) ?? 0) + 1);
     this._storage.clear();
     this._api.apiKey = null;
-    redirectOutcomes.delete(this.redirectCacheKey);
+    redirectOutcomes.delete(key);
     this._store.dispatch({ type: "disconnect" });
   }
 

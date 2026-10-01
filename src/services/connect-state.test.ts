@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Ed25519KeyIdentity } from "@dfinity/identity";
 import { Connect, resetRedirectOutcomes } from "./connect";
 import type { ConnectedUser } from "./connected-user";
-import type { OdinState } from "./state";
+import { StateStore, type OdinState } from "./state";
 import { apiAccepts, odinConnectMessage } from "../../test/odin-page";
 
 const POPUP = { closed: false } as Window;
@@ -18,16 +18,21 @@ function openSpy(result: Window | null = POPUP) {
   return vi.spyOn(window, "open").mockReturnValue(result);
 }
 
-/** Post what the Odin page would for `path` (popup mode). */
+/** Post what the Odin page would for `path` (popup mode), from `source`. */
 function answer(
   connect: Connect,
   path: string,
   message: unknown,
-  detail?: unknown
+  detail?: unknown,
+  {
+    source = POPUP,
+    origin = connect.origin,
+  }: { source?: Window; origin?: string } = {}
 ) {
   window.dispatchEvent(
     new MessageEvent("message", {
-      origin: connect.origin,
+      origin,
+      source,
       data: { path, message, ...(detail !== undefined ? { detail } : {}) },
     })
   );
@@ -149,6 +154,141 @@ describe("popup connect → state", () => {
     );
     expect(states.map((s) => s.request?.status)).toEqual(["pending", "failed"]);
     expect(connect.state.request?.error).toMatch(/allow popups/);
+  });
+});
+
+describe("popup connect: only its own answer, only while current", () => {
+  /** Open a connect popup that is `popup`; returns its promise and URL. */
+  function startConnect(
+    connect: Connect,
+    popup: Window,
+    options: Parameters<Connect["connect"]>[0] = { requires_api: true }
+  ) {
+    const open = openSpy(popup);
+    const promise = connect.connect(options);
+    const url = open.mock.lastCall![0] as URL;
+    return { promise, url, id: url.searchParams.get("request_id")! };
+  }
+
+  it("ignores a valid answer from a foreign origin", async () => {
+    const connect = await readyConnect();
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const { promise, url } = startConnect(connect, POPUP);
+    const message = await odinConnectMessage(url);
+    answer(connect, "/authorize/connect", message, undefined, {
+      origin: "https://evil.example",
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(verify).not.toHaveBeenCalled();
+    expect(connect.state.request?.status).toBe("pending");
+    expect(connect.user).toBeNull();
+    // the real answer still settles it
+    answer(connect, "/authorize/connect", message);
+    expect((await promise).principal).toBe(message.principal);
+  });
+
+  it("ignores an answer from another window (e.g. another connect's popup)", async () => {
+    const connect = await readyConnect();
+    vi.spyOn(connect.api, "verifyConnect").mockImplementation(apiAccepts());
+    const { promise, url } = startConnect(connect, POPUP);
+    const other = { closed: false } as Window;
+    answer(connect, "/authorize/connect", "rejected", undefined, {
+      source: other,
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(connect.state.request?.status).toBe("pending");
+    const message = await odinConnectMessage(url);
+    answer(connect, "/authorize/connect", message);
+    expect((await promise).principal).toBe(message.principal);
+  });
+
+  it("a newer connect replaces the latest: the older success changes neither user nor storage", async () => {
+    const connect = await readyConnect();
+    vi.spyOn(connect.api, "verifyConnect").mockImplementation(apiAccepts());
+    const popupA = { closed: false } as Window;
+    const popupB = { closed: false } as Window;
+    const a = startConnect(connect, popupA);
+    const b = startConnect(connect, popupB);
+    expect(connect.state.request?.id).toBe(b.id);
+
+    // A's popup answers first: only A's listener takes it
+    const messageA = await odinConnectMessage(a.url);
+    answer(connect, "/authorize/connect", messageA, undefined, {
+      source: popupA,
+    });
+    // 1.6.0: A's promise still resolves with A's user
+    const userA = await a.promise;
+    expect(userA.principal).toBe(messageA.principal);
+    expect(connect.user).toBeNull();
+    expect(connect.state.request).toMatchObject({
+      id: b.id,
+      status: "pending",
+    });
+    expect(localStorage.length).toBe(0);
+    expect(connect.api.apiKey).toBeNull();
+    // A's user has its own API key, not the instance's
+    expect(userA["_api"]).not.toBe(connect.api);
+    expect(userA["_api"].apiKey).toBe("jwt-from-api");
+
+    const messageB = await odinConnectMessage(b.url);
+    answer(connect, "/authorize/connect", messageB, undefined, {
+      source: popupB,
+    });
+    const userB = await b.promise;
+    expect(connect.user).toBe(userB);
+    expect(connect.state.request).toMatchObject({
+      id: b.id,
+      status: "success",
+    });
+    expect(connect.api.apiKey).toBe("jwt-from-api");
+    const restored = (await new Connect({ name: "test", env: "dev" }).ready())
+      .user;
+    expect(restored?.principal).toBe(messageB.principal);
+  });
+
+  it("disconnect() while the popup is open: its success does not resurrect the user", async () => {
+    const connect = await readyConnect();
+    const old = await connectedUser(connect);
+    expect(localStorage.length).toBe(1);
+    const { promise, url } = startConnect(connect, POPUP);
+    connect.disconnect();
+    const message = await odinConnectMessage(url);
+    answer(connect, "/authorize/connect", message);
+    expect((await promise).principal).toBe(message.principal);
+    expect(connect.state).toEqual({
+      status: "ready",
+      user: null,
+      request: null,
+    });
+    expect(localStorage.length).toBe(0);
+    expect(connect.api.apiKey).toBeNull();
+    expect(old.principal).not.toBe(message.principal);
+    expect(
+      (await new Connect({ name: "test", env: "dev" }).ready()).user
+    ).toBeNull();
+  });
+
+  it("disconnect() while verifying: not stored, not applied", async () => {
+    const connect = await readyConnect();
+    let accept!: () => void;
+    const accepts = apiAccepts();
+    vi.spyOn(connect.api, "verifyConnect").mockImplementation(
+      (body) =>
+        new Promise((resolve) => {
+          accept = () => resolve(accepts(body));
+        })
+    );
+    const { promise, url } = startConnect(connect, POPUP);
+    answer(connect, "/authorize/connect", await odinConnectMessage(url));
+    await vi.waitFor(() => expect(accept).toBeTypeOf("function"));
+    connect.disconnect();
+    accept();
+    await promise;
+    expect(connect.user).toBeNull();
+    expect(localStorage.length).toBe(0);
+    expect(connect.api.apiKey).toBeNull();
   });
 });
 
@@ -424,6 +564,56 @@ describe("subscribe / getState", () => {
       .catch(() => {});
     expect(dropped).toHaveBeenCalledTimes(2);
     expect(kept).toHaveBeenCalledTimes(4);
+  });
+
+  it("a settle for a replaced (or cleared) request changes neither request nor user", () => {
+    const store = new StateStore();
+    const input = {
+      requires_api: true,
+      requires_delegation: false,
+      targets: [],
+    };
+    const user = {} as ConnectedUser;
+    store.dispatch({
+      type: "request",
+      request: { id: "old", action: "connect", status: "pending", input },
+    });
+    store.dispatch({
+      type: "request",
+      request: { id: "new", action: "connect", status: "pending", input },
+    });
+    const before = store.state;
+    store.dispatch({ type: "settle", id: "old", status: "success", user });
+    expect(store.state).toBe(before);
+    store.dispatch({ type: "disconnect" });
+    const cleared = store.state;
+    store.dispatch({ type: "settle", id: "new", status: "success", user });
+    expect(store.state).toBe(cleared);
+    expect(store.state.user).toBeNull();
+  });
+
+  it("does not call a listener unsubscribed by an earlier one in the same dispatch", async () => {
+    const connect = await readyConnect();
+    const later = vi.fn();
+    let unsubscribeLater = () => {};
+    const first = vi.fn(() => unsubscribeLater());
+    connect.subscribe(first);
+    unsubscribeLater = connect.subscribe(later);
+    openSpy(null);
+    void connect.odin.buy({ principal: "p", token: "t", btcAmount: 1n });
+    expect(first).toHaveBeenCalled();
+    expect(later).not.toHaveBeenCalled();
+  });
+
+  it("getServerState stays the initializing snapshot in the browser too", async () => {
+    const connect = await readyConnect();
+    expect(connect.getState().status).toBe("ready");
+    expect(connect.getServerState()).toBe(Connect.serverState);
+    expect(connect.getServerState()).toEqual({
+      status: "initializing",
+      user: null,
+      request: null,
+    });
   });
 
   it("works unbound, as useSyncExternalStore calls it", async () => {

@@ -109,7 +109,10 @@ type StateEvent =
     }
   /** A request started (or was updated before settling, same id). */
   | { type: "request"; request: OdinRequestState }
-  /** A request settled; ignored for `request` when a newer one replaced it. */
+  /**
+   * A request settled; ignored when a newer request replaced it (or
+   * `disconnect()` cleared it): neither `request` nor `user` changes then.
+   */
   | {
       type: "settle";
       id: string;
@@ -150,18 +153,14 @@ function reduce(state: OdinState, event: StateEvent): OdinState {
       return snapshot({ ...state, request: { ...event.request } });
     case "settle": {
       const current = state.request;
-      const request =
-        current && current.id === event.id
-          ? ({
-              ...current,
-              status: event.status,
-              ...(event.detail ? { detail: event.detail } : {}),
-              ...(event.error !== undefined ? { error: event.error } : {}),
-            } as OdinRequestState)
-          : current;
-      const user = event.user ?? state.user;
-      if (request === current && user === state.user) return state;
-      return snapshot({ ...state, user, request });
+      if (!current || current.id !== event.id) return state;
+      const request = {
+        ...current,
+        status: event.status,
+        ...(event.detail ? { detail: event.detail } : {}),
+        ...(event.error !== undefined ? { error: event.error } : {}),
+      } as OdinRequestState;
+      return snapshot({ ...state, user: event.user ?? state.user, request });
     }
     case "disconnect":
       if (state.user === null && state.request === null) return state;
@@ -169,7 +168,13 @@ function reduce(state: OdinState, event: StateEvent): OdinState {
   }
 }
 
-const INITIAL_STATE: OdinState = Object.freeze({
+/**
+ * The state before `ready()` restored anything, and always on a server. A
+ * frozen constant: pass it as `useSyncExternalStore`'s `getServerSnapshot`
+ * (`() => INITIAL_ODIN_STATE`, or `odin.getServerState`) so hydration
+ * renders the same "initializing" state the server did.
+ */
+export const INITIAL_ODIN_STATE: OdinState = Object.freeze({
   status: "initializing",
   user: null,
   request: null,
@@ -177,7 +182,7 @@ const INITIAL_STATE: OdinState = Object.freeze({
 
 /** Holds one `OdinConnect`'s state and its listeners. */
 export class StateStore {
-  private _state: OdinState = INITIAL_STATE;
+  private _state: OdinState = INITIAL_ODIN_STATE;
   private _listeners = new Set<OdinStateListener>();
 
   get state(): OdinState {
@@ -189,6 +194,8 @@ export class StateStore {
     if (next === this._state) return;
     this._state = next;
     for (const listener of [...this._listeners]) {
+      // unsubscribed by an earlier listener during this dispatch
+      if (!this._listeners.has(listener)) continue;
       try {
         listener(next);
       } catch (error) {

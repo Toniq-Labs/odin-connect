@@ -247,9 +247,10 @@ describe("Connect redirect mode", () => {
     expect(JSON.stringify(body)).not.toContain(secretHex);
     // the pending entry (with the secret) is gone after the round trip
     expect(sessionStorage.length).toBe(0);
-    // a second instance gets the outcome from the cache, which holds no key
+    // an instance made after delivery restores the stored session only
     const again = await reload();
-    expect(again.state.request?.status).toBe("success");
+    expect(again.state.request).toBeNull();
+    expect(again.state.user?.principal).toBe(message.principal);
     expect(again.state.user?.getIdentity()).toBeNull();
     expect(verify).toHaveBeenCalledOnce();
   });
@@ -514,15 +515,75 @@ describe("ready() is shared per page load", () => {
     }
   });
 
-  it("returns the same outcome to an instance made after the first settled", async () => {
+  it("an instance made after the outcome was delivered gets request: null and the stored user", async () => {
     const verify = spyVerify().mockImplementation(apiAccepts());
-    const { message } = await returnFromConnect();
-    const a = await reload();
-    const b = await reload();
-    expect(a.state.request?.status).toBe("success");
-    expect(b.state.request?.status).toBe("success");
-    expect(b.state.user?.principal).toBe(message.principal);
+    const { message } = await returnFromConnect({ requires_api: true });
+    // both exist while the result is verified (StrictMode): both get it
+    const first = new Connect({ name: "test" });
+    const second = new Connect({ name: "test" });
+    const a = await first.ready();
+    const b = await second.ready();
+    expect(a.request?.status).toBe("success");
+    expect(b.request?.status).toBe("success");
+    // a later instance (e.g. per route) on the same page load
+    const later = await reload();
+    expect(later.state.request).toBeNull();
+    expect(later.state.user?.principal).toBe(message.principal);
+    expect(later.connect.api.apiKey).toBe("jwt-from-api");
     expect(verify).toHaveBeenCalledOnce();
+  });
+
+  it("disconnect() while a redirect connect is verified: not stored, not applied", async () => {
+    const verify = spyVerify().mockImplementation(apiAccepts());
+    // a previously stored session, which disconnect() ends too
+    const { message: old } = await returnFromConnect({ requires_api: true });
+    expect((await reload()).state.user?.principal).toBe(old.principal);
+    resetRedirectOutcomes();
+
+    let accept!: () => void;
+    const accepts = apiAccepts();
+    verify.mockImplementation(
+      (body) =>
+        new Promise((resolve) => {
+          accept = () => resolve(accepts(body));
+        })
+    );
+    await returnFromConnect({ requires_api: true });
+    // StrictMode twins, both waiting for the verification
+    const first = new Connect({ name: "test" });
+    const second = new Connect({ name: "test" });
+    await vi.waitFor(() => expect(accept).toBeTypeOf("function"));
+    expect(first.state.status).toBe("initializing");
+    first.disconnect();
+    accept();
+    for (const instance of [first, second]) {
+      const state = await instance.ready();
+      expect(state).toEqual({ status: "ready", user: null, request: null });
+      expect(instance.api.apiKey).toBeNull();
+    }
+    expect(localStorage.length).toBe(0);
+    expect(new Connect({ name: "test" }).restoreSession()).toBeNull();
+  });
+
+  it("an action outcome is not re-applied to a later instance", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n });
+    returnWith(navigatedUrl(navigate), "purchased");
+    // StrictMode: two instances in the same render, before anything settles
+    const first = new Connect({ name: "test" });
+    const second = new Connect({ name: "test" });
+    expect((await first.ready()).request?.status).toBe("success");
+    expect((await second.ready()).request?.status).toBe("success");
+    expect((await reload()).state.request).toBeNull();
+  });
+
+  it("a non-persisted connect gives a later instance no user", async () => {
+    spyVerify().mockImplementation(apiAccepts());
+    await returnFromConnect();
+    expect((await reload()).state.user).not.toBeNull();
+    const later = await reload();
+    expect(later.state).toEqual({ status: "ready", user: null, request: null });
   });
 
   it("shares an ignored stale result too, without unhandled rejections", async () => {
@@ -905,34 +966,42 @@ describe("deprecated restoreSession()", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns the user of a redirect connect, after ready()", async () => {
-    const verify = spyVerify().mockImplementation(apiAccepts());
+  it("is synchronous and returns the stored session's user, as in 1.6.0", async () => {
+    spyVerify().mockImplementation(apiAccepts());
     const { message } = await returnFromConnect({
       requires_api: true,
       requires_delegation: true,
       targets: ["74iy7-xqaaa-aaaaf-qagra-cai"],
     });
+    // a stored session (as 1.6.0 left it) plus a new redirect result
+    expect((await reload()).state.user?.principal).toBe(message.principal);
+    resetRedirectOutcomes();
+    const next = await returnFromConnect({ requires_api: true });
+    expect(next.message.principal).not.toBe(message.principal);
+
     const app = new Connect({ name: "test" });
-    const user = await app.restoreSession();
+    // not a promise; does not wait for or apply the redirect result
+    const user = app.restoreSession();
+    expect(user).not.toBeInstanceOf(Promise);
     expect(user?.principal).toBe(message.principal);
-    expect(user).toBe(app.state.user);
     expect(user?.getIdentity()?.getPrincipal().toText()).toBe(
       message.principal
     );
+    expect(app.state.status).toBe("initializing");
+    // ready() applies it; restoreSession() then returns state.user
+    const state = await app.ready();
+    expect(state.user?.principal).toBe(next.message.principal);
+    expect(app.restoreSession()).toBe(state.user);
     expect(app.api.apiKey).toBe("jwt-from-api");
-    expect(verify).toHaveBeenCalledOnce();
-    expect(window.location.search).toBe("?x=1");
   });
 
-  it("returns null for a rejected or unverified connect without a stored session", async () => {
+  it("returns null without a stored session", async () => {
+    expect(new Connect({ name: "test" }).restoreSession()).toBeNull();
     await returnFromConnect({}, "rejected");
-    expect(await new Connect({ name: "test" }).restoreSession()).toBeNull();
-
-    resetRedirectOutcomes();
-    spyVerify().mockRejectedValue(new Error("Invalid signature"));
-    await returnFromConnect({ requires_api: true });
-    expect(await new Connect({ name: "test" }).restoreSession()).toBeNull();
-    expect(localStorage.length).toBe(0);
+    const app = new Connect({ name: "test" });
+    expect(app.restoreSession()).toBeNull();
+    await app.ready();
+    expect(app.restoreSession()).toBeNull();
   });
 
   it("a rejected re-connect keeps the stored session's user", async () => {
@@ -945,7 +1014,7 @@ describe("deprecated restoreSession()", () => {
     const { connect: app, state } = await reload();
     expect(state.request?.status).toBe("rejected");
     expect(state.user?.principal).toBe(message.principal);
-    expect((await app.restoreSession())?.principal).toBe(message.principal);
+    expect(app.restoreSession()?.principal).toBe(message.principal);
     expect(app.isSessionValid()).toBe(true);
   });
 });
@@ -983,7 +1052,7 @@ describe("sessions stored by 1.6.0 / 1.7.0 restore", () => {
       root.getPrincipal().toText()
     );
     expect(connect.api.apiKey).toBe("old-jwt");
-    expect(await connect.restoreSession()).toBe(user);
+    expect(connect.restoreSession()).toBe(user);
   });
 
   it("restores a JWT-only session and clears an expired delegation", async () => {
@@ -1072,8 +1141,8 @@ describe("query-less return_url", () => {
     expect(window.location.search).toBe("?step=2&x=1");
     expect(window.location.hash).toBe("");
     expect(window.history.state).toEqual({ app: 1 });
-    // a second instance gets the cached outcome and leaves the URL alone
-    expect((await reload()).state.request?.status).toBe("success");
+    // a later instance does not re-apply it and leaves the URL alone
+    expect((await reload()).state.request).toBeNull();
     expect(window.location.search).toBe("?step=2&x=1");
   });
 
