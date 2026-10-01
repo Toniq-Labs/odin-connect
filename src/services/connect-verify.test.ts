@@ -85,7 +85,7 @@ describe("verified connect (popup)", () => {
       client_signature: expect.any(String),
     });
     expect(connect.api.apiKey).toBe("jwt-from-api");
-    expect(connect.restoreSession()?.principal).toBe(message.principal);
+    expect((await connect.restoreSession())?.principal).toBe(message.principal);
   });
 
   it("accepts a SIWB-style delegated Odin identity", async () => {
@@ -362,13 +362,15 @@ describe("verified connect (popup)", () => {
     );
     const a = await popupConnect(connect, { requires_api: true });
     expect(connect.api.apiKey).toBe("jwt-of-user-a");
-    expect(connect.restoreSession()?.principal).toBe(a.message.principal);
+    expect((await connect.restoreSession())?.principal).toBe(
+      a.message.principal
+    );
 
     const b = await popupConnect(connect, {});
     expect(b.user?.principal).toBe(b.message.principal);
     expect(connect.api.apiKey).toBeNull();
     expect(localStorage.length).toBe(0);
-    expect(connect.restoreSession()).toBeNull();
+    expect(await connect.restoreSession()).toBeNull();
   });
 
   it("a failed re-connect keeps the previous session", async () => {
@@ -380,7 +382,9 @@ describe("verified connect (popup)", () => {
     const b = await popupConnect(connect, { requires_api: true });
     expect(b.error).not.toBeNull();
     expect(connect.api.apiKey).toBe("jwt-from-api");
-    expect(connect.restoreSession()?.principal).toBe(a.message.principal);
+    expect((await connect.restoreSession())?.principal).toBe(
+      a.message.principal
+    );
   });
 
   it("rejects a chain issued to a different session key", async () => {

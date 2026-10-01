@@ -37,8 +37,9 @@ export interface AppInitOptions {
   slug?: string;
   lang?: OdinLang;
   /**
-   * How `connect()` and every action reach Odin: `"popup"` (default),
-   * `"redirect"` or `"auto"`. See `ConnectMode`.
+   * How `connect()` and every action reach Odin: `"auto"` (default:
+   * redirect in wallet in-app browsers, popup elsewhere), `"popup"` or
+   * `"redirect"`. See `ConnectMode`.
    */
   mode?: ConnectMode;
 }
@@ -183,6 +184,7 @@ export class Connect {
   private _odin: OdinCanisterClient;
   private _storage: SessionStorage;
   private _redirect: RedirectClient;
+  private _lastRedirectResult: OdinRedirectResult | null = null;
 
   constructor(appInfo?: Partial<AppInitOptions>) {
     this._appInfo = {
@@ -207,7 +209,7 @@ export class Connect {
         this._appInfo.env || "prod"
       )
     );
-    this._redirect.mode = this._appInfo.mode || "popup";
+    this._redirect.mode = this._appInfo.mode || "auto";
     this._odin = new OdinCanisterClient(
       this._window,
       this._api,
@@ -380,7 +382,9 @@ export class Connect {
 
   /**
    * Read the result of a redirect-mode `connect()` or action after Odin sends
-   * the user back. Call on page load, before `restoreSession()`.
+   * the user back. Optional for connect (`await restoreSession()` already
+   * finishes a redirect connect); needed for action results, `returnState`
+   * or to tell a rejected/unverified connect apart from no connect.
    * Resolves null when the URL carries no redirect result; rejects when the
    * result does not match the pending request (stale, foreign or replayed).
    *
@@ -389,16 +393,40 @@ export class Connect {
    * fails the status is `"unverified"` and nothing is stored.
    *
    * Safe to call more than once per page load (e.g. React StrictMode effects,
-   * even on another `OdinConnect` with the same slug and env): every call made
-   * while the result is being read, or shortly after, gets the same outcome,
-   * and odin-api is asked once.
+   * even on another `OdinConnect` with the same slug and env), before or
+   * after `restoreSession()`: every call made while the result is being read,
+   * or shortly after, gets the same outcome, and odin-api is asked once.
    */
   async handleRedirectResult<
     ReturnState = unknown,
   >(): Promise<OdinRedirectResult<ReturnState> | null> {
+    const outcome = this.redirectOutcome();
+    if (!outcome) {
+      // no result in the URL: this only drops an abandoned pending request
+      this._redirect.consume();
+      return null;
+    }
+    return this.bindOutcome(await outcome) as OdinRedirectResult<ReturnState>;
+  }
+
+  /**
+   * The last redirect result this instance read, through
+   * `handleRedirectResult()` or `restoreSession()`; null before that.
+   */
+  get lastRedirectResult(): OdinRedirectResult | null {
+    return this._lastRedirectResult;
+  }
+
+  /**
+   * This page load's redirect outcome, shared per `slug:env`: reads the URL
+   * the first time a fragment is seen, else reuses the cached read. Null when
+   * there is no result in the URL and none was read recently. Synchronous up
+   * to the returned promise, so concurrent callers share one read.
+   */
+  private redirectOutcome(): Promise<RedirectOutcome> | null {
     const cacheKey = this.redirectCacheKey;
     const fragment = readFragmentValue();
-    let entry = redirectOutcomes.get(cacheKey);
+    const entry = redirectOutcomes.get(cacheKey);
     if (fragment !== null && entry?.fragment !== fragment) {
       const created = { fragment, promise: this.readRedirectResult() };
       redirectOutcomes.set(cacheKey, created);
@@ -410,26 +438,28 @@ export class Connect {
         }, REDIRECT_RESULT_REUSE_MS);
       };
       created.promise.then(evict, evict);
-      entry = created;
+      return created.promise;
     }
-    if (!entry) {
-      // no result in the URL: this only drops an abandoned pending request
-      this._redirect.consume();
-      return null;
-    }
-    const outcome = await entry.promise;
+    return entry?.promise ?? null;
+  }
+
+  /** Turn a shared outcome into this instance's result (its own API key). */
+  private bindOutcome(outcome: RedirectOutcome): OdinRedirectResult {
+    let result: OdinRedirectResult;
     if ("result" in outcome) {
-      return outcome.result as OdinRedirectResult<ReturnState>;
+      result = outcome.result;
+    } else {
+      const { principal, identity, jwt } = outcome.connected;
+      this._api.apiKey = jwt;
+      result = {
+        action: "connect",
+        status: "connected",
+        user: new ConnectedUser(principal, identity, this._api, this._odin),
+        returnState: outcome.returnState,
+      };
     }
-    // Bind the shared connection to this instance (its own API key).
-    const { principal, identity, jwt } = outcome.connected;
-    this._api.apiKey = jwt;
-    return {
-      action: "connect",
-      status: "connected",
-      user: new ConnectedUser(principal, identity, this._api, this._odin),
-      returnState: outcome.returnState as ReturnState | undefined,
-    };
+    this._lastRedirectResult = result;
+    return result;
   }
 
   private get redirectCacheKey(): string {
@@ -643,10 +673,44 @@ export class Connect {
   }
 
   /**
-   * Rehydrate the stored session. Does not read redirect results: call
-   * `await handleRedirectResult()` first on page load (since 2.0.0).
+   * The connected user on page load, or null. Async since 2.0.0.
+   *
+   * If this load returned from a redirect-mode `connect()`, finishes it
+   * (verified like a popup connect, through the same shared read as
+   * `handleRedirectResult()`) and returns that user, or null when it was
+   * rejected or could not be verified (`handleRedirectResult()` or
+   * `lastRedirectResult` tell which; a previously stored session is kept but
+   * not returned on that load). An action result in the URL is left for
+   * `handleRedirectResult()`. Otherwise rehydrates the stored session.
    */
-  restoreSession(): ConnectedUser | null {
+  async restoreSession(): Promise<ConnectedUser | null> {
+    const fragment = readFragmentValue();
+    const entry = redirectOutcomes.get(this.redirectCacheKey);
+    const unread = fragment !== null && entry?.fragment !== fragment;
+    // Only take an unread result off the URL when it answers a pending
+    // connect; action (or unmatched) results stay for handleRedirectResult().
+    const outcome =
+      unread && this._redirect.pendingPath !== "/authorize/connect"
+        ? null
+        : this.redirectOutcome();
+    if (outcome) {
+      let result: OdinRedirectResult | null = null;
+      try {
+        result = this.bindOutcome(await outcome);
+      } catch {
+        // stale or foreign result: handleRedirectResult() reports it
+      }
+      if (result?.action === "connect") {
+        return result.status === "connected" ? result.user : null;
+      }
+    } else if (fragment === null) {
+      // no result in the URL: this only drops an abandoned pending request
+      this._redirect.consume();
+    }
+    return this.loadStoredSession();
+  }
+
+  private loadStoredSession(): ConnectedUser | null {
     try {
       const data = this._storage.load();
       if (!data) return null;

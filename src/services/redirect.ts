@@ -16,13 +16,15 @@ export const REDIRECT_RESULT_KEY = "odin_connect";
 
 /**
  * How the SDK reaches the Odin authorize pages, for `connect()` and actions.
- * - `"popup"` (default): `window.open` + `postMessage`.
- * - `"redirect"`: navigate this tab to Odin and back. For wallet in-app
- *   browsers (OKX) that open popups without `window.opener`. The returned
- *   promise never settles because the page unloads; read the result with
- *   `handleRedirectResult()` when the app loads again.
- * - `"auto"`: `"redirect"` inside a wallet in-app browser or app webview
- *   (see `isInAppBrowser()`), else `"popup"`.
+ * - `"auto"` (default): `"redirect"` inside a wallet in-app browser or app
+ *   webview (see `isInAppBrowser()`), else `"popup"`.
+ * - `"popup"`: always `window.open` + `postMessage`.
+ * - `"redirect"`: always navigate this tab to Odin and back. For wallet
+ *   in-app browsers (OKX) that open popups without `window.opener`. The
+ *   returned promise never settles because the page unloads; a connect is
+ *   finished by `await restoreSession()` (or `handleRedirectResult()`) when
+ *   the app loads again, an action result is read with
+ *   `handleRedirectResult()`.
  */
 export type ConnectMode = "popup" | "redirect" | "auto";
 
@@ -224,7 +226,7 @@ export function consumeRedirectResult(): RedirectResult | null {
  * `connect()` and the canister actions share one redirect implementation.
  */
 export class RedirectClient {
-  mode: ConnectMode = "popup";
+  mode: ConnectMode = "auto";
 
   constructor(
     private _window: WindowClient,
@@ -267,6 +269,11 @@ export class RedirectClient {
     url.searchParams.append("state", state);
     this._window.navigate(url);
     return new Promise<T>(() => {});
+  }
+
+  /** Authorize path of the pending request, without consuming it. */
+  get pendingPath(): string | null {
+    return this._pending.peek()?.path ?? null;
   }
 
   /**

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DelegationChain, Ed25519KeyIdentity } from "@dfinity/identity";
 import { OdinApiClient } from "./api";
 import { Connect, resetRedirectOutcomes } from "./connect";
 import { PENDING_REDIRECT_MAX_AGE_MS, REDIRECT_RESULT_KEY } from "./redirect";
@@ -87,9 +88,9 @@ describe("Connect redirect mode", () => {
     expect(open).toHaveBeenCalledOnce();
   });
 
-  it("mode can be switched at runtime and defaults to popup", () => {
+  it("mode can be switched at runtime and defaults to auto", () => {
     const connect = new Connect({ name: "test" });
-    expect(connect.mode).toBe("popup");
+    expect(connect.mode).toBe("auto");
     connect.mode = "redirect";
     const navigate = spyNavigate(connect);
     void connect.connect();
@@ -108,7 +109,7 @@ describe("Connect redirect mode", () => {
     expect(url.searchParams.get("requires_api")).toBe("1");
   });
 
-  it("completes a delegation round trip, then restoreSession reads storage", async () => {
+  it("completes a delegation round trip through restoreSession", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const verify = vi
       .spyOn(connect.api, "verifyConnect")
@@ -130,11 +131,16 @@ describe("Connect redirect mode", () => {
     const message = await odinConnectMessage(url);
     returnWith(url, message);
 
-    // restoreSession no longer consumes redirect results
-    expect(connect.restoreSession()).toBeNull();
-    expect(window.location.hash).not.toBe("");
+    // restoreSession finishes the redirect connect
+    const restored = await connect.restoreSession();
+    expect(restored?.principal).toBe(message.principal);
+    expect(restored?.getIdentity()?.getPrincipal().toText()).toBe(
+      message.principal
+    );
 
+    // handleRedirectResult still reports it, from the same read
     const result = await connect.handleRedirectResult();
+    expect(verify).toHaveBeenCalledOnce();
     expect(result?.action).toBe("connect");
     expect(result?.status).toBe("connected");
     expect(result?.returnState).toEqual({ from: "landing" });
@@ -156,7 +162,7 @@ describe("Connect redirect mode", () => {
     expect(window.location.search).toBe("?x=1");
     expect(sessionStorage.length).toBe(0);
     expect(connect.isSessionValid()).toBe(true);
-    expect(connect.restoreSession()?.principal).toBe(message.principal);
+    expect((await connect.restoreSession())?.principal).toBe(message.principal);
   });
 
   it("binds a connect without delegation to its session key too", async () => {
@@ -476,7 +482,7 @@ describe("handleRedirectResult is idempotent per page load", () => {
       // each instance gets the API key, not just the one that read the URL
       expect(instance.api.apiKey).toBe("jwt-from-api");
     }
-    expect(second.restoreSession()?.principal).toBe(message.principal);
+    expect((await second.restoreSession())?.principal).toBe(message.principal);
   });
 
   it("returns the same outcome to a call made after the first settled", async () => {
@@ -635,7 +641,7 @@ describe("Action redirect mode", () => {
     void connect.odin.sell({ principal: "p", token: "2jjj", tokenAmount: 1n });
     returnWith(navigatedUrl(navigate), "sold");
 
-    expect(connect.restoreSession()).toBeNull();
+    expect(await connect.restoreSession()).toBeNull();
     expect(window.location.hash).not.toBe("");
     expect(await connect.handleRedirectResult()).toEqual({
       action: "sell",
@@ -766,5 +772,378 @@ describe("returnState", () => {
       })
     ).rejects.toThrow();
     expect(sessionStorage.length).toBe(0);
+  });
+});
+
+describe("default mode is auto", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/app");
+    sessionStorage.clear();
+    localStorage.clear();
+    resetRedirectOutcomes();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("opens a popup on a desktop browser without any mode option", () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+    );
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const connect = new Connect({ name: "test" });
+    const navigate = spyNavigate(connect);
+    void connect.connect();
+    expect(open).toHaveBeenCalledOnce();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("redirects in OKX and an Android webview without any mode option", () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    for (const ua of [
+      OKX_UA,
+      "Mozilla/5.0 (Linux; Android 13; Pixel 7; wv) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36",
+    ]) {
+      vi.spyOn(navigator, "userAgent", "get").mockReturnValue(ua);
+      const connect = new Connect({ name: "test" });
+      const navigate = spyNavigate(connect);
+      void connect.connect();
+      expect(navigate).toHaveBeenCalledOnce();
+      void connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n });
+      expect(navigate).toHaveBeenCalledTimes(2);
+    }
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("an explicit popup mode still opens a popup inside OKX", () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue(OKX_UA);
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const connect = new Connect({ name: "test", mode: "popup" });
+    const navigate = spyNavigate(connect);
+    void connect.connect();
+    expect(open).toHaveBeenCalledOnce();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe("restoreSession finishes a redirect connect", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/app?x=1");
+    sessionStorage.clear();
+    localStorage.clear();
+    resetRedirectOutcomes();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Start a redirect connect and come back with `message` (default: valid). */
+  async function returnFromConnect(
+    connect: Connect,
+    options: Parameters<Connect["connect"]>[0] = {},
+    message?: unknown
+  ) {
+    const navigate = spyNavigate(connect);
+    void connect.connect(options);
+    const url = navigatedUrl(navigate);
+    const sent = message ?? (await odinConnectMessage(url));
+    returnWith(url, sent);
+    navigate.mockRestore();
+    return sent as Awaited<ReturnType<typeof odinConnectMessage>>;
+  }
+
+  it("returns the user of a requires_api + delegation connect", async () => {
+    const verify = vi
+      .spyOn(OdinApiClient.prototype, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const message = await returnFromConnect(connect, {
+      requires_api: true,
+      requires_delegation: true,
+      targets: ["74iy7-xqaaa-aaaaf-qagra-cai"],
+    });
+
+    const user = await connect.restoreSession();
+    expect(user?.principal).toBe(message.principal);
+    expect(user?.getIdentity()?.getPrincipal().toText()).toBe(
+      message.principal
+    );
+    expect(connect.api.apiKey).toBe("jwt-from-api");
+    expect(verify).toHaveBeenCalledOnce();
+    expect(window.location.hash).toBe("");
+    expect(window.location.search).toBe("?x=1");
+    expect(sessionStorage.length).toBe(0);
+    expect(connect.isSessionValid()).toBe(true);
+    expect(connect.lastRedirectResult).toMatchObject({
+      action: "connect",
+      status: "connected",
+    });
+
+    // a later load (no fragment, cache gone) restores it from storage
+    resetRedirectOutcomes();
+    const later = new Connect({ name: "test" });
+    expect((await later.restoreSession())?.principal).toBe(message.principal);
+    expect(later.api.apiKey).toBe("jwt-from-api");
+    expect(verify).toHaveBeenCalledOnce();
+  });
+
+  it("returns the user of a connect without api or delegation (nothing stored)", async () => {
+    const verify = vi
+      .spyOn(OdinApiClient.prototype, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const message = await returnFromConnect(connect);
+
+    const user = await connect.restoreSession();
+    expect(user?.principal).toBe(message.principal);
+    expect(user?.getIdentity()).toBeNull();
+    expect(connect.api.apiKey).toBeNull();
+    expect(localStorage.length).toBe(0);
+    expect(verify).toHaveBeenCalledOnce();
+  });
+
+  it("returns null for a rejected connect", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    await returnFromConnect(connect, { returnState: { step: 1 } }, "rejected");
+    expect(await connect.restoreSession()).toBeNull();
+    expect(window.location.hash).toBe("");
+    expect(sessionStorage.length).toBe(0);
+    expect(connect.lastRedirectResult).toEqual({
+      action: "connect",
+      status: "rejected",
+      returnState: { step: 1 },
+    });
+    // handleRedirectResult still reports the rejection
+    expect(await connect.handleRedirectResult()).toEqual({
+      action: "connect",
+      status: "rejected",
+      returnState: { step: 1 },
+    });
+  });
+
+  it("returns null on a rejected re-connect but keeps the stored session", async () => {
+    vi.spyOn(OdinApiClient.prototype, "verifyConnect").mockImplementation(
+      apiAccepts()
+    );
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const message = await returnFromConnect(connect, { requires_api: true });
+    expect((await connect.restoreSession())?.principal).toBe(message.principal);
+    resetRedirectOutcomes();
+
+    await returnFromConnect(connect, {}, "rejected");
+    expect(await connect.restoreSession()).toBeNull();
+    expect(connect.isSessionValid()).toBe(true);
+    // the next load, without the result, restores the earlier session
+    resetRedirectOutcomes();
+    expect((await connect.restoreSession())?.principal).toBe(message.principal);
+  });
+
+  it("returns null for an unverified connect and stores nothing", async () => {
+    const verify = vi
+      .spyOn(OdinApiClient.prototype, "verifyConnect")
+      .mockRejectedValue(new Error("Invalid signature"));
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    await returnFromConnect(connect, { requires_api: true });
+    expect(await connect.restoreSession()).toBeNull();
+    expect(localStorage.length).toBe(0);
+    expect(connect.api.apiKey).toBeNull();
+    const result = await connect.handleRedirectResult();
+    expect(result).toMatchObject({
+      action: "connect",
+      status: "unverified",
+      error: expect.stringContaining("Invalid signature"),
+    });
+    expect(verify).toHaveBeenCalledOnce();
+  });
+
+  it("restoreSession then handleRedirectResult share one verified read", async () => {
+    const verify = vi
+      .spyOn(OdinApiClient.prototype, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const first = new Connect({ name: "test", mode: "redirect" });
+    const message = await returnFromConnect(first, {
+      requires_api: true,
+      returnState: { step: 2 },
+    });
+    expect((await first.restoreSession())?.principal).toBe(message.principal);
+
+    // StrictMode-style second instance, after the fragment is gone
+    const second = new Connect({ name: "test" });
+    const result = await second.handleRedirectResult();
+    expect(result).toMatchObject({
+      action: "connect",
+      status: "connected",
+      returnState: { step: 2 },
+    });
+    if (result?.action === "connect" && result.status === "connected") {
+      expect(result.user.principal).toBe(message.principal);
+    }
+    expect(second.api.apiKey).toBe("jwt-from-api");
+    expect(await first.handleRedirectResult()).toMatchObject({
+      status: "connected",
+    });
+    expect(verify).toHaveBeenCalledOnce();
+  });
+
+  it("handleRedirectResult then restoreSession share one verified read", async () => {
+    const verify = vi
+      .spyOn(OdinApiClient.prototype, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const first = new Connect({ name: "test", mode: "redirect" });
+    // no api / delegation: nothing is stored, only the shared read has it
+    const message = await returnFromConnect(first);
+    expect((await first.handleRedirectResult())?.status).toBe("connected");
+    expect(window.location.hash).toBe("");
+    expect(localStorage.length).toBe(0);
+
+    expect((await first.restoreSession())?.principal).toBe(message.principal);
+    const second = new Connect({ name: "test" });
+    expect((await second.restoreSession())?.principal).toBe(message.principal);
+    expect(verify).toHaveBeenCalledOnce();
+  });
+
+  it("concurrent restoreSession and handleRedirectResult read once", async () => {
+    const verify = vi
+      .spyOn(OdinApiClient.prototype, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const first = new Connect({ name: "test", mode: "redirect" });
+    const message = await returnFromConnect(first);
+    const [user, result] = await Promise.all([
+      first.restoreSession(),
+      new Connect({ name: "test" }).handleRedirectResult(),
+    ]);
+    expect(user?.principal).toBe(message.principal);
+    expect(result?.status).toBe("connected");
+    expect(verify).toHaveBeenCalledOnce();
+  });
+
+  it("leaves an action result in the URL and returns the stored session", async () => {
+    vi.spyOn(OdinApiClient.prototype, "verifyConnect").mockImplementation(
+      apiAccepts()
+    );
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const message = await returnFromConnect(connect, { requires_api: true });
+    await connect.restoreSession();
+    resetRedirectOutcomes();
+
+    const navigate = spyNavigate(connect);
+    void connect.odin.sell({ principal: "p", token: "2jjj", tokenAmount: 1n });
+    returnWith(navigatedUrl(navigate), "sold", { detail: { x: "1" } });
+
+    const fresh = new Connect({ name: "test" });
+    expect((await fresh.restoreSession())?.principal).toBe(message.principal);
+    expect(window.location.hash).not.toBe("");
+    expect(sessionStorage.length).toBe(1);
+    expect(fresh.lastRedirectResult).toBeNull();
+    expect(await fresh.handleRedirectResult()).toEqual({
+      action: "sell",
+      status: "success",
+      detail: { x: "1" },
+    });
+    // an already-read action result is still not a connect
+    expect((await fresh.restoreSession())?.principal).toBe(message.principal);
+  });
+
+  it("falls back to the stored session on a stale connect result", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.connect();
+    returnWith(
+      navigatedUrl(navigate),
+      { principal: "aaaaa-aa", jwt: null },
+      { state: "someone-elses-state-value-000000" }
+    );
+    expect(await connect.restoreSession()).toBeNull();
+    await expect(connect.handleRedirectResult()).rejects.toThrow(
+      "Unexpected OdinConnect redirect result"
+    );
+  });
+
+  it("drops a pending request abandoned for over 10 minutes", async () => {
+    vi.useFakeTimers();
+    try {
+      const connect = new Connect({ name: "test", mode: "redirect" });
+      const navigate = spyNavigate(connect);
+      void connect.connect();
+      navigate.mockRestore();
+      vi.advanceTimersByTime(PENDING_REDIRECT_MAX_AGE_MS + 1);
+      expect(await new Connect({ name: "test" }).restoreSession()).toBeNull();
+      expect(sessionStorage.length).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("restoreSession reads sessions stored by 1.6.0 / 1.7.0", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/app");
+    sessionStorage.clear();
+    localStorage.clear();
+    resetRedirectOutcomes();
+  });
+
+  it("restores a delegation + JWT session", async () => {
+    const connect = new Connect({ name: "My App", env: "prod" });
+    const root = Ed25519KeyIdentity.generate();
+    const sessionKey = Ed25519KeyIdentity.generate();
+    const chain = await DelegationChain.create(
+      root,
+      sessionKey.getPublicKey(),
+      new Date(Date.now() + 3_600_000)
+    );
+    localStorage.setItem(
+      `odin_connect:${connect.slug}:prod:session`,
+      JSON.stringify({
+        principal: root.getPrincipal().toText(),
+        sessionKey: JSON.stringify(sessionKey.toJSON()),
+        delegationChain: JSON.stringify(chain.toJSON()),
+        jwt: "old-jwt",
+      })
+    );
+    const user = await connect.restoreSession();
+    expect(user?.principal).toBe(root.getPrincipal().toText());
+    expect(user?.getIdentity()?.getPrincipal().toText()).toBe(
+      root.getPrincipal().toText()
+    );
+    expect(connect.api.apiKey).toBe("old-jwt");
+  });
+
+  it("restores a JWT-only session and clears an expired delegation", async () => {
+    const connect = new Connect({ name: "My App", env: "prod" });
+    const key = `odin_connect:${connect.slug}:prod:session`;
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        principal: "aaaaa-aa",
+        // 1.6.0 stored the key even without a delegation
+        sessionKey: JSON.stringify(Ed25519KeyIdentity.generate().toJSON()),
+        delegationChain: null,
+        jwt: "old-jwt",
+      })
+    );
+    expect((await connect.restoreSession())?.principal).toBe("aaaaa-aa");
+    expect(connect.api.apiKey).toBe("old-jwt");
+
+    const root = Ed25519KeyIdentity.generate();
+    const sessionKey = Ed25519KeyIdentity.generate();
+    const expired = await DelegationChain.create(
+      root,
+      sessionKey.getPublicKey(),
+      new Date(Date.now() - 1000)
+    );
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        principal: root.getPrincipal().toText(),
+        sessionKey: JSON.stringify(sessionKey.toJSON()),
+        delegationChain: JSON.stringify(expired.toJSON()),
+        jwt: null,
+      })
+    );
+    expect(await connect.restoreSession()).toBeNull();
+    expect(localStorage.getItem(key)).toBeNull();
   });
 });

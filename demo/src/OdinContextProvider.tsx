@@ -45,30 +45,25 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     useState<OdinRedirectResult | null>(null);
 
   useEffect(() => {
-    // Read the redirect result once per page load. StrictMode runs effects
-    // twice; handleRedirectResult() would return the same outcome anyway,
-    // the ref just avoids the second call.
+    // Restore once per page load. StrictMode runs effects twice; both calls
+    // would return the same outcome anyway, the ref just avoids the second.
     if (!odinConnect || initialized.current) return;
     initialized.current = true;
     const init = async () => {
-      // Finish a redirect-mode connect() or action first (async since 2.0.0:
-      // connect results are verified with odin-api), so its outcome,
-      // including a rejection or an unverified result, is visible
-      let restoredUser: OdinConnectedUser | null = null;
-      try {
-        const result = await odinConnect.handleRedirectResult();
-        setRedirectResult(result);
-        if (result?.action === "connect" && result.status === "connected") {
-          restoredUser = result.user;
-        }
-      } catch (error) {
-        console.error("Redirect result failed:", error);
-      }
-
-      // Otherwise attempt to restore a previous session from localStorage
-      restoredUser ??= odinConnect.restoreSession();
+      // Finishes a redirect-mode connect() (verified with odin-api), else
+      // restores the stored session. Async since 2.0.0
+      const restoredUser = await odinConnect.restoreSession();
       if (restoredUser) {
         setConnectedUser(restoredUser);
+      }
+
+      // Optional: read the outcome for the result banner (a rejected or
+      // unverified connect, an action result, returnState). Same read as
+      // restoreSession(), so odin-api is not asked again
+      try {
+        setRedirectResult(await odinConnect.handleRedirectResult());
+      } catch (error) {
+        console.error("Redirect result failed:", error);
       }
     };
     void init();
