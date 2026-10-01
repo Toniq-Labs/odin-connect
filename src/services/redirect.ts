@@ -2,12 +2,16 @@
  * Redirect-mode plumbing shared by `connect()` and every authorize action.
  *
  * Instead of a popup, the SDK navigates the current tab to
- * `/authorize/<type>?...&return_url=<this page>&state=<id>&request_id=<id>`
- * (same id twice). Odin navigates back to
+ * `/authorize/<type>?...&return_url=<origin + path>&state=<id>&request_id=<id>`
+ * (same id twice). `return_url` never carries a query or fragment: Odin only
+ * returns to the requesting origin, any path, without a query (so a
+ * `/go?to=...` open redirect on the app cannot forward the result). Odin
+ * navigates back to
  * `return_url#odin_connect=<base64url({ path, message, detail?, state })>`.
- * The pending request (nonce, path, and for connect the session key) waits in
- * `sessionStorage`, which survives the round trip in the same tab and is
- * single-use.
+ * The pending request (nonce, path, the page's full URL, and for connect the
+ * session key) waits in `sessionStorage`, which survives the round trip in
+ * the same tab and is single-use. Consuming the result puts the page's
+ * original query string back.
  */
 import { isInAppBrowser } from "../utils/in-app-browser";
 import { WindowClient } from "./window";
@@ -46,6 +50,12 @@ export interface PendingRedirect {
   returnState?: unknown;
   /** `Date.now()` when the redirect started; abandoned entries expire. */
   createdAt?: number;
+  /**
+   * The page URL that started the request, with its query, without its
+   * fragment. Its query is restored once the result is consumed. Missing in
+   * entries saved by older SDK versions.
+   */
+  returnHref?: string;
 }
 
 /**
@@ -177,8 +187,13 @@ export function createRequestId(): string {
   return toBase64Url(crypto.getRandomValues(new Uint8Array(24)));
 }
 
-/** The current page URL without its fragment, used as `return_url`. */
+/** `origin + pathname` of this page (no query, no fragment): `return_url`. */
 export function currentReturnUrl(): string {
+  return window.location.origin + window.location.pathname;
+}
+
+/** The current page URL with its query, without its fragment. */
+export function currentPageHref(): string {
   const url = new URL(window.location.href);
   url.hash = "";
   return url.href;
@@ -197,17 +212,31 @@ export function hasRedirectResult(): boolean {
 }
 
 /**
- * Read `#odin_connect=...` from the current URL. When present, the fragment is
- * removed from the address bar (and the history entry) before returning.
+ * Replace the address bar URL (keeping `history.state`) to drop the result
+ * fragment. With `returnHref` (the page that started the request, same origin
+ * and path), its query string is restored too, since `return_url` had none.
  */
-export function consumeRedirectResult(): RedirectResult | null {
-  const value = readFragmentValue();
-  if (!value) return null;
-
+export function clearRedirectFragment(returnHref?: string): void {
   const url = new URL(window.location.href);
   url.hash = "";
+  if (typeof returnHref === "string") {
+    try {
+      const original = new URL(returnHref);
+      if (
+        original.origin === url.origin &&
+        original.pathname === url.pathname
+      ) {
+        url.search = original.search;
+      }
+    } catch {
+      // not a URL: only drop the fragment
+    }
+  }
   window.history.replaceState(window.history.state, "", url.href);
+}
 
+/** Decode a raw `odin_connect` fragment value; null when malformed. */
+export function decodeRedirectResult(value: string): RedirectResult | null {
   try {
     const b64 = value.replace(/-/g, "+").replace(/_/g, "/");
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -249,12 +278,17 @@ export class RedirectClient {
    */
   start<T>(
     url: URL,
-    pending: Omit<PendingRedirect, "state" | "createdAt">,
+    pending: Omit<PendingRedirect, "state" | "createdAt" | "returnHref">,
     state: string
   ): Promise<T> {
     let saved: boolean;
     try {
-      saved = this._pending.save({ ...pending, state, createdAt: Date.now() });
+      saved = this._pending.save({
+        ...pending,
+        state,
+        createdAt: Date.now(),
+        returnHref: currentPageHref(),
+      });
     } catch {
       return Promise.reject(
         new Error("returnState must be JSON-serializable (bigints are allowed)")
@@ -277,17 +311,20 @@ export class RedirectClient {
   }
 
   /**
-   * Consume the URL's redirect result and its pending request. Returns null
-   * when the URL carries no result (and deletes a pending request abandoned
-   * for more than `PENDING_REDIRECT_MAX_AGE_MS`); throws when the result does
-   * not match the pending request (stale, foreign or replayed).
+   * Consume the URL's redirect result and its pending request. The fragment
+   * is removed from the address bar (and the history entry), and when the
+   * result matches, the page's original query string is restored. Returns
+   * null when the URL carries no result (and deletes a pending request
+   * abandoned for more than `PENDING_REDIRECT_MAX_AGE_MS`); throws when the
+   * result does not match the pending request (stale, foreign or replayed).
    */
   consume(): { result: RedirectResult; pending: PendingRedirect } | null {
-    if (!hasRedirectResult()) {
+    const value = readFragmentValue();
+    if (value === null) {
       this._pending.dropIfOlderThan(PENDING_REDIRECT_MAX_AGE_MS);
       return null;
     }
-    const result = consumeRedirectResult();
+    const result = decodeRedirectResult(value);
     const pending = this._pending.take();
     if (
       !result ||
@@ -295,8 +332,10 @@ export class RedirectClient {
       pending.state !== result.state ||
       pending.path !== result.path
     ) {
+      clearRedirectFragment();
       throw new Error("Unexpected OdinConnect redirect result");
     }
+    clearRedirectFragment(pending.returnHref);
     return { result, pending };
   }
 }

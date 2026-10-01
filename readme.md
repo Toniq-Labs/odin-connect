@@ -303,6 +303,8 @@ const odinConnect = new OdinConnect({
 // On page load. After a redirect connect this finishes it (verified with
 // odin-api) and returns the user; otherwise it restores the stored session.
 let user = await odinConnect.restoreSession();
+// Read URL query state (?step=2) only after this: on the return from Odin the
+// SDK puts the page's query string back.
 
 // Optional: only for action results, returnState, or to show why a redirect
 // connect did not connect. Same read as restoreSession(), any order.
@@ -327,13 +329,25 @@ await odinConnect.connect({ requires_delegation: true, targets: ["aaaa-aa"] });
 await user.buy({ token: "2jjj", btcAmount: 10_000_000n });
 ```
 
-- **Register your app before wallet users sign in.** Odin only redirects back
-  to registered apps (exact origin and path) and to `localhost` during
-  development. Ask Odin to register your origin and redirect path; until then
-  Odin refuses redirect-mode requests inside wallet browsers ("This app isn't
-  registered for in-app browser sign-in."). Popups elsewhere are unaffected.
-  Pass `mode: "popup"` to opt out of redirect mode (popups still cannot
-  return a result inside those wallet browsers).
+- **No setup needed.** Redirect mode works for any app, like popups. For
+  delegations, every target canister must still trust your origin
+  (ICRC-28, see above). Pass `mode: "popup"` to opt out of redirect mode
+  (popups still cannot return a result inside those wallet browsers).
+- **Odin returns to the same page path; the SDK restores the query.** The
+  SDK sends `return_url` as your page's origin and path only (no query, no
+  fragment), because Odin refuses return URLs with a query string or
+  fragment, or on another origin. Your page's full URL waits with the
+  one-time nonce in `sessionStorage`, and once the result is read the SDK
+  replaces the address (`history.replaceState`, `history.state` kept) with
+  the original path and query. Read URL query state after
+  `await restoreSession()` (connect) or `await handleRedirectResult()`
+  (actions), not before. A fragment on the original page is not restored.
+- **Security: no open redirects on your origin.** Odin only returns to your
+  origin and never with a query string, which stops `/go?to=...`-style open
+  redirects from forwarding the result. Path-style redirects
+  (`/redirect/https://evil.example`) are not blocked, so an app that uses
+  redirect mode with delegations or API access must not have open-redirect
+  pages on its origin.
 - `mode` can be changed at runtime: `odinConnect.mode = "redirect"`.
 - The result comes back in the URL fragment of the page that started the
   request. It is checked against a one-time nonce kept in `sessionStorage`
@@ -352,8 +366,8 @@ await user.buy({ token: "2jjj", btcAmount: 10_000_000n });
   it.
 - A pending request that never got its result (the user left Odin) is
   deleted after 10 minutes, the next time the app loads without a result.
-- Page state is lost across the round trip. Pass what the page needs to
-  resume as `returnState` (see below).
+- In-memory page state is lost across the round trip (the query string is
+  restored). Pass what the page needs to resume as `returnState` (see below).
 - `requires_api` works in redirect mode: the JWT comes from odin-api, never
   from the URL.
 - `"auto"` redirects when `isInAppBrowser()` is true: a known wallet user
@@ -455,17 +469,19 @@ and odin-api that support `v=2` (already deployed before this release).
 
 Upgrading from 1.6.0 / 1.7.0:
 
-1. Add `await` to `restoreSession()`:
+1. `npm install odin-connect@2`.
+2. Add `await` to `restoreSession()`:
    `const user = await odinConnect.restoreSession();`
-2. For a popup-only app, that is all. Stored sessions from 1.6.0 / 1.7.0
-   still restore.
-3. Ask Odin to register your app's origin and redirect path, so wallet
-   in-app browsers (which now use redirect mode by default) can sign in.
-   Unregistered apps get an "isn't registered" error there instead of a popup
-   that never answers; other browsers are unaffected. To keep popups
-   everywhere, pass `mode: "popup"`.
-4. Optional: call `await handleRedirectResult()` only if you need action
-   results, `returnState`, or to show a rejected/unverified connect.
+   That is all, for popups and for wallet in-app browsers (which now use
+   redirect mode by default) alike; there is no registration step. Stored
+   sessions from 1.6.0 / 1.7.0 still restore. To keep popups everywhere,
+   pass `mode: "popup"`.
+3. Optional: call `await handleRedirectResult()` only if you need action
+   results, `returnState`, or to show a rejected/unverified connect, and pass
+   `returnState` to resume a multi-step flow after a redirect.
+4. If your page reads URL query state on load, read it after
+   `await restoreSession()` / `await handleRedirectResult()`: Odin returns
+   to the page path without the query, and the SDK restores it.
 
 Details:
 

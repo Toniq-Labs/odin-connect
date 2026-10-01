@@ -36,6 +36,47 @@ export async function siwbLikeIdentity(): Promise<DelegationIdentity> {
   return DelegationIdentity.fromDelegation(session, chain);
 }
 
+const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
+
+/**
+ * The Odin page's redirect-mode `return_url` rule (all authorize types): a
+ * valid URL on the referrer's origin (https, or http on loopback), any path,
+ * no query string (not even a bare `?`), no fragment, no credentials.
+ * Returns the URL Odin navigates back to; throws like the page's
+ * invalid-return-URL error otherwise.
+ */
+export function odinReturnTarget(authorizeUrl: URL): URL {
+  const raw = authorizeUrl.searchParams.get("return_url");
+  const referrer = authorizeUrl.searchParams.get("referrer");
+  if (!raw || !referrer) {
+    throw new Error("Invalid return URL: missing return_url or referrer");
+  }
+  let target: URL;
+  let origin: URL;
+  try {
+    target = new URL(raw);
+    origin = new URL(referrer);
+  } catch {
+    throw new Error("Invalid return URL: not a URL");
+  }
+  const secure =
+    origin.protocol === "https:" ||
+    (origin.protocol === "http:" && LOOPBACK_HOSTS.includes(origin.hostname));
+  if (!secure || target.origin !== origin.origin) {
+    throw new Error("Invalid return URL: not the requesting origin");
+  }
+  if (target.search !== "" || raw.includes("?")) {
+    throw new Error("Invalid return URL: query strings are not allowed");
+  }
+  if (target.hash !== "" || raw.includes("#")) {
+    throw new Error("Invalid return URL: fragments are not allowed");
+  }
+  if (target.username || target.password) {
+    throw new Error("Invalid return URL: credentials are not allowed");
+  }
+  return target;
+}
+
 export interface OdinPageOptions {
   /** Odin identity of the user (default: a fresh Ed25519 key). */
   user?: SignIdentity;
@@ -58,6 +99,10 @@ export async function odinConnectMessage(url: URL, opts: OdinPageOptions = {}) {
   const user = opts.user ?? Ed25519KeyIdentity.generate();
   const principal = user.getPrincipal().toText();
   const params = url.searchParams;
+  if (params.has("return_url")) {
+    // redirect mode: the page refuses before authorizing anything
+    odinReturnTarget(url);
+  }
   if (params.has("session_key")) {
     throw new Error("v=2 SDK must not send session_key");
   }

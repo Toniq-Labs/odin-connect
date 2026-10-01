@@ -387,6 +387,8 @@ export class Connect {
    * or to tell a rejected/unverified connect apart from no connect.
    * Resolves null when the URL carries no redirect result; rejects when the
    * result does not match the pending request (stale, foreign or replayed).
+   * Reading the result strips the fragment and restores the page's original
+   * query string (Odin returns without it).
    *
    * A connect result is verified (locally and with odin-api) before it is
    * reported as `"connected"` and persisted like a popup connect; when that
@@ -682,6 +684,9 @@ export class Connect {
    * `lastRedirectResult` tell which; a previously stored session is kept but
    * not returned on that load). An action result in the URL is left for
    * `handleRedirectResult()`. Otherwise rehydrates the stored session.
+   *
+   * Odin returns to the page path without its query string; reading the
+   * result restores it, so read URL query state after this resolves.
    */
   async restoreSession(): Promise<ConnectedUser | null> {
     const fragment = readFragmentValue();

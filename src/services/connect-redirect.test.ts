@@ -7,6 +7,7 @@ import {
   apiAccepts,
   clientSignatureValid,
   odinConnectMessage,
+  odinReturnTarget,
 } from "../../test/odin-page";
 
 const OKX_UA =
@@ -28,7 +29,7 @@ function returnWith(
   message: unknown,
   overrides: Record<string, unknown> = {}
 ) {
-  const back = new URL(url.searchParams.get("return_url")!);
+  const back = odinReturnTarget(url);
   back.hash = `${REDIRECT_RESULT_KEY}=${encode({
     path: url.pathname,
     state: url.searchParams.get("state"),
@@ -68,7 +69,7 @@ describe("Connect redirect mode", () => {
     expect(open).not.toHaveBeenCalled();
     expect(url.pathname).toBe("/authorize/connect");
     expect(url.searchParams.get("return_url")).toBe(
-      `${window.location.origin}/app?x=1`
+      `${window.location.origin}/app`
     );
     expect(url.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(url.searchParams.get("referrer")).toBe(window.location.origin);
@@ -1145,5 +1146,172 @@ describe("restoreSession reads sessions stored by 1.6.0 / 1.7.0", () => {
     );
     expect(await connect.restoreSession()).toBeNull();
     expect(localStorage.getItem(key)).toBeNull();
+  });
+});
+
+describe("query-less return_url", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/migrate?step=2&x=1#top");
+    sessionStorage.clear();
+    localStorage.clear();
+    resetRedirectOutcomes();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function pendingKey(): string {
+    return sessionStorage.key(0)!;
+  }
+
+  it("sends origin + path only, and keeps the full page URL in the pending entry", () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.connect();
+    const url = navigatedUrl(navigate);
+    expect(url.searchParams.get("return_url")).toBe(
+      `${window.location.origin}/migrate`
+    );
+    const pending = JSON.parse(sessionStorage.getItem(pendingKey())!);
+    expect(pending.returnHref).toBe(
+      `${window.location.origin}/migrate?step=2&x=1`
+    );
+  });
+
+  it("restores the query after a redirect connect", async () => {
+    vi.spyOn(OdinApiClient.prototype, "verifyConnect").mockImplementation(
+      apiAccepts()
+    );
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.connect({ requires_delegation: true });
+    const url = navigatedUrl(navigate);
+    returnWith(url, await odinConnectMessage(url));
+    window.history.replaceState({ app: 1 }, "", window.location.href);
+    expect(window.location.search).toBe("");
+
+    const user = await connect.restoreSession();
+    expect(user).not.toBeNull();
+    expect(window.location.pathname).toBe("/migrate");
+    expect(window.location.search).toBe("?step=2&x=1");
+    expect(window.location.hash).toBe("");
+    expect(window.history.state).toEqual({ app: 1 });
+    // a later read comes from the outcome cache and leaves the URL alone
+    expect((await connect.handleRedirectResult())?.status).toBe("connected");
+    expect(window.location.search).toBe("?step=2&x=1");
+  });
+
+  it("restores the query after an action redirect", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n });
+    returnWith(navigatedUrl(navigate), "purchased");
+    expect(window.location.search).toBe("");
+
+    expect(await connect.restoreSession()).toBeNull();
+    // the action result waits for handleRedirectResult()
+    expect(window.location.hash).not.toBe("");
+    expect(await connect.handleRedirectResult()).toEqual({
+      action: "buy",
+      status: "success",
+    });
+    expect(window.location.search).toBe("?step=2&x=1");
+    expect(window.location.hash).toBe("");
+  });
+
+  it("only strips the fragment for a pending entry saved without returnHref", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.odin.sell({ principal: "p", token: "2jjj", tokenAmount: 1n });
+    const old = JSON.parse(sessionStorage.getItem(pendingKey())!);
+    delete old.returnHref;
+    sessionStorage.setItem(pendingKey(), JSON.stringify(old));
+    returnWith(navigatedUrl(navigate), "sold");
+
+    expect(await connect.handleRedirectResult()).toEqual({
+      action: "sell",
+      status: "success",
+    });
+    expect(window.location.pathname).toBe("/migrate");
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("");
+  });
+
+  it("does not restore a query for a mismatched result", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n });
+    returnWith(navigatedUrl(navigate), "purchased", { state: "other" });
+
+    await expect(connect.handleRedirectResult()).rejects.toThrow(
+      "Unexpected OdinConnect redirect result"
+    );
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("");
+  });
+
+  it("does not restore a query from another path", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n });
+    returnWith(navigatedUrl(navigate), "purchased");
+    const key = pendingKey();
+    const pending = JSON.parse(sessionStorage.getItem(key)!);
+    pending.returnHref = `${window.location.origin}/elsewhere?evil=1`;
+    sessionStorage.setItem(key, JSON.stringify(pending));
+
+    expect((await connect.handleRedirectResult())?.status).toBe("success");
+    expect(window.location.pathname).toBe("/migrate");
+    expect(window.location.search).toBe("");
+  });
+});
+
+describe("Odin page return_url rule (stand-in)", () => {
+  const origin = "https://app.example";
+
+  function authorize(returnUrl: string, referrer = origin): URL {
+    const url = new URL("https://odin.fun/authorize/connect");
+    url.searchParams.set("referrer", referrer);
+    url.searchParams.set("return_url", returnUrl);
+    return url;
+  }
+
+  it("accepts any path on the referrer origin", () => {
+    expect(odinReturnTarget(authorize(`${origin}/`)).href).toBe(`${origin}/`);
+    expect(odinReturnTarget(authorize(`${origin}/a/b/c`)).href).toBe(
+      `${origin}/a/b/c`
+    );
+    expect(
+      odinReturnTarget(
+        authorize("http://localhost:5173/app", "http://localhost:5173")
+      ).href
+    ).toBe("http://localhost:5173/app");
+  });
+
+  it.each([
+    [`${origin}/migrate?step=2`, "query"],
+    [`${origin}/migrate?`, "query"],
+    [`${origin}/go?to=https://evil.example`, "query"],
+    [`${origin}/migrate#x`, "fragment"],
+    [`${origin}/migrate#`, "fragment"],
+    ["https://evil.example/migrate", "origin"],
+    ["http://app.example/migrate", "origin"],
+    ["https://user:pw@app.example/migrate", "credentials"],
+    ["not a url", "not a URL"],
+  ])("rejects %s", (returnUrl, reason) => {
+    expect(() => odinReturnTarget(authorize(returnUrl))).toThrow(reason);
+  });
+
+  it("rejects plain http off loopback", () => {
+    expect(() =>
+      odinReturnTarget(authorize("http://app.example/x", "http://app.example"))
+    ).toThrow("origin");
+  });
+
+  it("refuses to answer a connect with a query in return_url", async () => {
+    await expect(
+      odinConnectMessage(authorize(`${origin}/migrate?step=2`))
+    ).rejects.toThrow("query");
   });
 });
