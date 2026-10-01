@@ -3,7 +3,6 @@ import {
   DelegationChain,
   DelegationIdentity,
   Ed25519KeyIdentity,
-  JsonnableDelegationChain,
 } from "@dfinity/identity";
 import { ConnectedUser } from "./connected-user";
 import { Environment, ORIGINS } from "../models/environment";
@@ -15,10 +14,19 @@ import { OdinLang } from "../models/lang";
 import { DEFAULT_LANG, normalizeOdinLang } from "../utils/lang";
 import {
   ConnectMode,
+  createRequestId,
   PendingRedirectStorage,
   RedirectCallOptions,
   RedirectClient,
+  toBase64Url,
 } from "./redirect";
+import { PROTOCOL_VERSION } from "../constants";
+import {
+  checkDelegationChain,
+  checkProof,
+  ConnectResult,
+  ConnectVerificationError,
+} from "./verify-connect";
 
 export interface AppInitOptions {
   name: string;
@@ -45,14 +53,32 @@ export type OdinAction =
   | "create_token";
 
 /**
+ * Extra data Odin returns with an action result. `icrc_approve` (redirect
+ * mode) carries `block_index` (decimal string) and `memo` (hex of
+ * sha256(request_id)); other actions carry nothing today.
+ */
+export type OdinActionDetail = {
+  block_index?: string;
+  memo?: string;
+  [key: string]: unknown;
+};
+
+/**
  * What `handleRedirectResult()` found in the URL after a redirect.
  * `returnState` is whatever was passed as `returnState` to the call that
- * redirected (undefined if none).
+ * redirected (undefined if none). `"unverified"` means Odin's answer could
+ * not be verified (forged, tampered or the API refused it); the user is not
+ * connected and nothing was stored.
  */
 export type OdinRedirectResult<ReturnState = unknown> = (
   | { action: "connect"; status: "connected"; user: ConnectedUser }
   | { action: "connect"; status: "rejected" }
-  | { action: OdinAction; status: "success" | "failed" }
+  | { action: "connect"; status: "unverified"; error: string }
+  | {
+      action: OdinAction;
+      status: "success" | "failed";
+      detail?: OdinActionDetail;
+    }
 ) & { returnState: ReturnState | undefined };
 
 function hashCode(str: string): string {
@@ -76,12 +102,6 @@ interface BaseConnectOptions extends RedirectCallOptions {
   open?: WindowClientSettings;
   // whether to request an auth keys upon connection
   requires_api?: boolean;
-}
-
-interface ConnectResult {
-  principal: string;
-  jwt: string | null;
-  delegationChain?: JsonnableDelegationChain | null;
 }
 
 interface ConnectOptionsWithDelegation extends BaseConnectOptions {
@@ -153,8 +173,10 @@ export class Connect {
     );
   }
 
-  private createUrl(path: string) {
+  private createUrl(path: string, requestId: string = createRequestId()) {
     const url = new URL(`${this.origin}/${path}`);
+    url.searchParams.append("v", PROTOCOL_VERSION);
+    url.searchParams.append("request_id", requestId);
     if (this._appInfo?.name) {
       url.searchParams.append("app_name", this._appInfo.name);
     }
@@ -222,31 +244,36 @@ export class Connect {
         this._window.settings = open;
       }
       const sessionKey = Ed25519KeyIdentity.generate();
+      const requestId = createRequestId();
       const handleMessage = async (event: MessageEvent) => {
         if (
           event.origin === this.origin &&
-          event.data.path === "/authorize/connect"
+          event.data?.path === "/authorize/connect"
         ) {
           window.removeEventListener("message", handleMessage);
           if (event.data.message != "rejected") {
-            // the user accepted the connection
+            // the user accepted the connection: verify before trusting it
             try {
               resolve(
-                this.completeConnection(
+                await this.completeConnection(
                   event.data.message as ConnectResult,
                   sessionKey,
-                  { requires_api, requires_delegation }
+                  { requestId, requires_api, requires_delegation, targets }
                 )
               );
             } catch (error) {
-              reject(new Error("Failed to fetch user data"));
+              reject(
+                error instanceof Error
+                  ? error
+                  : new ConnectVerificationError(String(error))
+              );
             }
           } else {
             reject(new Error("User rejected the connection"));
           }
         }
       };
-      const url = this.createConnectUrl(sessionKey, {
+      const url = this.createConnectUrl(sessionKey, requestId, {
         requires_api,
         requires_delegation,
         targets,
@@ -259,18 +286,22 @@ export class Connect {
 
   private createConnectUrl(
     sessionKey: Ed25519KeyIdentity,
+    requestId: string,
     {
       requires_api,
       requires_delegation,
       targets,
     }: Pick<ConnectOptions, "requires_api" | "requires_delegation" | "targets">
   ) {
-    const url = this.createUrl("authorize/connect");
+    const url = this.createUrl("authorize/connect", requestId);
     url.searchParams.append("requires_api", requires_api ? "1" : "0");
     if (requires_delegation) {
       url.searchParams.append("requires_delegation", "1");
-      const sessionString = btoa(JSON.stringify(sessionKey.toJSON()));
-      url.searchParams.append("session_key", sessionString);
+      // Only the public key: the secret never leaves this SDK.
+      url.searchParams.append(
+        "session_pubkey",
+        toBase64Url(new Uint8Array(sessionKey.getPublicKey().toDer()))
+      );
       url.searchParams.append("targets", targets?.join(",") || "");
     }
     return url;
@@ -282,36 +313,37 @@ export class Connect {
       "requires_api" | "requires_delegation" | "targets" | "returnState"
     >
   ): Promise<ConnectedUser> {
-    if (options.requires_api) {
-      return Promise.reject(
-        new Error("requires_api is not supported in redirect mode")
-      );
-    }
     const sessionKey = Ed25519KeyIdentity.generate();
+    const requestId = createRequestId();
     return this._redirect.start<ConnectedUser>(
-      this.createConnectUrl(sessionKey, options),
+      this.createConnectUrl(sessionKey, requestId, options),
       {
         path: "/authorize/connect",
+        // The secret waits in this tab's sessionStorage; Odin only ever
+        // sees session_pubkey.
         sessionKey: JSON.stringify(sessionKey.toJSON()),
         requires_delegation: Boolean(options.requires_delegation),
+        requires_api: Boolean(options.requires_api),
+        targets: options.targets,
         returnState: options.returnState,
-      }
+      },
+      requestId
     );
   }
 
   /**
    * Read the result of a redirect-mode `connect()` or action after Odin sends
-   * the user back. Call once on page load. Returns null when the URL carries
-   * no redirect result; throws when the result does not match the pending
-   * request (stale, foreign or replayed).
+   * the user back. Call once on page load, before `restoreSession()`.
+   * Resolves null when the URL carries no redirect result; rejects when the
+   * result does not match the pending request (stale, foreign or replayed).
    *
-   * A successful connect is also persisted like a popup connect, and
-   * `restoreSession()` handles connect results itself, so call this first if
-   * you need to tell "rejected" from "not connected" or read action results.
+   * A connect result is verified (locally and with odin-api) before it is
+   * reported as `"connected"` and persisted like a popup connect; when that
+   * fails the status is `"unverified"` and nothing is stored.
    */
-  handleRedirectResult<
+  async handleRedirectResult<
     ReturnState = unknown,
-  >(): OdinRedirectResult<ReturnState> | null {
+  >(): Promise<OdinRedirectResult<ReturnState> | null> {
     const consumed = this._redirect.consume();
     if (!consumed) return null;
     const { result, pending } = consumed;
@@ -321,16 +353,33 @@ export class Connect {
       if (result.message === "rejected" || !pending.sessionKey) {
         return { action: "connect", status: "rejected", returnState };
       }
-      const user = this.completeConnection(
-        result.message as ConnectResult,
-        Ed25519KeyIdentity.fromJSON(pending.sessionKey),
-        {
-          requires_api: false,
-          requires_delegation: pending.requires_delegation,
-        }
-      );
-      return { action: "connect", status: "connected", user, returnState };
+      try {
+        const user = await this.completeConnection(
+          result.message as ConnectResult,
+          Ed25519KeyIdentity.fromJSON(pending.sessionKey),
+          {
+            requestId: pending.state,
+            requires_api: pending.requires_api,
+            requires_delegation: pending.requires_delegation,
+            targets: pending.targets,
+          }
+        );
+        return { action: "connect", status: "connected", user, returnState };
+      } catch (error) {
+        return {
+          action: "connect",
+          status: "unverified",
+          error: error instanceof Error ? error.message : String(error),
+          returnState,
+        };
+      }
     }
+    const detail =
+      result.detail !== null &&
+      typeof result.detail === "object" &&
+      !Array.isArray(result.detail)
+        ? (result.detail as OdinActionDetail)
+        : undefined;
     return {
       action: action as OdinAction,
       status:
@@ -338,55 +387,94 @@ export class Connect {
         result.message === pending.successMessage
           ? "success"
           : "failed",
+      ...(detail ? { detail } : {}),
       returnState,
     };
   }
 
-  private completeConnection(
-    { principal, jwt: jwtToken, delegationChain }: ConnectResult,
+  /**
+   * Verify a connect result and only then build, persist and return the
+   * user. Throws a `ConnectVerificationError` (or the API's error) on any
+   * mismatch; nothing is stored and no API key is set in that case.
+   */
+  private async completeConnection(
+    message: ConnectResult,
     sessionKey: Ed25519KeyIdentity,
     {
+      requestId,
       requires_api,
       requires_delegation,
-    }: { requires_api?: boolean; requires_delegation?: boolean }
-  ): ConnectedUser {
-    let connectedUser: ConnectedUser;
-    if (requires_api) {
-      // issue a api key
-      // only using JWT for now, it will change in the real implementation
-      this._api.apiKey = jwtToken;
+      targets,
+    }: {
+      requestId: string;
+      requires_api?: boolean;
+      requires_delegation?: boolean;
+      targets?: readonly string[];
     }
+  ): Promise<ConnectedUser> {
+    if (!message || typeof message.principal !== "string") {
+      throw new ConnectVerificationError("the result has no principal");
+    }
+    const { principal, proof } = message;
+    const audience = window.location.origin;
+    checkProof(proof, {
+      principal,
+      nonce: requestId,
+      audience,
+      requires_api: Boolean(requires_api),
+    });
 
+    let chain: DelegationChain | null = null;
     if (requires_delegation) {
-      if (!delegationChain) {
-        throw new Error("Delegation chain is missing");
-      }
-      const identity = DelegationIdentity.fromDelegation(
-        sessionKey,
-        DelegationChain.fromJSON(delegationChain)
-      );
-      connectedUser = new ConnectedUser(
+      chain = checkDelegationChain(message.delegationChain, {
         principal,
-        identity,
-        this.api,
-        this._odin
-      );
-    } else {
-      connectedUser = new ConnectedUser(principal, null, this.api, this._odin);
+        sessionPublicKey: new Uint8Array(sessionKey.getPublicKey().toDer()),
+        targets: targets ?? [],
+      });
     }
 
+    let verified;
+    try {
+      verified = await this._api.verifyConnect({
+        payload: proof!.payload,
+        signature: proof!.signature,
+        delegation: proof!.delegation ?? null,
+        publicKey: proof!.publicKey ?? null,
+        audience,
+        nonce: requestId,
+        issue_jwt: Boolean(requires_api),
+      });
+    } catch (error) {
+      throw new ConnectVerificationError(
+        `odin-api refused the proof (${
+          error instanceof Error ? error.message : String(error)
+        })`
+      );
+    }
+    if (verified?.principal !== principal) {
+      throw new ConnectVerificationError(
+        "odin-api verified a different principal"
+      );
+    }
+    // The JWT only ever comes from odin-api, never from the Odin page.
+    const jwt =
+      requires_api && typeof verified.jwt === "string" ? verified.jwt : null;
+
+    const identity = chain
+      ? DelegationIdentity.fromDelegation(sessionKey, chain)
+      : null;
+    if (requires_api) {
+      this._api.apiKey = jwt;
+    }
     if (requires_api || requires_delegation) {
       this._storage.save({
         principal,
         sessionKey: JSON.stringify(sessionKey.toJSON()),
-        delegationChain: delegationChain
-          ? JSON.stringify(delegationChain)
-          : null,
-        jwt: jwtToken || null,
+        delegationChain: chain ? JSON.stringify(chain.toJSON()) : null,
+        jwt,
       });
     }
-
-    return connectedUser;
+    return new ConnectedUser(principal, identity, this.api, this._odin);
   }
 
   get api() {
@@ -401,22 +489,11 @@ export class Connect {
     return this._appInfo?.env || "prod";
   }
 
+  /**
+   * Rehydrate the stored session. Does not read redirect results: call
+   * `await handleRedirectResult()` first on page load (since 2.0.0).
+   */
   restoreSession(): ConnectedUser | null {
-    // Finish a redirect-mode connect(). Action results are left in the URL
-    // for the app's own handleRedirectResult() call.
-    if (this._redirect.pendingPath() === "/authorize/connect") {
-      try {
-        const redirected = this.handleRedirectResult();
-        if (
-          redirected?.action === "connect" &&
-          redirected.status === "connected"
-        ) {
-          return redirected.user;
-        }
-      } catch {
-        // Mismatched redirect result: fall back to the stored session.
-      }
-    }
     try {
       const data = this._storage.load();
       if (!data) return null;

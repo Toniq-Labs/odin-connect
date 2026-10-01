@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DelegationChain, Ed25519KeyIdentity } from "@dfinity/identity";
 import { Connect } from "./connect";
 import { REDIRECT_RESULT_KEY } from "./redirect";
+import { apiAccepts, odinConnectMessage } from "../../test/odin-page";
 
 const OKX_UA =
   "Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 Mobile/15E148 OKApp/(OKEx/6.90.0)";
@@ -17,7 +17,11 @@ function encode(result: unknown): string {
 }
 
 /** Simulate Odin navigating back to return_url with a result fragment. */
-function returnWith(url: URL, message: unknown, overrides = {}) {
+function returnWith(
+  url: URL,
+  message: unknown,
+  overrides: Record<string, unknown> = {}
+) {
   const back = new URL(url.searchParams.get("return_url")!);
   back.hash = `${REDIRECT_RESULT_KEY}=${encode({
     path: url.pathname,
@@ -86,56 +90,168 @@ describe("Connect redirect mode", () => {
     expect(navigate).toHaveBeenCalledOnce();
   });
 
-  it("rejects requires_api in redirect mode", async () => {
+  it("sends state and request_id as the same id, with v=2", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
-    await expect(connect.connect({ requires_api: true })).rejects.toThrow(
-      "requires_api is not supported in redirect mode"
+    const navigate = spyNavigate(connect);
+    void connect.connect({ requires_api: true });
+    const url = navigatedUrl(navigate);
+    expect(url.searchParams.get("v")).toBe("2");
+    expect(url.searchParams.get("request_id")).toBe(
+      url.searchParams.get("state")
     );
+    expect(url.searchParams.get("requires_api")).toBe("1");
   });
 
-  it("completes a delegation round trip via restoreSession", async () => {
+  it("completes a delegation round trip, then restoreSession reads storage", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(apiAccepts());
     const navigate = spyNavigate(connect);
     void connect.connect({
       requires_delegation: true,
       targets: ["74iy7-xqaaa-aaaaf-qagra-cai"],
+      returnState: { from: "landing" },
     });
     const url = navigatedUrl(navigate);
+    expect(url.searchParams.has("session_key")).toBe(false);
+    expect(url.searchParams.get("session_pubkey")).toMatch(/^[A-Za-z0-9_-]+$/);
+    // the secret only sits in this tab's sessionStorage
+    const pending = JSON.parse(sessionStorage.getItem(sessionStorage.key(0)!)!);
+    const secretHex = JSON.parse(pending.sessionKey)[1];
+    expect(url.href).not.toContain(secretHex);
 
-    // What Odin does: delegate from the user's identity to the session key.
-    const sessionKey = Ed25519KeyIdentity.fromJSON(
-      atob(url.searchParams.get("session_key")!)
-    );
-    const user = Ed25519KeyIdentity.generate();
-    const chain = await DelegationChain.create(
-      user,
-      sessionKey.getPublicKey(),
-      new Date(Date.now() + 60_000)
-    );
-    returnWith(url, {
-      principal: user.getPrincipal().toText(),
-      jwt: null,
-      delegationChain: chain.toJSON(),
+    const message = await odinConnectMessage(url);
+    returnWith(url, message);
+
+    // restoreSession no longer consumes redirect results
+    expect(connect.restoreSession()).toBeNull();
+    expect(window.location.hash).not.toBe("");
+
+    const result = await connect.handleRedirectResult();
+    expect(result?.action).toBe("connect");
+    expect(result?.status).toBe("connected");
+    expect(result?.returnState).toEqual({ from: "landing" });
+    expect(verify).toHaveBeenCalledWith({
+      ...message.proof,
+      audience: window.location.origin,
+      nonce: url.searchParams.get("request_id"),
+      issue_jwt: false,
     });
-
-    const connected = connect.restoreSession();
-    expect(connected?.principal).toBe(user.getPrincipal().toText());
-    expect(connected?.getIdentity()?.getPrincipal().toText()).toBe(
-      user.getPrincipal().toText()
-    );
+    if (result?.action === "connect" && result.status === "connected") {
+      expect(result.user.principal).toBe(message.principal);
+      expect(result.user.getIdentity()?.getPrincipal().toText()).toBe(
+        message.principal
+      );
+    }
     // fragment scrubbed, pending request consumed, session persisted
     expect(window.location.hash).toBe("");
     expect(window.location.search).toBe("?x=1");
     expect(sessionStorage.length).toBe(0);
     expect(connect.isSessionValid()).toBe(true);
+    expect(connect.restoreSession()?.principal).toBe(message.principal);
   });
 
-  it("reports a rejected connect and consumes the pending request", () => {
+  it("gets the JWT for requires_api from odin-api only", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    vi.spyOn(connect.api, "verifyConnect").mockImplementation(apiAccepts());
+    const navigate = spyNavigate(connect);
+    void connect.connect({ requires_api: true });
+    const url = navigatedUrl(navigate);
+    const message = await odinConnectMessage(url);
+    returnWith(url, { ...message, jwt: "jwt-from-the-page" });
+
+    const result = await connect.handleRedirectResult();
+    expect(result?.status).toBe("connected");
+    expect(connect.api.apiKey).toBe("jwt-from-api");
+    expect(JSON.stringify(localStorage)).not.toContain("jwt-from-the-page");
+  });
+
+  it("reports unverified when odin-api refuses the proof", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    vi.spyOn(connect.api, "verifyConnect").mockRejectedValue(
+      new Error("Invalid signature")
+    );
+    const navigate = spyNavigate(connect);
+    void connect.connect({
+      requires_api: true,
+      requires_delegation: true,
+      targets: [],
+      returnState: { step: 1 },
+    });
+    const url = navigatedUrl(navigate);
+    returnWith(url, await odinConnectMessage(url));
+
+    const result = await connect.handleRedirectResult();
+    expect(result).toEqual({
+      action: "connect",
+      status: "unverified",
+      error: expect.stringContaining("Invalid signature"),
+      returnState: { step: 1 },
+    });
+    expect(localStorage.length).toBe(0);
+    expect(connect.isSessionValid()).toBe(false);
+    expect(connect.api.apiKey).toBeNull();
+  });
+
+  it("reports unverified when odin-api verifies another principal", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    vi.spyOn(connect.api, "verifyConnect").mockResolvedValue({
+      principal: "aaaaa-aa",
+      username: null,
+      jwt: "jwt",
+    });
+    const navigate = spyNavigate(connect);
+    void connect.connect({ requires_api: true });
+    const url = navigatedUrl(navigate);
+    returnWith(url, await odinConnectMessage(url));
+
+    const result = await connect.handleRedirectResult();
+    expect(result?.status).toBe("unverified");
+    expect(localStorage.length).toBe(0);
+    expect(connect.api.apiKey).toBeNull();
+  });
+
+  it("reports unverified for a forged principal without calling the API", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const navigate = spyNavigate(connect);
+    void connect.connect();
+    const url = navigatedUrl(navigate);
+    const victim =
+      "veyov-kjgrf-hke6v-6d63i-sdwae-oldgg-huau6-ke5g3-rllp2-5jhca-uqe";
+    returnWith(url, await odinConnectMessage(url, { principal: victim }));
+
+    const result = await connect.handleRedirectResult();
+    expect(result?.status).toBe("unverified");
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it("reports unverified for a hand-crafted result with no proof", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const verify = vi.spyOn(connect.api, "verifyConnect");
+    const navigate = spyNavigate(connect);
+    void connect.connect();
+    returnWith(navigatedUrl(navigate), { principal: "aaaaa-aa", jwt: "x" });
+
+    const result = await connect.handleRedirectResult();
+    expect(result).toMatchObject({
+      action: "connect",
+      status: "unverified",
+      error: expect.stringContaining("no identity proof"),
+    });
+    expect(verify).not.toHaveBeenCalled();
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("reports a rejected connect and consumes the pending request", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.connect();
     returnWith(navigatedUrl(navigate), "rejected");
-    expect(connect.handleRedirectResult()).toEqual({
+    expect(await connect.handleRedirectResult()).toEqual({
       action: "connect",
       status: "rejected",
     });
@@ -143,7 +259,7 @@ describe("Connect redirect mode", () => {
     expect(window.location.hash).toBe("");
   });
 
-  it("refuses a result whose state does not match", () => {
+  it("refuses a result whose state does not match", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.connect();
@@ -152,14 +268,14 @@ describe("Connect redirect mode", () => {
       { principal: "aaaaa-aa", jwt: null },
       { state: "someone-elses-state-value-000000" }
     );
-    expect(() => connect.handleRedirectResult()).toThrow(
+    await expect(connect.handleRedirectResult()).rejects.toThrow(
       "Unexpected OdinConnect redirect result"
     );
   });
 
-  it("returns null when the URL has no redirect result", () => {
+  it("returns null when the URL has no redirect result", async () => {
     const connect = new Connect({ name: "test" });
-    expect(connect.handleRedirectResult()).toBeNull();
+    expect(await connect.handleRedirectResult()).toBeNull();
   });
 });
 
@@ -174,7 +290,7 @@ describe("Action redirect mode", () => {
     vi.restoreAllMocks();
   });
 
-  it("redirects every action and reports success", () => {
+  it("redirects every action and reports success", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     const navigate = spyNavigate(connect);
@@ -186,13 +302,13 @@ describe("Action redirect mode", () => {
     expect(url.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{32}$/);
 
     returnWith(url, "purchased");
-    expect(connect.handleRedirectResult()).toEqual({
+    expect(await connect.handleRedirectResult()).toEqual({
       action: "buy",
       status: "success",
     });
   });
 
-  it("reports a rejected action as failed", () => {
+  it("reports a rejected action as failed", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.odin.icrcApprove({
@@ -202,13 +318,50 @@ describe("Action redirect mode", () => {
       amount: 1n,
     });
     returnWith(navigatedUrl(navigate), "rejected");
-    expect(connect.handleRedirectResult()).toEqual({
+    expect(await connect.handleRedirectResult()).toEqual({
       action: "icrc_approve",
       status: "failed",
     });
   });
 
-  it("restoreSession leaves action results for handleRedirectResult", () => {
+  it("exposes the icrc_approve block index from the result detail", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.odin.icrcApprove({
+      principal: "p",
+      token: "2jjj",
+      spender: "aaaaa-aa",
+      amount: 1n,
+      returnState: { step: "approve" },
+    });
+    const url = navigatedUrl(navigate);
+    expect(url.searchParams.get("v")).toBe("2");
+    expect(url.searchParams.get("request_id")).toBe(
+      url.searchParams.get("state")
+    );
+    const detail = {
+      block_index: "123456789012345678901",
+      memo: "ab".repeat(32),
+    };
+    returnWith(url, "approved", { detail });
+    expect(await connect.handleRedirectResult()).toEqual({
+      action: "icrc_approve",
+      status: "success",
+      detail,
+      returnState: { step: "approve" },
+    });
+  });
+
+  it("omits detail when Odin sends none or a non-object", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n });
+    returnWith(navigatedUrl(navigate), "purchased", { detail: "junk" });
+    const result = await connect.handleRedirectResult();
+    expect(result).not.toHaveProperty("detail");
+  });
+
+  it("restoreSession leaves action results for handleRedirectResult", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.odin.sell({ principal: "p", token: "2jjj", tokenAmount: 1n });
@@ -216,7 +369,7 @@ describe("Action redirect mode", () => {
 
     expect(connect.restoreSession()).toBeNull();
     expect(window.location.hash).not.toBe("");
-    expect(connect.handleRedirectResult()).toEqual({
+    expect(await connect.handleRedirectResult()).toEqual({
       action: "sell",
       status: "success",
     });
@@ -234,7 +387,7 @@ describe("returnState", () => {
     vi.restoreAllMocks();
   });
 
-  it("hands action returnState back after the redirect, keeping bigints", () => {
+  it("hands action returnState back after the redirect, keeping bigints", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     const returnState = { step: "commit", token: "2jjj", amount: 12345n };
@@ -251,7 +404,7 @@ describe("returnState", () => {
     expect(url.href).not.toContain("commit");
 
     returnWith(url, "approved");
-    const result = connect.handleRedirectResult<typeof returnState>();
+    const result = await connect.handleRedirectResult<typeof returnState>();
     expect(result).toEqual({
       action: "icrc_approve",
       status: "success",
@@ -260,7 +413,7 @@ describe("returnState", () => {
     expect(typeof result?.returnState?.amount).toBe("bigint");
   });
 
-  it("returns returnState on a rejected action too", () => {
+  it("returns returnState on a rejected action too", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.odin.transfer({
@@ -271,31 +424,31 @@ describe("returnState", () => {
       returnState: { step: "transfer" },
     });
     returnWith(navigatedUrl(navigate), "rejected");
-    expect(connect.handleRedirectResult()).toEqual({
+    expect(await connect.handleRedirectResult()).toEqual({
       action: "transfer",
       status: "failed",
       returnState: { step: "transfer" },
     });
   });
 
-  it("hands connect returnState back", () => {
+  it("hands connect returnState back", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.connect({ returnState: { from: "landing" } });
     returnWith(navigatedUrl(navigate), "rejected");
-    expect(connect.handleRedirectResult()).toEqual({
+    expect(await connect.handleRedirectResult()).toEqual({
       action: "connect",
       status: "rejected",
       returnState: { from: "landing" },
     });
   });
 
-  it("is undefined when not provided", () => {
+  it("is undefined when not provided", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
     void connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n });
     returnWith(navigatedUrl(navigate), "purchased");
-    expect(connect.handleRedirectResult()?.returnState).toBeUndefined();
+    expect((await connect.handleRedirectResult())?.returnState).toBeUndefined();
   });
 
   it("rejects a non-serializable returnState before navigating", async () => {

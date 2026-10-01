@@ -38,24 +38,34 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     });
     setOdinConnect(odin);
 
-    // Finish a redirect-mode connect() or action first, so its outcome
-    // (including a rejection) is visible
-    let restoredUser: OdinConnectedUser | null = null;
-    try {
-      const result = odin.handleRedirectResult();
-      setRedirectResult(result);
-      if (result?.action === "connect" && result.status === "connected") {
-        restoredUser = result.user;
+    let cancelled = false;
+    const init = async () => {
+      // Finish a redirect-mode connect() or action first (async since 2.0.0:
+      // connect results are verified with odin-api), so its outcome,
+      // including a rejection or an unverified result, is visible
+      let restoredUser: OdinConnectedUser | null = null;
+      try {
+        const result = await odin.handleRedirectResult();
+        if (cancelled) return;
+        setRedirectResult(result);
+        if (result?.action === "connect" && result.status === "connected") {
+          restoredUser = result.user;
+        }
+      } catch (error) {
+        console.error("Redirect result failed:", error);
       }
-    } catch (error) {
-      console.error("Redirect result failed:", error);
-    }
+      if (cancelled) return;
 
-    // Otherwise attempt to restore a previous session from localStorage
-    restoredUser ??= odin.restoreSession();
-    if (restoredUser) {
-      setConnectedUser(restoredUser);
-    }
+      // Otherwise attempt to restore a previous session from localStorage
+      restoredUser ??= odin.restoreSession();
+      if (restoredUser) {
+        setConnectedUser(restoredUser);
+      }
+    };
+    void init();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const setLang = useCallback(

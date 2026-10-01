@@ -31,6 +31,26 @@ export type PaginatedResponse<T> = {
   limit: number;
 };
 
+/** Identity proof signed by the Odin authorize page (see `/connect/verify`). */
+export type ConnectProof = {
+  payload: string;
+  signature: string;
+  delegation: string | null;
+  publicKey: string | null;
+};
+
+export type VerifyConnectRequest = ConnectProof & {
+  audience: string;
+  nonce: string;
+  issue_jwt: boolean;
+};
+
+export type VerifyConnectResponse = {
+  principal: string;
+  username: string | null;
+  jwt: string | null;
+};
+
 export class OdinApiClient {
   private _apiKey: string | null = null;
   private _httpClient: HttpClient;
@@ -247,6 +267,33 @@ export class OdinApiClient {
     return this._httpClient.get<{ followers: number; following: number }>(
       `${this.BASE_URL}/user/${principal}/stats`
     );
+  }
+
+  /**
+   * Verify a connect identity proof with odin-api. Resolves with the verified
+   * principal (and a JWT when `issue_jwt`); rejects with the API's message on
+   * any non-2xx response.
+   */
+  async verifyConnect(
+    body: VerifyConnectRequest
+  ): Promise<VerifyConnectResponse> {
+    try {
+      return await this._httpClient.post<
+        VerifyConnectResponse,
+        VerifyConnectRequest
+      >(`${this.BASE_URL}/connect/verify`, body);
+    } catch (error) {
+      if (error instanceof Error && error.name === "AxiosError") {
+        const axiosError = error as AxiosError<{ message?: unknown }>;
+        const message = axiosError.response?.data?.message;
+        throw new Error(
+          typeof message === "string" && message ? message : axiosError.message
+        );
+      }
+      throw error instanceof Error
+        ? error
+        : new Error("Connect verification failed");
+    }
   }
 
   set apiKey(key: string | null) {

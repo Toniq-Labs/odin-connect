@@ -1,8 +1,13 @@
+import { PROTOCOL_VERSION } from "../constants";
 import { createTokenValidators } from "../utils";
 import { DEFAULT_LANG } from "../utils/lang";
 import { OdinApiClient } from "./api";
 import { AppInitOptions, Connect } from "./connect";
-import { RedirectCallOptions, RedirectClient } from "./redirect";
+import {
+  createRequestId,
+  RedirectCallOptions,
+  RedirectClient,
+} from "./redirect";
 import { WindowClient } from "./window";
 
 export interface SellOptions extends RedirectCallOptions {
@@ -89,8 +94,11 @@ export class OdinCanisterClient {
     return this._appInfo;
   }
 
-  private createUrl(path: string) {
+  /** Authorize URL with the protocol flag and a fresh `request_id`. */
+  private createUrl(path: string, requestId: string = createRequestId()) {
     const url = new URL(`${this.origin}/${path}`);
+    url.searchParams.append("v", PROTOCOL_VERSION);
+    url.searchParams.append("request_id", requestId);
     if (this._appInfo?.name) {
       url.searchParams.append("app_name", this._appInfo.name);
     }
@@ -111,29 +119,34 @@ export class OdinCanisterClient {
     odinPath: string;
     receivedMessageFromOrigin: string | ((message: string) => boolean);
     resolve: {
-      success: (message: MessageType) => ResolveType;
+      success: (message: MessageType, detail: unknown) => ResolveType;
       failure: string;
       close: string;
       didnotopen?: string;
     };
   }) {
+    const requestId = createRequestId();
     if (this._redirect?.useRedirect) {
       // Same-tab round trip; the promise never settles. The app reads the
       // outcome with OdinConnect.handleRedirectResult() on its next load.
-      const url = this.createUrl(odinPath);
+      const url = this.createUrl(odinPath, requestId);
       for (const key in params) {
         if (params[key]) {
           url.searchParams.append(key, params[key]);
         }
       }
-      return this._redirect.start<ResolveType>(url, {
-        path: "/" + odinPath,
-        successMessage:
-          typeof receivedMessageFromOrigin === "string"
-            ? receivedMessageFromOrigin
-            : undefined,
-        returnState,
-      });
+      return this._redirect.start<ResolveType>(
+        url,
+        {
+          path: "/" + odinPath,
+          successMessage:
+            typeof receivedMessageFromOrigin === "string"
+              ? receivedMessageFromOrigin
+              : undefined,
+          returnState,
+        },
+        requestId
+      );
     }
     return new Promise<ResolveType>((resolve, reject) => {
       const handleMessage = async (event: MessageEvent) => {
@@ -147,13 +160,18 @@ export class OdinCanisterClient {
               ? receivedMessageFromOrigin(event.data.message)
               : receivedMessageFromOrigin === event.data.message
           ) {
-            resolve(resolveMessages.success(event.data.message as MessageType));
+            resolve(
+              resolveMessages.success(
+                event.data.message as MessageType,
+                event.data.detail
+              )
+            );
           } else {
             reject(new Error(resolveMessages.failure));
           }
         }
       };
-      const url = this.createUrl(odinPath);
+      const url = this.createUrl(odinPath, requestId);
       for (const key in params) {
         // exclude undefined params
         if (params[key]) {

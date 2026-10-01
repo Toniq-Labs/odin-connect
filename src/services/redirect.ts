@@ -2,8 +2,9 @@
  * Redirect-mode plumbing shared by `connect()` and every authorize action.
  *
  * Instead of a popup, the SDK navigates the current tab to
- * `/authorize/<type>?...&return_url=<this page>&state=<nonce>`. Odin navigates
- * back to `return_url#odin_connect=<base64url({ path, message, state })>`.
+ * `/authorize/<type>?...&return_url=<this page>&state=<id>&request_id=<id>`
+ * (same id twice). Odin navigates back to
+ * `return_url#odin_connect=<base64url({ path, message, detail?, state })>`.
  * The pending request (nonce, path, and for connect the session key) waits in
  * `sessionStorage`, which survives the round trip in the same tab and is
  * single-use.
@@ -31,10 +32,14 @@ export interface PendingRedirect {
   path: string;
   /** Action message that means success (e.g. `"purchased"`). */
   successMessage?: string;
-  /** connect only */
+  /** connect only: the session key's JSON (never leaves this browser). */
   sessionKey?: string;
   /** connect only */
   requires_delegation?: boolean;
+  /** connect only */
+  requires_api?: boolean;
+  /** connect only: canister targets the delegation may be scoped to. */
+  targets?: string[];
   /** App data handed back by `handleRedirectResult()` (redirect mode only). */
   returnState?: unknown;
 }
@@ -73,6 +78,8 @@ function parsePending(raw: string): unknown {
 export interface RedirectResult {
   path: string;
   message: unknown;
+  /** Extra result data (e.g. `{ block_index, memo }` for icrc_approve). */
+  detail?: unknown;
   state: string;
 }
 
@@ -127,7 +134,8 @@ export class PendingRedirectStorage {
   }
 }
 
-function toBase64Url(bytes: Uint8Array): string {
+/** base64url without padding. */
+export function toBase64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);
@@ -138,8 +146,11 @@ function toBase64Url(bytes: Uint8Array): string {
     .replace(/=+$/, "");
 }
 
-/** 32-char url-safe nonce (24 random bytes). */
-export function createState(): string {
+/**
+ * 32-char url-safe nonce (24 random bytes). Used as the `request_id` of every
+ * authorize request, and as `state` in redirect mode.
+ */
+export function createRequestId(): string {
   return toBase64Url(crypto.getRandomValues(new Uint8Array(24)));
 }
 
@@ -208,12 +219,16 @@ export class RedirectClient {
 
   /**
    * Save the pending request, then navigate this tab to `url` with
-   * `return_url` + `state`. The returned promise never settles (the page
-   * unloads) unless sessionStorage is unusable, in which case it rejects
-   * before navigating.
+   * `return_url` + `state`. `state` is the request's `request_id` (already on
+   * `url`), so Odin can sign it as the nonce. The returned promise never
+   * settles (the page unloads) unless sessionStorage is unusable, in which
+   * case it rejects before navigating.
    */
-  start<T>(url: URL, pending: Omit<PendingRedirect, "state">): Promise<T> {
-    const state = createState();
+  start<T>(
+    url: URL,
+    pending: Omit<PendingRedirect, "state">,
+    state: string
+  ): Promise<T> {
     let saved: boolean;
     try {
       saved = this._pending.save({ ...pending, state });
@@ -231,11 +246,6 @@ export class RedirectClient {
     url.searchParams.append("state", state);
     this._window.navigate(url);
     return new Promise<T>(() => {});
-  }
-
-  /** Path of the pending request when the URL carries its result. */
-  pendingPath(): string | null {
-    return hasRedirectResult() ? (this._pending.peek()?.path ?? null) : null;
   }
 
   /**

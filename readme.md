@@ -12,7 +12,9 @@ A TypeScript SDK for integrating with the [Odin](https://odin.fun) decentralized
   - [API Request Flow](#api-request-flow)
 - [Getting Started](#getting-started)
 - [Authentication](#authentication)
+  - [Verified connect](#verified-connect)
 - [Session Restoration](#session-restoration)
+- [Migrating to 2.0.0](#migrating-to-200)
 - [Connected User Operations](#connected-user-operations)
   - [Fetching User Data](#fetching-user-data)
   - [Trading](#trading)
@@ -78,7 +80,7 @@ graph TB
 
 ### Authentication Flow
 
-When your app calls `connect()`, a popup opens to the Odin frontend where the user signs in. On success, user credentials are passed back to your app via `postMessage`.
+When your app calls `connect()`, a popup opens to the Odin frontend where the user signs in. On success, Odin posts back the principal, a delegation chain (if requested) and a signed identity proof; the SDK verifies the proof with odin-api before it returns a user (see [Verified connect](#verified-connect)).
 
 ```mermaid
 sequenceDiagram
@@ -87,11 +89,16 @@ sequenceDiagram
     participant Popup as Odin Frontend (Popup)
     participant User as User
 
+    participant API as odin-api
+
     App->>SDK: odinConnect.connect(options)
-    SDK->>Popup: window.open(odin.fun/authorize/connect?...)
+    SDK->>Popup: window.open(odin.fun/authorize/connect?v=2&request_id&session_pubkey?...)
     Popup->>User: Show sign-in UI
     User->>Popup: Authenticates
-    Popup->>SDK: postMessage({ principal, jwt, delegationChain? })
+    Popup->>SDK: postMessage({ principal, delegationChain?, proof })
+    SDK->>SDK: Check proof nonce/origin/principal and the delegation chain
+    SDK->>API: POST /connect/verify (proof, audience, nonce, issue_jwt)
+    API->>SDK: { principal, username, jwt? }
     SDK->>SDK: Create ConnectedUser instance
     SDK->>SDK: Persist session to localStorage
     SDK->>App: Returns ConnectedUser
@@ -101,7 +108,7 @@ sequenceDiagram
 
 | Option | What You Get |
 |--------|-------------|
-| `requires_api: true` | A JWT token for authenticated API calls (image uploads, etc.) |
+| `requires_api: true` | A JWT for authenticated API calls (image uploads, etc.), issued by odin-api after verification |
 | `requires_delegation: true` | A `DelegationIdentity` for direct canister calls |
 | Neither | Basic connection with user's principal |
 
@@ -128,6 +135,12 @@ sequenceDiagram
 ```
 
 If the user rejects the transaction, the popup sends `"rejected"` and the promise resolves to `false`.
+
+Every authorize URL carries `v=2` and a fresh, random `request_id`. For
+`icrcApprove()`, Odin sets the ICRC-2 memo to `sha256(request_id)`; in
+redirect mode the result exposes the ledger block index as
+`result.detail.block_index` (decimal string) and `result.detail.memo` (hex).
+The popup `icrcApprove()` still resolves `true`.
 
 ### API Request Flow
 
@@ -228,6 +241,32 @@ const identity = user.getIdentity();
 >
 > **Failure mode:** if any target does not list your origin (or does not implement ICRC-28), the authorize popup silently hides the action — no delegation is issued and no error is surfaced to your app. Ensure each target canister declares your origin before requesting `requires_delegation: true`.
 
+### Verified connect
+
+Since 2.0.0 a connect result is never taken on trust. A forged "connected as
+X" (devtools, a crafted URL fragment) is rejected:
+
+1. The session key is generated in your page and **only its public key** is
+   sent to Odin (`session_pubkey`). The secret never leaves the SDK.
+2. Odin signs an identity proof with the user's Odin identity, bound to your
+   origin (`aud`) and to this request (`request_id` nonce).
+3. With `requires_delegation`, the SDK checks the chain locally: not expired,
+   issued to its own session key, rooted at the reported principal, and only
+   scoped to the `targets` you asked for.
+4. The SDK posts the proof to odin-api `POST /connect/verify` (on the same
+   base URL as the other API calls) with `audience: window.location.origin`,
+   `nonce: request_id` and `issue_jwt: requires_api`. odin-api verifies the
+   signature (including Internet Identity canister signatures), rejects
+   replays and returns `{ principal, username, jwt }`. The principal must
+   match.
+5. Only then is the user returned and persisted. With `requires_api`, the JWT
+   comes from that API response; it never travels in a URL or `postMessage`.
+
+If any step fails, popup `connect()` rejects with an
+`OdinConnectVerificationError` ("OdinConnect could not verify the
+connection: ...") and redirect mode reports
+`{ action: "connect", status: "unverified", error }`. Nothing is stored.
+
 ### Wallet in-app browsers (redirect mode)
 
 Some wallet in-app browsers (OKX) open `window.open` targets as a detached
@@ -243,19 +282,23 @@ const odinConnect = new OdinConnect({
 });
 
 // On page load: read the outcome of the redirect this load returned from.
+// Async: a connect result is verified with odin-api first.
 try {
-  const result = odinConnect.handleRedirectResult();
+  const result = await odinConnect.handleRedirectResult();
   if (result?.action === "connect" && result.status === "connected") {
     user = result.user;
+  } else if (result?.action === "connect" && result.status === "unverified") {
+    // Odin's answer could not be verified (result.error). Not connected.
   } else if (result?.action === "connect") {
     // Rejected. Show that, and do NOT call connect() automatically on this
     // load, or a user who taps Reject is sent straight back to Odin.
   } else if (result) {
-    // An action: { action: "buy", status: "success" | "failed" }
+    // An action: { action: "buy", status: "success" | "failed", detail? }
   }
 } catch (error) {
   // Stale or foreign result; ignore.
 }
+// Then the stored session (restoreSession() does not read redirect results).
 user ??= odinConnect.restoreSession();
 
 // From a button click. In redirect mode these navigate this tab to Odin and
@@ -268,13 +311,17 @@ await user.buy({ token: "2jjj", btcAmount: 10_000_000n });
 - `mode` can be changed at runtime: `odinConnect.mode = "redirect"`.
 - The result comes back in the URL fragment of the page that started the
   request. `handleRedirectResult()` checks it against a one-time nonce kept
-  in `sessionStorage` and removes it from the address bar.
-- `restoreSession()` finishes a redirected `connect()` on its own, but leaves
-  action results for `handleRedirectResult()`.
+  in `sessionStorage` (sent as both `state` and `request_id`), removes it from
+  the address bar and, for connect, verifies it like a popup connect.
+- `restoreSession()` never reads redirect results: always
+  `await handleRedirectResult()` first.
 - Page state is lost across the round trip. Pass what the page needs to
   resume as `returnState` (see below).
-- `requires_api` is not supported in redirect mode (it rejects), so the JWT
-  never lands in a URL. Use a delegation instead.
+- `requires_api` works in redirect mode: the JWT comes from odin-api, never
+  from the URL.
+- Odin only redirects back to registered apps (exact origin and path) and to
+  `localhost` during development. Ask Odin to register your origin and
+  redirect path before you ship redirect mode.
 - `"auto"` redirects when `isInAppBrowser()` is true: a known wallet user
   agent (OKX), an app webview (Android `; wv)`, iOS WebKit without
   `Safari/`), or a mobile browser with an injected wallet (`XverseProviders`,
@@ -304,11 +351,13 @@ const ok = await user.icrcApprove({
 if (ok) goToStep("commit"); // popup mode lands here
 
 // 2. On page load (redirect mode lands here instead).
-const result = odinConnect.handleRedirectResult<Resume>();
+const result = await odinConnect.handleRedirectResult<Resume>();
 if (result?.action === "icrc_approve" && result.returnState) {
   const { token, amount } = result.returnState;
-  if (result.status === "success") goToStep("commit", { token, amount });
-  else showError("Approval was rejected");
+  if (result.status === "success") {
+    // result.detail?.block_index: ledger block of the approval
+    goToStep("commit", { token, amount });
+  } else showError("Approval was rejected");
 }
 ```
 
@@ -321,6 +370,7 @@ OdinConnect automatically persists session data to `localStorage` after a succes
 ```typescript
 const odinConnect = new OdinConnect({ name: "My App", env: "prod" });
 
+// In redirect mode, `await odinConnect.handleRedirectResult()` first.
 // Attempt to restore a previous session (synchronous, no popup)
 const user = odinConnect.restoreSession();
 if (user) {
@@ -363,6 +413,33 @@ const odinConnect = new OdinConnect({
 > - Sessions with a delegation chain are automatically invalidated when the delegation expires.
 > - Calling `disconnect()` in one tab clears the session for all tabs on the same origin.
 > - In environments where `localStorage` is unavailable (SSR, strict privacy mode), session persistence is silently skipped.
+
+## Migrating to 2.0.0
+
+2.0.0 makes connect results verifiable and stops sending secrets through
+URLs. It needs the Odin frontend and odin-api that support `v=2` (already
+deployed before this release).
+
+- **`handleRedirectResult()` is async.** It returns
+  `Promise<OdinRedirectResult | null>` and rejects (instead of throwing) on a
+  stale or foreign result. Replace `odinConnect.handleRedirectResult()` with
+  `await odinConnect.handleRedirectResult()`.
+- **`restoreSession()` no longer handles redirect results.** It stays
+  synchronous and only reads storage. Call `await handleRedirectResult()`
+  first on page load, then `restoreSession()`.
+- **New connect status `"unverified"`** (`{ action: "connect", status:
+  "unverified", error: string }`): the result could not be verified, the user
+  is not connected and nothing was stored. Popup `connect()` rejects with an
+  `OdinConnectVerificationError` in the same cases.
+- **`requires_api` is allowed in redirect mode.** The JWT is issued by
+  odin-api (`POST /connect/verify`) and never appears in a URL or message.
+- **`session_key` is no longer sent.** Odin receives `session_pubkey` (public
+  key only). Every authorize URL carries `v=2` and a `request_id`.
+- **Action results can carry `detail`.** Redirect-mode `icrc_approve` results
+  expose `detail.block_index` and `detail.memo`. Popup actions still resolve
+  `true`.
+- `connect()` now calls odin-api once per connection, so the app must be able
+  to reach `api.odin.fun` (CSP `connect-src`).
 
 ## Connected User Operations
 
