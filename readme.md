@@ -571,6 +571,12 @@ const odinConnect = new OdinConnect({
 
 ## Migrating to 2.0.0
 
+> **Using a coding agent?** Point it at
+> [`MIGRATION-2.0.md`](./MIGRATION-2.0.md) (also shipped in the package at
+> `node_modules/odin-connect/MIGRATION-2.0.md`): step-by-step upgrade
+> instructions written for agents, with search commands, code changes,
+> pitfalls and a verification checklist.
+
 2.0.0 makes connect results verifiable, stops sending secrets through URLs,
 supports wallet in-app browsers by default, and delivers every result
 through one state store. It needs the Odin frontend and odin-api that

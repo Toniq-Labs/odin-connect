@@ -15,7 +15,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "MIGRATION-2.0.md"
   ],
   "scripts": {
     "build": "tsup",

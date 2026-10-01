@@ -51,3 +51,10 @@ Layered. Public surface is small; everything else is internal services composed 
 - Branch names and commit messages include the ClickUp task ID (e.g. `docs/86aj57792-...`).
 - Release commit format is `chore: release v${version}` (release-it config in package.json).
 - `dist/` is gitignored but published to npm (via the `files` field) — rebuild (`npm run build`) when changing the public bundle.
+
+## Migration guide for agents
+
+`MIGRATION-2.0.md` (repo root, shipped in the npm package via `files`) tells
+coding agents how to upgrade an app from 1.6.x/1.7.x to 2.0. Keep it in sync
+with the readme's "Migrating to 2.0.0" section and the public API whenever
+either changes.
