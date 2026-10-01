@@ -315,6 +315,13 @@ await user.buy({ token: "2jjj", btcAmount: 10_000_000n });
   the address bar and, for connect, verifies it like a popup connect.
 - `restoreSession()` never reads redirect results: always
   `await handleRedirectResult()` first.
+- `handleRedirectResult()` is safe to call twice on one page load (React
+  StrictMode runs effects twice, often with a new `OdinConnect`): every call
+  for the same `slug` and `env`, while the result is being read or shortly
+  after, gets the same outcome, and odin-api is asked once. An app with
+  another `slug` or `env` never sees it.
+- A pending request that never got its result (the user left Odin) is
+  deleted after 10 minutes, the next time the app loads without a result.
 - Page state is lost across the round trip. Pass what the page needs to
   resume as `returnState` (see below).
 - `requires_api` works in redirect mode: the JWT comes from odin-api, never
@@ -423,7 +430,12 @@ deployed before this release).
 - **`handleRedirectResult()` is async.** It returns
   `Promise<OdinRedirectResult | null>` and rejects (instead of throwing) on a
   stale or foreign result. Replace `odinConnect.handleRedirectResult()` with
-  `await odinConnect.handleRedirectResult()`.
+  `await odinConnect.handleRedirectResult()`. Repeated calls on the same page
+  load (React StrictMode) return the same outcome instead of `null`.
+- **A new connect replaces the stored session.** The previous user's JWT
+  and delegation are cleared once the new connect is verified, even if the
+  new connect asks for neither. `requires_api` fails verification when
+  odin-api issues no JWT.
 - **`restoreSession()` no longer handles redirect results.** It stays
   synchronous and only reads storage. Call `await handleRedirectResult()`
   first on page load, then `restoreSession()`.

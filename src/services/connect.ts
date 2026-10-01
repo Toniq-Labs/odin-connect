@@ -16,6 +16,7 @@ import {
   ConnectMode,
   createRequestId,
   PendingRedirectStorage,
+  readFragmentValue,
   RedirectCallOptions,
   RedirectClient,
   toBase64Url,
@@ -81,6 +82,40 @@ export type OdinRedirectResult<ReturnState = unknown> = (
     }
 ) & { returnState: ReturnState | undefined };
 
+/** A connect result that passed every check, before it is bound to an instance. */
+interface VerifiedConnection {
+  principal: string;
+  chain: DelegationChain | null;
+  identity: DelegationIdentity | null;
+  /** Only set when `requires_api` was requested; always from odin-api. */
+  jwt: string | null;
+}
+
+/** What one read of a redirect result produced, shared by every caller. */
+type RedirectOutcome =
+  | { connected: VerifiedConnection; returnState: unknown }
+  | { result: OdinRedirectResult };
+
+/**
+ * Redirect results read on this page load, per `slug:env`. Reading one
+ * consumes the URL fragment and the pending request, so a second
+ * `handleRedirectResult()` (React StrictMode runs effects twice, often on a
+ * new `OdinConnect`) would otherwise get null. Only the outcome is kept, never
+ * the pending request, and only for `REDIRECT_RESULT_REUSE_MS` after it
+ * settles (or until `disconnect()`).
+ */
+const redirectOutcomes = new Map<
+  string,
+  { fragment: string; promise: Promise<RedirectOutcome> }
+>();
+
+const REDIRECT_RESULT_REUSE_MS = 10_000;
+
+/** Test helper: forget redirect results read so far. Not exported publicly. */
+export function resetRedirectOutcomes(): void {
+  redirectOutcomes.clear();
+}
+
 function hashCode(str: string): string {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -118,6 +153,13 @@ interface ConnectOptionsWithoutDelegation extends BaseConnectOptions {
 
 type ConnectOptions =
   ConnectOptionsWithDelegation | ConnectOptionsWithoutDelegation;
+
+interface ConnectionOptions {
+  requestId: string;
+  requires_api?: boolean;
+  requires_delegation?: boolean;
+  targets?: readonly string[];
+}
 
 interface GetResourcesOptions {
   pagination: Pagination;
@@ -333,44 +375,100 @@ export class Connect {
 
   /**
    * Read the result of a redirect-mode `connect()` or action after Odin sends
-   * the user back. Call once on page load, before `restoreSession()`.
+   * the user back. Call on page load, before `restoreSession()`.
    * Resolves null when the URL carries no redirect result; rejects when the
    * result does not match the pending request (stale, foreign or replayed).
    *
    * A connect result is verified (locally and with odin-api) before it is
    * reported as `"connected"` and persisted like a popup connect; when that
    * fails the status is `"unverified"` and nothing is stored.
+   *
+   * Safe to call more than once per page load (e.g. React StrictMode effects,
+   * even on another `OdinConnect` with the same slug and env): every call made
+   * while the result is being read, or shortly after, gets the same outcome,
+   * and odin-api is asked once.
    */
   async handleRedirectResult<
     ReturnState = unknown,
   >(): Promise<OdinRedirectResult<ReturnState> | null> {
+    const cacheKey = this.redirectCacheKey;
+    const fragment = readFragmentValue();
+    let entry = redirectOutcomes.get(cacheKey);
+    if (fragment !== null && entry?.fragment !== fragment) {
+      const created = { fragment, promise: this.readRedirectResult() };
+      redirectOutcomes.set(cacheKey, created);
+      const evict = () => {
+        setTimeout(() => {
+          if (redirectOutcomes.get(cacheKey) === created) {
+            redirectOutcomes.delete(cacheKey);
+          }
+        }, REDIRECT_RESULT_REUSE_MS);
+      };
+      created.promise.then(evict, evict);
+      entry = created;
+    }
+    if (!entry) {
+      // no result in the URL: this only drops an abandoned pending request
+      this._redirect.consume();
+      return null;
+    }
+    const outcome = await entry.promise;
+    if ("result" in outcome) {
+      return outcome.result as OdinRedirectResult<ReturnState>;
+    }
+    // Bind the shared connection to this instance (its own API key).
+    const { principal, identity, jwt } = outcome.connected;
+    this._api.apiKey = jwt;
+    return {
+      action: "connect",
+      status: "connected",
+      user: new ConnectedUser(principal, identity, this._api, this._odin),
+      returnState: outcome.returnState as ReturnState | undefined,
+    };
+  }
+
+  private get redirectCacheKey(): string {
+    return `${this.slug}:${this.currentEnv}`;
+  }
+
+  /** Consume the URL's result once and verify/persist a connect result. */
+  private async readRedirectResult(): Promise<RedirectOutcome> {
     const consumed = this._redirect.consume();
-    if (!consumed) return null;
+    if (!consumed) {
+      throw new Error("Unexpected OdinConnect redirect result");
+    }
     const { result, pending } = consumed;
-    const returnState = pending.returnState as ReturnState | undefined;
+    const returnState = pending.returnState;
     const action = pending.path.replace(/^\/authorize\//, "");
     if (action === "connect") {
       if (result.message === "rejected" || !pending.sessionKey) {
-        return { action: "connect", status: "rejected", returnState };
+        return {
+          result: { action: "connect", status: "rejected", returnState },
+        };
       }
+      const sessionKey = Ed25519KeyIdentity.fromJSON(pending.sessionKey);
+      const options = {
+        requestId: pending.state,
+        requires_api: pending.requires_api,
+        requires_delegation: pending.requires_delegation,
+        targets: pending.targets,
+      };
       try {
-        const user = await this.completeConnection(
+        const connected = await this.verifyConnection(
           result.message as ConnectResult,
-          Ed25519KeyIdentity.fromJSON(pending.sessionKey),
-          {
-            requestId: pending.state,
-            requires_api: pending.requires_api,
-            requires_delegation: pending.requires_delegation,
-            targets: pending.targets,
-          }
+          sessionKey,
+          options
         );
-        return { action: "connect", status: "connected", user, returnState };
+        this.persistConnection(connected, sessionKey, options);
+        return { connected, returnState };
       } catch (error) {
         return {
-          action: "connect",
-          status: "unverified",
-          error: error instanceof Error ? error.message : String(error),
-          returnState,
+          result: {
+            action: "connect",
+            status: "unverified",
+            error: error instanceof Error ? error.message : String(error),
+            returnState,
+          },
         };
       }
     }
@@ -381,37 +479,46 @@ export class Connect {
         ? (result.detail as OdinActionDetail)
         : undefined;
     return {
-      action: action as OdinAction,
-      status:
-        pending.successMessage !== undefined &&
-        result.message === pending.successMessage
-          ? "success"
-          : "failed",
-      ...(detail ? { detail } : {}),
-      returnState,
+      result: {
+        action: action as OdinAction,
+        status:
+          pending.successMessage !== undefined &&
+          result.message === pending.successMessage
+            ? "success"
+            : "failed",
+        ...(detail ? { detail } : {}),
+        returnState,
+      },
     };
   }
 
   /**
-   * Verify a connect result and only then build, persist and return the
-   * user. Throws a `ConnectVerificationError` (or the API's error) on any
-   * mismatch; nothing is stored and no API key is set in that case.
+   * Verify a connect result and only then persist and return the user.
+   * Throws a `ConnectVerificationError` (or the API's error) on any mismatch;
+   * nothing is stored and no API key is set in that case.
    */
   private async completeConnection(
     message: ConnectResult,
     sessionKey: Ed25519KeyIdentity,
-    {
-      requestId,
-      requires_api,
-      requires_delegation,
-      targets,
-    }: {
-      requestId: string;
-      requires_api?: boolean;
-      requires_delegation?: boolean;
-      targets?: readonly string[];
-    }
+    options: ConnectionOptions
   ): Promise<ConnectedUser> {
+    const connected = await this.verifyConnection(message, sessionKey, options);
+    this.persistConnection(connected, sessionKey, options);
+    this._api.apiKey = connected.jwt;
+    return new ConnectedUser(
+      connected.principal,
+      connected.identity,
+      this.api,
+      this._odin
+    );
+  }
+
+  /** Every local and odin-api check; no side effects. */
+  private async verifyConnection(
+    message: ConnectResult,
+    sessionKey: Ed25519KeyIdentity,
+    { requestId, requires_api, requires_delegation, targets }: ConnectionOptions
+  ): Promise<VerifiedConnection> {
     if (!message || typeof message.principal !== "string") {
       throw new ConnectVerificationError("the result has no principal");
     }
@@ -457,15 +564,35 @@ export class Connect {
       );
     }
     // The JWT only ever comes from odin-api, never from the Odin page.
-    const jwt =
-      requires_api && typeof verified.jwt === "string" ? verified.jwt : null;
-
-    const identity = chain
-      ? DelegationIdentity.fromDelegation(sessionKey, chain)
-      : null;
+    let jwt: string | null = null;
     if (requires_api) {
-      this._api.apiKey = jwt;
+      if (typeof verified.jwt !== "string" || !verified.jwt) {
+        throw new ConnectVerificationError("odin-api issued no API key");
+      }
+      jwt = verified.jwt;
     }
+
+    return {
+      principal,
+      chain,
+      identity: chain
+        ? DelegationIdentity.fromDelegation(sessionKey, chain)
+        : null,
+      jwt,
+    };
+  }
+
+  /**
+   * Replace whatever session was stored before (another user's JWT or
+   * delegation must not survive a re-connect), then store this one.
+   */
+  private persistConnection(
+    { principal, chain, jwt }: VerifiedConnection,
+    sessionKey: Ed25519KeyIdentity,
+    { requires_api, requires_delegation }: ConnectionOptions
+  ): void {
+    this._storage.clear();
+    this._api.apiKey = null;
     if (requires_api || requires_delegation) {
       this._storage.save({
         principal,
@@ -474,7 +601,6 @@ export class Connect {
         jwt,
       });
     }
-    return new ConnectedUser(principal, identity, this.api, this._odin);
   }
 
   get api() {
@@ -528,6 +654,7 @@ export class Connect {
   disconnect(): void {
     this._storage.clear();
     this._api.apiKey = null;
+    redirectOutcomes.delete(this.redirectCacheKey);
   }
 
   isSessionValid(): boolean {

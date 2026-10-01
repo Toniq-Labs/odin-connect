@@ -153,6 +153,87 @@ describe("verified connect (popup)", () => {
     expect(error?.message).toMatch(/signer does not match/);
   });
 
+  it("rejects a proof payload for another principal than the message", async () => {
+    // a lying API echoing the message principal: only the local check catches it
+    let messagePrincipal = "";
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(async () => ({
+        principal: messagePrincipal,
+        username: null,
+        jwt: null,
+      }));
+    const other = Ed25519KeyIdentity.generate().getPrincipal().toText();
+    const { message, user, error } = await popupConnect(
+      connect,
+      {},
+      { payload: { principal: other } },
+      (m) => {
+        messagePrincipal = m.principal;
+        return m;
+      }
+    );
+    expect(message.principal).not.toBe(other);
+    expect(user).toBeNull();
+    expect(error?.message).toMatch(/proof is for another principal/);
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it("rejects api: false in the proof when requires_api was requested", async () => {
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const { user, error } = await popupConnect(
+      connect,
+      { requires_api: true },
+      { payload: { api: false } }
+    );
+    expect(user).toBeNull();
+    expect(error?.message).toMatch(/API access was not granted/);
+    expect(verify).not.toHaveBeenCalled();
+    expect(connect.api.apiKey).toBeNull();
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("rejects requires_api when odin-api returns no JWT", async () => {
+    vi.spyOn(connect.api, "verifyConnect").mockImplementation(apiAccepts(null));
+    const { user, error } = await popupConnect(connect, {
+      requires_api: true,
+    });
+    expect(user).toBeNull();
+    expect(error?.name).toBe("ConnectVerificationError");
+    expect(error?.message).toMatch(/issued no API key/);
+    expect(connect.api.apiKey).toBeNull();
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("a re-connect replaces the previous user's JWT and session", async () => {
+    vi.spyOn(connect.api, "verifyConnect").mockImplementation(
+      apiAccepts("jwt-of-user-a")
+    );
+    const a = await popupConnect(connect, { requires_api: true });
+    expect(connect.api.apiKey).toBe("jwt-of-user-a");
+    expect(connect.restoreSession()?.principal).toBe(a.message.principal);
+
+    const b = await popupConnect(connect, {});
+    expect(b.user?.principal).toBe(b.message.principal);
+    expect(connect.api.apiKey).toBeNull();
+    expect(localStorage.length).toBe(0);
+    expect(connect.restoreSession()).toBeNull();
+  });
+
+  it("a failed re-connect keeps the previous session", async () => {
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const a = await popupConnect(connect, { requires_api: true });
+    verify.mockRejectedValue(new Error("Invalid signature"));
+    const b = await popupConnect(connect, { requires_api: true });
+    expect(b.error).not.toBeNull();
+    expect(connect.api.apiKey).toBe("jwt-from-api");
+    expect(connect.restoreSession()?.principal).toBe(a.message.principal);
+  });
+
   it("rejects a chain issued to a different session key", async () => {
     const verify = vi
       .spyOn(connect.api, "verifyConnect")

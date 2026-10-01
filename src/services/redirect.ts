@@ -42,7 +42,15 @@ export interface PendingRedirect {
   targets?: string[];
   /** App data handed back by `handleRedirectResult()` (redirect mode only). */
   returnState?: unknown;
+  /** `Date.now()` when the redirect started; abandoned entries expire. */
+  createdAt?: number;
 }
+
+/**
+ * How long a pending request may wait for its result. Past this, a page load
+ * without a result deletes it (it can hold a connect session secret).
+ */
+export const PENDING_REDIRECT_MAX_AGE_MS = 10 * 60 * 1000;
 
 /**
  * Per-call option shared by `connect()` and every action. In redirect mode
@@ -132,6 +140,19 @@ export class PendingRedirectStorage {
     }
     return pending;
   }
+
+  /** Delete the pending request if it is older than `maxAgeMs` (or undated). */
+  dropIfOlderThan(maxAgeMs: number): void {
+    const pending = this.peek();
+    if (!pending) return;
+    const age =
+      typeof pending.createdAt === "number"
+        ? Date.now() - pending.createdAt
+        : Infinity;
+    if (age > maxAgeMs) {
+      this.take();
+    }
+  }
 }
 
 /** base64url without padding. */
@@ -162,7 +183,7 @@ export function currentReturnUrl(): string {
 }
 
 /** The raw `odin_connect` fragment value, if the URL carries one. */
-function readFragmentValue(): string | null {
+export function readFragmentValue(): string | null {
   const hash = window.location.hash.replace(/^#/, "");
   if (!hash) return null;
   return new URLSearchParams(hash).get(REDIRECT_RESULT_KEY);
@@ -226,12 +247,12 @@ export class RedirectClient {
    */
   start<T>(
     url: URL,
-    pending: Omit<PendingRedirect, "state">,
+    pending: Omit<PendingRedirect, "state" | "createdAt">,
     state: string
   ): Promise<T> {
     let saved: boolean;
     try {
-      saved = this._pending.save({ ...pending, state });
+      saved = this._pending.save({ ...pending, state, createdAt: Date.now() });
     } catch {
       return Promise.reject(
         new Error("returnState must be JSON-serializable (bigints are allowed)")
@@ -250,11 +271,15 @@ export class RedirectClient {
 
   /**
    * Consume the URL's redirect result and its pending request. Returns null
-   * when the URL carries no result; throws when the result does not match
-   * the pending request (stale, foreign or replayed).
+   * when the URL carries no result (and deletes a pending request abandoned
+   * for more than `PENDING_REDIRECT_MAX_AGE_MS`); throws when the result does
+   * not match the pending request (stale, foreign or replayed).
    */
   consume(): { result: RedirectResult; pending: PendingRedirect } | null {
-    if (!hasRedirectResult()) return null;
+    if (!hasRedirectResult()) {
+      this._pending.dropIfOlderThan(PENDING_REDIRECT_MAX_AGE_MS);
+      return null;
+    }
     const result = consumeRedirectResult();
     const pending = this._pending.take();
     if (

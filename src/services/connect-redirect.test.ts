@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Connect } from "./connect";
-import { REDIRECT_RESULT_KEY } from "./redirect";
+import { OdinApiClient } from "./api";
+import { Connect, resetRedirectOutcomes } from "./connect";
+import { PENDING_REDIRECT_MAX_AGE_MS, REDIRECT_RESULT_KEY } from "./redirect";
 import { apiAccepts, odinConnectMessage } from "../../test/odin-page";
 
 const OKX_UA =
@@ -46,6 +47,7 @@ describe("Connect redirect mode", () => {
     window.history.replaceState(null, "", "/app?x=1");
     sessionStorage.clear();
     localStorage.clear();
+    resetRedirectOutcomes();
   });
 
   afterEach(() => {
@@ -277,6 +279,184 @@ describe("Connect redirect mode", () => {
     const connect = new Connect({ name: "test" });
     expect(await connect.handleRedirectResult()).toBeNull();
   });
+
+  it("reports unverified when requires_api gets no JWT from odin-api", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    vi.spyOn(connect.api, "verifyConnect").mockImplementation(apiAccepts(null));
+    const navigate = spyNavigate(connect);
+    void connect.connect({ requires_api: true });
+    const url = navigatedUrl(navigate);
+    returnWith(url, await odinConnectMessage(url));
+
+    expect(await connect.handleRedirectResult()).toMatchObject({
+      action: "connect",
+      status: "unverified",
+      error: expect.stringContaining("issued no API key"),
+    });
+    expect(connect.api.apiKey).toBeNull();
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("drops a pending request abandoned for over 10 minutes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const connect = new Connect({ name: "test", mode: "redirect" });
+      spyNavigate(connect);
+      void connect.connect({ requires_delegation: true, targets: [] });
+      expect(sessionStorage.length).toBe(1);
+
+      // back on the app without a result, still within 10 minutes: kept
+      vi.setSystemTime(Date.now() + PENDING_REDIRECT_MAX_AGE_MS);
+      expect(await connect.handleRedirectResult()).toBeNull();
+      expect(sessionStorage.length).toBe(1);
+
+      vi.setSystemTime(Date.now() + 1);
+      expect(await connect.handleRedirectResult()).toBeNull();
+      expect(sessionStorage.length).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops an undated pending request (written before createdAt existed)", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    spyNavigate(connect);
+    void connect.connect();
+    const key = sessionStorage.key(0)!;
+    const { createdAt, ...undated } = JSON.parse(sessionStorage.getItem(key)!);
+    expect(typeof createdAt).toBe("number");
+    sessionStorage.setItem(key, JSON.stringify(undated));
+    expect(await connect.handleRedirectResult()).toBeNull();
+    expect(sessionStorage.length).toBe(0);
+  });
+});
+
+describe("handleRedirectResult is idempotent per page load", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/app");
+    sessionStorage.clear();
+    localStorage.clear();
+    resetRedirectOutcomes();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Start a redirect connect on `connect` and come back with a valid result. */
+  async function returnFromConnect(
+    connect: Connect,
+    options: Parameters<Connect["connect"]>[0] = {}
+  ) {
+    const navigate = spyNavigate(connect);
+    void connect.connect(options);
+    const url = navigatedUrl(navigate);
+    const message = await odinConnectMessage(url);
+    returnWith(url, message);
+    navigate.mockRestore();
+    return message;
+  }
+
+  it("resolves concurrent calls on two instances to one verified connect", async () => {
+    // React StrictMode: the effect runs twice, each with a new OdinConnect
+    const verify = vi
+      .spyOn(OdinApiClient.prototype, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const first = new Connect({ name: "test", mode: "redirect" });
+    const message = await returnFromConnect(first, {
+      requires_api: true,
+      returnState: { step: 2 },
+    });
+    const second = new Connect({ name: "test", mode: "redirect" });
+
+    const [a, b] = await Promise.all([
+      first.handleRedirectResult(),
+      second.handleRedirectResult(),
+    ]);
+    expect(verify).toHaveBeenCalledOnce();
+    for (const [result, instance] of [
+      [a, first],
+      [b, second],
+    ] as const) {
+      expect(result).toMatchObject({
+        action: "connect",
+        status: "connected",
+        returnState: { step: 2 },
+      });
+      if (result?.action === "connect" && result.status === "connected") {
+        expect(result.user.principal).toBe(message.principal);
+      }
+      // each instance gets the API key, not just the one that read the URL
+      expect(instance.api.apiKey).toBe("jwt-from-api");
+    }
+    expect(second.restoreSession()?.principal).toBe(message.principal);
+  });
+
+  it("returns the same outcome to a call made after the first settled", async () => {
+    const verify = vi
+      .spyOn(OdinApiClient.prototype, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const first = new Connect({ name: "test", mode: "redirect" });
+    const message = await returnFromConnect(first);
+    const a = await first.handleRedirectResult();
+    const b = await new Connect({ name: "test" }).handleRedirectResult();
+    expect(a?.status).toBe("connected");
+    expect(b?.status).toBe("connected");
+    if (b?.action === "connect" && b.status === "connected") {
+      expect(b.user.principal).toBe(message.principal);
+    }
+    expect(verify).toHaveBeenCalledOnce();
+  });
+
+  it("shares a rejected redirect result too", async () => {
+    const first = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(first);
+    void first.connect();
+    returnWith(
+      navigatedUrl(navigate),
+      { principal: "aaaaa-aa", jwt: null },
+      { state: "someone-elses-state-value-000000" }
+    );
+    const second = new Connect({ name: "test" });
+    await expect(first.handleRedirectResult()).rejects.toThrow(
+      "Unexpected OdinConnect redirect result"
+    );
+    await expect(second.handleRedirectResult()).rejects.toThrow(
+      "Unexpected OdinConnect redirect result"
+    );
+  });
+
+  it("never hands the result to another slug or env", async () => {
+    vi.spyOn(OdinApiClient.prototype, "verifyConnect").mockImplementation(
+      apiAccepts()
+    );
+    const first = new Connect({ name: "test", mode: "redirect" });
+    await returnFromConnect(first);
+    const pending = first.handleRedirectResult();
+    expect(
+      await new Connect({
+        name: "other",
+        mode: "redirect",
+      }).handleRedirectResult()
+    ).toBeNull();
+    expect(
+      await new Connect({ name: "test", env: "dev" }).handleRedirectResult()
+    ).toBeNull();
+    expect((await pending)?.status).toBe("connected");
+  });
+
+  it("forgets the shared result on disconnect()", async () => {
+    vi.spyOn(OdinApiClient.prototype, "verifyConnect").mockImplementation(
+      apiAccepts()
+    );
+    const first = new Connect({ name: "test", mode: "redirect" });
+    await returnFromConnect(first);
+    expect((await first.handleRedirectResult())?.status).toBe("connected");
+    first.disconnect();
+    expect(
+      await new Connect({ name: "test" }).handleRedirectResult()
+    ).toBeNull();
+  });
 });
 
 describe("Action redirect mode", () => {
@@ -284,6 +464,7 @@ describe("Action redirect mode", () => {
     window.history.replaceState(null, "", "/app");
     sessionStorage.clear();
     localStorage.clear();
+    resetRedirectOutcomes();
   });
 
   afterEach(() => {
@@ -381,6 +562,7 @@ describe("returnState", () => {
     window.history.replaceState(null, "", "/migrate?step=2");
     sessionStorage.clear();
     localStorage.clear();
+    resetRedirectOutcomes();
   });
 
   afterEach(() => {
