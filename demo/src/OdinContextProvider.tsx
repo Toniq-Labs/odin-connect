@@ -8,6 +8,7 @@ import {
   type OdinToken,
 } from "odin-connect";
 import { OdinContext } from "./OdinContext";
+import { clearRedirectContext, readRedirectContext } from "./redirect-context";
 
 const MODE_KEY = "odin-demo:mode";
 
@@ -26,6 +27,9 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
   const [mode, setModeState] = useState<OdinConnectMode>(loadMode);
   const [redirectResult, setRedirectResult] =
     useState<OdinRedirectResult | null>(null);
+  // Read during the first render, before the effect below clears the URL,
+  // so the forms can use it as initial state.
+  const [redirectContext] = useState(readRedirectContext);
 
   useEffect(() => {
     // Initialize OdinConnect with your app name, target environment and popup language
@@ -43,7 +47,11 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     let restoredUser: OdinConnectedUser | null = null;
     try {
       const result = odin.handleRedirectResult();
-      setRedirectResult(result);
+      // The fragment is consumed on the first call, so a StrictMode re-run
+      // sees null; keep the result from the first run.
+      if (result) {
+        setRedirectResult(result);
+      }
       if (result?.action === "connect" && result.status === "connected") {
         restoredUser = result.user;
       }
@@ -56,6 +64,10 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     if (restoredUser) {
       setConnectedUser(restoredUser);
     }
+
+    // The forms have already read the carried state (see redirectContext);
+    // drop it from the address bar.
+    clearRedirectContext();
   }, []);
 
   const setLang = useCallback(
@@ -125,6 +137,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
         mode,
         setMode,
         redirectResult,
+        redirectContext,
       }}
     >
       {children}

@@ -7,6 +7,7 @@ import type {
   OdinRedirectResult,
   OdinToken,
 } from "odin-connect";
+import type { RedirectContext } from "./redirect-context";
 
 type OdinContextType = {
   odinConnect: OdinConnect | null;
@@ -24,6 +25,8 @@ type OdinContextType = {
   setMode: (mode: OdinConnectMode) => void;
   /* outcome of the redirect this page load returned from, if any */
   redirectResult: OdinRedirectResult | null;
+  /* form state carried in the URL across that redirect, if any */
+  redirectContext: RedirectContext | null;
 };
 
 export const OdinContext = createContext<OdinContextType | undefined>(

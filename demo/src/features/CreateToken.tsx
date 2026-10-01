@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { OdinUtils } from "odin-connect";
+import { useRedirectAction } from "../useRedirectAction";
 const randomInt = Math.floor(Math.random() * 1000);
 
 export function CreateToken() {
@@ -8,15 +9,26 @@ export function CreateToken() {
   const [result, setResult] = useState<string | null>(null);
   const { odinConnect, requestUser } = useOdinContext();
   const [loading, setLoading] = useState(false);
-  const [name, setName] = useState("Token " + randomInt);
-  const [ticker, setTicker] = useState("TKN" + randomInt);
-  const [vanityTicker, setVanityTicker] = useState("");
-  const [description, setDescription] = useState("This is a test token");
-  const [website, setWebsite] = useState("");
-  const [telegram, setTelegram] = useState("");
-  const [twitter, setTwitter] = useState("");
-  const [preBuy, setPreBuy] = useState("");
-  const [discount, setDiscount] = useState("");
+  // The image File cannot ride in the URL: after a connect-first redirect the
+  // text fields are restored but the image has to be selected again.
+  const redirect = useRedirectAction({
+    action: "create_token",
+    label: "create the token (select the image again first)",
+    success: (f) => `Token ${f.name} (${f.ticker}) created successfully!`,
+    setResult,
+  });
+  const f = redirect.fields;
+  const [name, setName] = useState(f?.name ?? "Token " + randomInt);
+  const [ticker, setTicker] = useState(f?.ticker ?? "TKN" + randomInt);
+  const [vanityTicker, setVanityTicker] = useState(f?.vanityTicker ?? "");
+  const [description, setDescription] = useState(
+    f?.description ?? "This is a test token"
+  );
+  const [website, setWebsite] = useState(f?.website ?? "");
+  const [telegram, setTelegram] = useState(f?.telegram ?? "");
+  const [twitter, setTwitter] = useState(f?.twitter ?? "");
+  const [preBuy, setPreBuy] = useState(f?.preBuy ?? "");
+  const [discount, setDiscount] = useState(f?.discount ?? "");
 
   return (
     <div className="trade-form">
@@ -106,9 +118,20 @@ export function CreateToken() {
       <button
         disabled={loading}
         onClick={async () => {
+          setResult(null);
+          setLoading(true);
+          redirect.begin({
+            name,
+            ticker,
+            vanityTicker,
+            description,
+            website,
+            telegram,
+            twitter,
+            preBuy,
+            discount,
+          });
           try {
-            setResult(null);
-            setLoading(true);
             if (!odinConnect) {
               throw new Error("OdinConnect is not initialized");
             }
@@ -142,6 +165,8 @@ export function CreateToken() {
             } else {
               setResult("Error");
             }
+          } finally {
+            redirect.end();
           }
         }}
       >

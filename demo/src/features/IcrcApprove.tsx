@@ -2,17 +2,28 @@ import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
+import { useRedirectAction } from "../useRedirectAction";
 
 export function IcrcApprove() {
   const { tokens, odinConnect, requestUser } = useOdinContext();
-  const [token, setToken] = useState("2jj5");
-  const [spender, setSpender] = useState("");
-  const [amount, setAmount] = useState("1000");
   const [result, setResult] = useState<string | null>(null);
+  // Restores the form and reports the outcome after a redirect-mode round trip
+  const redirect = useRedirectAction({
+    action: "icrc_approve",
+    label: "approve",
+    success: (f) =>
+      `Successfully approved ${f.amount} of ${f.token} for spender ${f.spender}`,
+    setResult,
+  });
+  const [token, setToken] = useState(redirect.fields?.token ?? "2jj5");
+  const [spender, setSpender] = useState(redirect.fields?.spender ?? "");
+  const [amount, setAmount] = useState(redirect.fields?.amount ?? "1000");
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setResult(null);
+    // Before any await: in redirect mode the tab navigates away from here
+    redirect.begin({ token, spender, amount });
     try {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
@@ -38,6 +49,9 @@ export function IcrcApprove() {
       } else {
         setResult("Error executing ICRC approve");
       }
+    } finally {
+      // Popup mode: the call settled, so the URL no longer needs the context
+      redirect.end();
     }
   };
 

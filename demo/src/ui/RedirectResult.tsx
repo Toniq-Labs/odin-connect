@@ -1,12 +1,27 @@
 import { useOdinContext } from "../OdinContext";
 
-/** Outcome of the last redirect-mode connect() or action, if any. */
+/**
+ * Outcome of the last redirect-mode connect() or action, if any, and the
+ * form state the URL carried across it.
+ */
 export const RedirectResult = () => {
-  const { redirectResult } = useOdinContext();
-  if (!redirectResult) return null;
+  const { redirectResult, redirectContext } = useOdinContext();
+  if (!redirectResult && !redirectContext) return null;
   return (
     <div className="result">
-      Redirect result: {redirectResult.action} → {redirectResult.status}
+      {redirectResult && (
+        <div>
+          Redirect result: {redirectResult.action} → {redirectResult.status}
+        </div>
+      )}
+      {redirectContext && (
+        <div>
+          Carried form: {redirectContext.action}{" "}
+          {Object.entries(redirectContext.fields)
+            .map(([key, value]) => `${key}=${value}`)
+            .join(", ")}
+        </div>
+      )}
     </div>
   );
 };

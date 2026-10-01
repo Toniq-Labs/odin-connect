@@ -2,19 +2,29 @@ import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
+import { useRedirectAction } from "../useRedirectAction";
 
 export function Transfer() {
   const { tokens, odinConnect, requestUser } = useOdinContext();
-  const [recipient, setRecipient] = useState(
-    "fdr2s-q4xug-vi6m7-tlvgs-divc6-hj6sp-xouwu-rmo55-yohcc-rqru4-aqe"
-  );
-  const [token, setToken] = useState("2jj5");
-  const [amount, setAmount] = useState("1000");
   const [result, setResult] = useState<string | null>(null);
+  const redirect = useRedirectAction({
+    action: "transfer",
+    label: "transfer",
+    success: (f) =>
+      `Successfully transferred ${f.amount} of ${f.token} to ${f.recipient}`,
+    setResult,
+  });
+  const [recipient, setRecipient] = useState(
+    redirect.fields?.recipient ??
+      "fdr2s-q4xug-vi6m7-tlvgs-divc6-hj6sp-xouwu-rmo55-yohcc-rqru4-aqe"
+  );
+  const [token, setToken] = useState(redirect.fields?.token ?? "2jj5");
+  const [amount, setAmount] = useState(redirect.fields?.amount ?? "1000");
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setResult(null);
+    redirect.begin({ recipient, token, amount });
     try {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
@@ -24,7 +34,6 @@ export function Transfer() {
       if (!tokenInfo) {
         throw new Error(`Token ${token} not found`);
       }
-      setResult(null);
       const user = await requestUser();
       await user.transfer({
         destination: recipient,
@@ -41,6 +50,8 @@ export function Transfer() {
       } else {
         setResult("Error executing transfer");
       }
+    } finally {
+      redirect.end();
     }
   };
   return (

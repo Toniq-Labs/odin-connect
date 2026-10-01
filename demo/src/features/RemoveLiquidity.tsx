@@ -2,17 +2,27 @@ import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
+import { useRedirectAction } from "../useRedirectAction";
 
 export function RemoveLiquidity() {
   const { odinConnect, requestUser, tokens } = useOdinContext();
   const [result, setResult] = useState<string | null>(null);
-  const [amount, setAmount] = useState("100");
-  const [token, setToken] = useState("2jj5");
+  const redirect = useRedirectAction({
+    action: "remove_liquidity",
+    label: "remove liquidity",
+    success: (f) =>
+      `Successfully removed liquidity of ${f.amount} ${f.token}:LP`,
+    setResult,
+  });
+  const [amount, setAmount] = useState(redirect.fields?.amount ?? "100");
+  const [token, setToken] = useState(redirect.fields?.token ?? "2jj5");
 
   const handleRemoveLiquidity = async (
     event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
+    setResult(null);
+    redirect.begin({ token, amount });
     try {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
@@ -36,6 +46,8 @@ export function RemoveLiquidity() {
       } else {
         setResult("Error removing liquidity");
       }
+    } finally {
+      redirect.end();
     }
   };
   return (
