@@ -140,9 +140,10 @@ describe("OdinApiClient.verifyConnect", () => {
     audience: "https://app.example",
     nonce: "n".repeat(32),
     issue_jwt: true,
+    client_signature: "Y2xpZW50",
   };
 
-  it("POSTs the proof to {base}/connect/verify per env", async () => {
+  it("POSTs the proof with client_signature to {base}/connect/verify per env", async () => {
     for (const [env, base] of [
       ["prod", "https://api.odin.fun/v2"],
       ["legacy", "https://api.odin.fun/v1"],

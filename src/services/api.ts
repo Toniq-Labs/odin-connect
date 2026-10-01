@@ -43,6 +43,12 @@ export type VerifyConnectRequest = ConnectProof & {
   audience: string;
   nonce: string;
   issue_jwt: boolean;
+  /**
+   * base64 of the session key's signature over
+   * UTF-8("odin-connect-verify:v1\n" + payload): proves the caller holds the
+   * key the proof is bound to (`sk`).
+   */
+  client_signature: string;
 };
 
 export type VerifyConnectResponse = {

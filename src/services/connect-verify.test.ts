@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Ed25519KeyIdentity } from "@dfinity/identity";
 import { Principal } from "@dfinity/principal";
 import { Connect } from "./connect";
+import { createPublicKey, verify as verifySignature } from "node:crypto";
 import {
   apiAccepts,
+  clientSignatureValid,
   odinConnectMessage,
   OdinPageOptions,
   siwbLikeIdentity,
@@ -80,6 +82,7 @@ describe("verified connect (popup)", () => {
       audience: window.location.origin,
       nonce: url.searchParams.get("request_id"),
       issue_jwt: true,
+      client_signature: expect.any(String),
     });
     expect(connect.api.apiKey).toBe("jwt-from-api");
     expect(connect.restoreSession()?.principal).toBe(message.principal);
@@ -123,6 +126,152 @@ describe("verified connect (popup)", () => {
       (c) => c.charCodeAt(0)
     );
     expect(Array.from(bytes)).toEqual(Array.from(new Uint8Array(der)));
+  });
+
+  it("binds the proof to the session key with client_signature", async () => {
+    for (const options of [
+      {},
+      { requires_api: true },
+      { requires_delegation: true as const, targets: [TARGET] },
+    ]) {
+      const verify = vi
+        .spyOn(connect.api, "verifyConnect")
+        .mockImplementation(apiAccepts());
+      const { url, message, user } = await popupConnect(connect, options);
+      expect(user).not.toBeNull();
+      const sessionPubkey = url.searchParams.get("session_pubkey")!;
+      expect(sessionPubkey).toMatch(/^[A-Za-z0-9_-]+$/);
+      expect(JSON.parse(message.proof.payload).sk).toBe(sessionPubkey);
+      const body = verify.mock.calls[0][0];
+      // the exact payload received, never re-stringified
+      expect(body.payload).toBe(message.proof.payload);
+      expect(body.client_signature).toMatch(/^[A-Za-z0-9+/]+={0,2}$/);
+      const der = Buffer.from(
+        sessionPubkey.replace(/-/g, "+").replace(/_/g, "/"),
+        "base64"
+      );
+      const key = createPublicKey({ key: der, format: "der", type: "spki" });
+      const sig = Buffer.from(body.client_signature, "base64");
+      expect(
+        verifySignature(
+          null,
+          Buffer.from("odin-connect-verify:v1\n" + body.payload),
+          key,
+          sig
+        )
+      ).toBe(true);
+      // domain-separated: not a signature over the bare payload or the
+      // identity-proof message
+      expect(verifySignature(null, Buffer.from(body.payload), key, sig)).toBe(
+        false
+      );
+      expect(
+        verifySignature(
+          null,
+          Buffer.from("odin-connect-identity:v1\n" + body.payload),
+          key,
+          sig
+        )
+      ).toBe(false);
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("never puts the session secret in a URL, request body or postMessage", async () => {
+    const generate = vi.spyOn(Ed25519KeyIdentity, "generate");
+    const postMessage = vi.spyOn(window, "postMessage");
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const { url, message, user } = await popupConnect(connect, {
+      requires_api: true,
+      requires_delegation: true,
+      targets: [TARGET],
+    });
+    expect(user).not.toBeNull();
+    const sessionKey = generate.mock.results[0].value as Ed25519KeyIdentity;
+    const secretHex = sessionKey.toJSON()[1];
+    const secret = new Uint8Array(sessionKey.getKeyPair().secretKey);
+    let binary = "";
+    for (const byte of secret) binary += String.fromCharCode(byte);
+    const secretB64 = btoa(binary);
+    const forms = [
+      secretHex,
+      secretB64,
+      secretB64.replace(/=+$/, ""),
+      secretB64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+    ];
+    const sent = [
+      url.href,
+      decodeURIComponent(url.href),
+      JSON.stringify(verify.mock.calls[0][0]),
+      JSON.stringify(message),
+      ...postMessage.mock.calls.map((c) => JSON.stringify(c)),
+    ];
+    for (const text of sent) {
+      for (const form of forms) {
+        expect(text).not.toContain(form);
+      }
+    }
+  });
+
+  it("rejects a proof bound to another session key, or to none", async () => {
+    const attacker = Ed25519KeyIdentity.generate();
+    const attackerPubkey = btoa(
+      String.fromCharCode(...new Uint8Array(attacker.getPublicKey().toDer()))
+    )
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    for (const [sk, reason] of [
+      [attackerPubkey, /another session key/],
+      [undefined, /not bound to a session key/],
+    ] as const) {
+      // a lenient API that skips the binding: only the local check catches it
+      const verify = vi
+        .spyOn(connect.api, "verifyConnect")
+        .mockImplementation(async (body) => ({
+          principal: JSON.parse(body.payload).principal,
+          username: null,
+          jwt: "jwt",
+        }));
+      const { user, error } = await popupConnect(
+        connect,
+        { requires_api: true },
+        { payload: { sk } }
+      );
+      expect(user).toBeNull();
+      expect(error?.name).toBe("ConnectVerificationError");
+      expect(error?.message).toMatch(reason);
+      expect(verify).not.toHaveBeenCalled();
+      expect(connect.api.apiKey).toBeNull();
+      expect(localStorage.length).toBe(0);
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("a proof replayed by someone without the session key is refused by odin-api", async () => {
+    // e.g. read from a leaked return URL: the thief can send payload and
+    // signature but can only sign the binding with their own key
+    vi.spyOn(connect.api, "verifyConnect").mockImplementation(apiAccepts());
+    const { message } = await popupConnect(connect, { requires_api: true });
+    const thief = Ed25519KeyIdentity.generate();
+    const forged = await thief.sign(
+      new TextEncoder().encode(
+        "odin-connect-verify:v1\n" + message.proof.payload
+      )
+    );
+    expect(
+      clientSignatureValid({
+        payload: message.proof.payload,
+        client_signature: Buffer.from(new Uint8Array(forged)).toString(
+          "base64"
+        ),
+      })
+    ).toBe(false);
+    expect(clientSignatureValid({ payload: message.proof.payload })).toBe(
+      false
+    );
   });
 
   it("rejects a forged principal in the message", async () => {

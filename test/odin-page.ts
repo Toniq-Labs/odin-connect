@@ -11,6 +11,7 @@ import {
 } from "@dfinity/identity";
 import type { PublicKey, SignIdentity } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
+import { createPublicKey, verify } from "node:crypto";
 
 function fromBase64Url(value: string): Uint8Array {
   const b64 = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -60,9 +61,17 @@ export async function odinConnectMessage(url: URL, opts: OdinPageOptions = {}) {
   if (params.has("session_key")) {
     throw new Error("v=2 SDK must not send session_key");
   }
+  // v=2: every connect carries a valid session public key, which the proof
+  // is bound to (`sk`); without one the page errors and authorizes nothing.
+  const sessionPubkey = params.get("session_pubkey");
+  if (params.get("v") === "2") {
+    if (!sessionPubkey) {
+      throw new Error("v=2 connect requires session_pubkey");
+    }
+    Ed25519PublicKey.fromDer(fromBase64Url(sessionPubkey));
+  }
 
   let delegationChain = null;
-  const sessionPubkey = params.get("session_pubkey");
   if (params.get("requires_delegation") === "1" && sessionPubkey) {
     const to =
       opts.delegateTo ?? Ed25519PublicKey.fromDer(fromBase64Url(sessionPubkey));
@@ -94,6 +103,7 @@ export async function odinConnectMessage(url: URL, opts: OdinPageOptions = {}) {
     nonce: params.get("request_id"),
     principal,
     api: params.get("requires_api") === "1",
+    sk: sessionPubkey,
     iat: Date.now(),
     ...opts.payload,
   });
@@ -120,11 +130,44 @@ export async function odinConnectMessage(url: URL, opts: OdinPageOptions = {}) {
   };
 }
 
-/** What a well-behaved odin-api returns for a proof. */
+/**
+ * odin-api's session-key binding check: `client_signature` must verify over
+ * UTF-8("odin-connect-verify:v1\n" + payload) with the key in `payload.sk`.
+ */
+export function clientSignatureValid(body: {
+  payload: string;
+  client_signature?: string;
+}): boolean {
+  const { sk } = JSON.parse(body.payload);
+  if (typeof sk !== "string" || typeof body.client_signature !== "string") {
+    return false;
+  }
+  return verify(
+    null,
+    Buffer.from("odin-connect-verify:v1\n" + body.payload, "utf8"),
+    createPublicKey({
+      key: Buffer.from(fromBase64Url(sk)),
+      format: "der",
+      type: "spki",
+    }),
+    Buffer.from(body.client_signature, "base64")
+  );
+}
+
+/** What a well-behaved odin-api returns for a proof (401 without binding). */
 export function apiAccepts(jwt: string | null = "jwt-from-api") {
-  return async (body: { payload: string; issue_jwt: boolean }) => ({
-    principal: JSON.parse(body.payload).principal as string,
-    username: null,
-    jwt: body.issue_jwt ? jwt : null,
-  });
+  return async (body: {
+    payload: string;
+    issue_jwt: boolean;
+    client_signature?: string;
+  }) => {
+    if (!clientSignatureValid(body)) {
+      throw new Error("Invalid client signature");
+    }
+    return {
+      principal: JSON.parse(body.payload).principal as string,
+      username: null,
+      jwt: body.issue_jwt ? jwt : null,
+    };
+  };
 }

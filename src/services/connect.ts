@@ -27,6 +27,7 @@ import {
   checkProof,
   ConnectResult,
   ConnectVerificationError,
+  signClientBinding,
 } from "./verify-connect";
 
 export interface AppInitOptions {
@@ -122,6 +123,11 @@ function hashCode(str: string): string {
     hash = (hash * 31 + str.charCodeAt(i)) | 0;
   }
   return (hash >>> 0).toString(36).slice(0, 3).padStart(3, "0");
+}
+
+/** `session_pubkey` param: base64url (no padding) of the public key DER. */
+function sessionPubkeyParam(sessionKey: Ed25519KeyIdentity): string {
+  return toBase64Url(new Uint8Array(sessionKey.getPublicKey().toDer()));
 }
 
 function slugify(text: string): string {
@@ -337,13 +343,12 @@ export class Connect {
   ) {
     const url = this.createUrl("authorize/connect", requestId);
     url.searchParams.append("requires_api", requires_api ? "1" : "0");
+    // Sent for every connect: Odin binds the identity proof to this key (`sk`)
+    // and odin-api only redeems it with a signature from it. Only the public
+    // key: the secret never leaves this SDK.
+    url.searchParams.append("session_pubkey", sessionPubkeyParam(sessionKey));
     if (requires_delegation) {
       url.searchParams.append("requires_delegation", "1");
-      // Only the public key: the secret never leaves this SDK.
-      url.searchParams.append(
-        "session_pubkey",
-        toBase64Url(new Uint8Array(sessionKey.getPublicKey().toDer()))
-      );
       url.searchParams.append("targets", targets?.join(",") || "");
     }
     return url;
@@ -361,8 +366,8 @@ export class Connect {
       this.createConnectUrl(sessionKey, requestId, options),
       {
         path: "/authorize/connect",
-        // The secret waits in this tab's sessionStorage; Odin only ever
-        // sees session_pubkey.
+        // Every connect (with or without delegation): the secret waits in
+        // this tab's sessionStorage; Odin only ever sees session_pubkey.
         sessionKey: JSON.stringify(sessionKey.toJSON()),
         requires_delegation: Boolean(options.requires_delegation),
         requires_api: Boolean(options.requires_api),
@@ -441,9 +446,22 @@ export class Connect {
     const returnState = pending.returnState;
     const action = pending.path.replace(/^\/authorize\//, "");
     if (action === "connect") {
-      if (result.message === "rejected" || !pending.sessionKey) {
+      if (result.message === "rejected") {
         return {
           result: { action: "connect", status: "rejected", returnState },
+        };
+      }
+      if (!pending.sessionKey) {
+        // every connect saves its key; without it the proof can't be redeemed
+        return {
+          result: {
+            action: "connect",
+            status: "unverified",
+            error: new ConnectVerificationError(
+              "the pending request has no session key"
+            ).message,
+            returnState,
+          },
         };
       }
       const sessionKey = Ed25519KeyIdentity.fromJSON(pending.sessionKey);
@@ -529,6 +547,7 @@ export class Connect {
       nonce: requestId,
       audience,
       requires_api: Boolean(requires_api),
+      sessionPubkey: sessionPubkeyParam(sessionKey),
     });
 
     let chain: DelegationChain | null = null;
@@ -540,6 +559,13 @@ export class Connect {
       });
     }
 
+    // Proves to odin-api that we hold the key the proof names (`sk`), over
+    // the exact payload string received (never re-stringified).
+    const client_signature = await signClientBinding(
+      sessionKey,
+      proof!.payload
+    );
+
     let verified;
     try {
       verified = await this._api.verifyConnect({
@@ -550,6 +576,7 @@ export class Connect {
         audience,
         nonce: requestId,
         issue_jwt: Boolean(requires_api),
+        client_signature,
       });
     } catch (error) {
       throw new ConnectVerificationError(

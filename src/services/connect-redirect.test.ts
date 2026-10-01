@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OdinApiClient } from "./api";
 import { Connect, resetRedirectOutcomes } from "./connect";
 import { PENDING_REDIRECT_MAX_AGE_MS, REDIRECT_RESULT_KEY } from "./redirect";
-import { apiAccepts, odinConnectMessage } from "../../test/odin-page";
+import {
+  apiAccepts,
+  clientSignatureValid,
+  odinConnectMessage,
+} from "../../test/odin-page";
 
 const OKX_UA =
   "Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 Mobile/15E148 OKApp/(OKEx/6.90.0)";
@@ -139,6 +143,7 @@ describe("Connect redirect mode", () => {
       audience: window.location.origin,
       nonce: url.searchParams.get("request_id"),
       issue_jwt: false,
+      client_signature: expect.any(String),
     });
     if (result?.action === "connect" && result.status === "connected") {
       expect(result.user.principal).toBe(message.principal);
@@ -152,6 +157,88 @@ describe("Connect redirect mode", () => {
     expect(sessionStorage.length).toBe(0);
     expect(connect.isSessionValid()).toBe(true);
     expect(connect.restoreSession()?.principal).toBe(message.principal);
+  });
+
+  it("binds a connect without delegation to its session key too", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const navigate = spyNavigate(connect);
+    void connect.connect({ requires_api: true });
+    const url = navigatedUrl(navigate);
+    expect(url.searchParams.has("requires_delegation")).toBe(false);
+    const sessionPubkey = url.searchParams.get("session_pubkey");
+    expect(sessionPubkey).toMatch(/^[A-Za-z0-9_-]+$/);
+    // the secret waits in this tab's sessionStorage only
+    const pending = JSON.parse(sessionStorage.getItem(sessionStorage.key(0)!)!);
+    const secretHex = JSON.parse(pending.sessionKey)[1];
+    expect(url.href).not.toContain(secretHex);
+
+    const message = await odinConnectMessage(url);
+    expect(JSON.parse(message.proof.payload).sk).toBe(sessionPubkey);
+    returnWith(url, message);
+    const result = await connect.handleRedirectResult();
+    expect(result?.status).toBe("connected");
+    const body = verify.mock.calls[0][0];
+    expect(body.payload).toBe(message.proof.payload);
+    expect(clientSignatureValid(body)).toBe(true);
+    expect(JSON.stringify(body)).not.toContain(secretHex);
+    // the pending entry (with the secret) is gone after the round trip
+    expect(sessionStorage.length).toBe(0);
+    // a second read comes from the outcome cache, which holds no key
+    const again = await new Connect({
+      name: "test",
+      mode: "redirect",
+    }).handleRedirectResult();
+    expect(again?.status).toBe("connected");
+    if (again?.action === "connect" && again.status === "connected") {
+      expect(again.user.getIdentity()).toBeNull();
+    }
+    expect(verify).toHaveBeenCalledOnce();
+  });
+
+  it("drops the pending session key on unverified and mismatched results", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    vi.spyOn(connect.api, "verifyConnect").mockRejectedValue(new Error("401"));
+    const navigate = spyNavigate(connect);
+    void connect.connect();
+    const url = navigatedUrl(navigate);
+    expect(sessionStorage.length).toBe(1);
+    returnWith(url, await odinConnectMessage(url));
+    expect((await connect.handleRedirectResult())?.status).toBe("unverified");
+    expect(sessionStorage.length).toBe(0);
+
+    resetRedirectOutcomes();
+    navigate.mockClear();
+    void connect.connect();
+    expect(sessionStorage.length).toBe(1);
+    returnWith(
+      navigatedUrl(navigate),
+      { principal: "aaaaa-aa" },
+      { state: "someone-elses-state-value-000000" }
+    );
+    await expect(connect.handleRedirectResult()).rejects.toThrow();
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it("reports unverified when the pending request lost its session key", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const verify = vi.spyOn(connect.api, "verifyConnect");
+    const navigate = spyNavigate(connect);
+    void connect.connect();
+    const url = navigatedUrl(navigate);
+    const key = sessionStorage.key(0)!;
+    const pending = JSON.parse(sessionStorage.getItem(key)!);
+    delete pending.sessionKey;
+    sessionStorage.setItem(key, JSON.stringify(pending));
+    returnWith(url, await odinConnectMessage(url));
+    expect(await connect.handleRedirectResult()).toMatchObject({
+      action: "connect",
+      status: "unverified",
+      error: expect.stringContaining("no session key"),
+    });
+    expect(verify).not.toHaveBeenCalled();
   });
 
   it("gets the JWT for requires_api from odin-api only", async () => {

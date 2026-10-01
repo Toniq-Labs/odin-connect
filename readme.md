@@ -92,12 +92,12 @@ sequenceDiagram
     participant API as odin-api
 
     App->>SDK: odinConnect.connect(options)
-    SDK->>Popup: window.open(odin.fun/authorize/connect?v=2&request_id&session_pubkey?...)
+    SDK->>Popup: window.open(odin.fun/authorize/connect?v=2&request_id&session_pubkey...)
     Popup->>User: Show sign-in UI
     User->>Popup: Authenticates
     Popup->>SDK: postMessage({ principal, delegationChain?, proof })
     SDK->>SDK: Check proof nonce/origin/principal and the delegation chain
-    SDK->>API: POST /connect/verify (proof, audience, nonce, issue_jwt)
+    SDK->>API: POST /connect/verify (proof, audience, nonce, issue_jwt, client_signature)
     API->>SDK: { principal, username, jwt? }
     SDK->>SDK: Create ConnectedUser instance
     SDK->>SDK: Persist session to localStorage
@@ -246,21 +246,34 @@ const identity = user.getIdentity();
 Since 2.0.0 a connect result is never taken on trust. A forged "connected as
 X" (devtools, a crafted URL fragment) is rejected:
 
-1. The session key is generated in your page and **only its public key** is
-   sent to Odin (`session_pubkey`). The secret never leaves the SDK.
+1. Every connect generates a session key in your page (with or without
+   `requires_delegation`) and sends **only its public key** to Odin
+   (`session_pubkey`). The secret never leaves the SDK.
 2. Odin signs an identity proof with the user's Odin identity, bound to your
-   origin (`aud`) and to this request (`request_id` nonce).
+   origin (`aud`), to this request (`request_id` nonce) and to that session
+   key (`sk` = the `session_pubkey` string). The SDK rejects a proof whose
+   `sk` is missing or is not its own key.
 3. With `requires_delegation`, the SDK checks the chain locally: not expired,
    issued to its own session key, rooted at the reported principal, and only
    scoped to the `targets` you asked for.
 4. The SDK posts the proof to odin-api `POST /connect/verify` (on the same
    base URL as the other API calls) with `audience: window.location.origin`,
-   `nonce: request_id` and `issue_jwt: requires_api`. odin-api verifies the
-   signature (including Internet Identity canister signatures), rejects
-   replays and returns `{ principal, username, jwt }`. The principal must
-   match.
+   `nonce: request_id`, `issue_jwt: requires_api` and `client_signature`:
+   the session key's signature over `"odin-connect-verify:v1\n" + payload`.
+   odin-api verifies the proof's signature (including Internet Identity
+   canister signatures) and that `client_signature` matches the key in `sk`,
+   rejects replays and returns `{ principal, username, jwt }`. The principal
+   must match.
 5. Only then is the user returned and persisted. With `requires_api`, the JWT
    comes from that API response; it never travels in a URL or `postMessage`.
+
+The `sk` binding is what makes a leaked proof worthless. In redirect mode the
+proof travels in the return URL's fragment, where browser history, extensions,
+analytics capturing `location.href` or third-party scripts can read it before
+the SDK does. Without the binding, whoever read it first could redeem it at
+`/connect/verify` for the user's JWT. With it, redeeming the proof needs a
+signature from the session secret, which stayed in your page (popup: in
+memory; redirect: in that tab's `sessionStorage` until the result is read).
 
 If any step fails, popup `connect()` rejects with an
 `OdinConnectVerificationError` ("OdinConnect could not verify the
@@ -446,7 +459,7 @@ deployed before this release).
 - **`requires_api` is allowed in redirect mode.** The JWT is issued by
   odin-api (`POST /connect/verify`) and never appears in a URL or message.
 - **`session_key` is no longer sent.** Odin receives `session_pubkey` (public
-  key only). Every authorize URL carries `v=2` and a `request_id`.
+  key only) on every connect, and the identity proof is bound to it. Every authorize URL carries `v=2` and a `request_id`.
 - **Action results can carry `detail`.** Redirect-mode `icrc_approve` results
   expose `detail.block_index` and `detail.memo`. Popup actions still resolve
   `true`.

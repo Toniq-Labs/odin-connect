@@ -2,9 +2,16 @@
  * Local checks on a connect result before the SDK trusts it. The identity
  * proof's signature is verified by odin-api (`POST /connect/verify`), which
  * also handles canister-signature roots (Internet Identity); these checks
- * bind the result to this request, this origin and this session key.
+ * bind the result to this request, this origin and this session key. The
+ * proof names the session public key (`sk`) and odin-api only redeems it
+ * with a `client_signature` from that key, so a proof read from a return
+ * URL is useless without the secret, which never leaves the SDK.
  */
-import { DelegationChain, JsonnableDelegationChain } from "@dfinity/identity";
+import {
+  DelegationChain,
+  Ed25519KeyIdentity,
+  JsonnableDelegationChain,
+} from "@dfinity/identity";
 import { Principal } from "@dfinity/principal";
 import { ConnectProof } from "./api";
 import { isDelegationValid } from "../utils/session";
@@ -42,6 +49,34 @@ function fromBase64(value: string): Uint8Array {
   return Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
 }
 
+/** base64 (standard alphabet, with padding). */
+export function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+/**
+ * Domain prefix of `client_signature`, distinct from the user's identity
+ * proof (`odin-connect-identity:v1\n`) and `/auth` (bare timestamp).
+ */
+export const CLIENT_SIGNATURE_PREFIX = "odin-connect-verify:v1\n";
+
+/**
+ * Sign the exact proof `payload` string with the connect's session key, so
+ * odin-api only redeems the proof for whoever holds the key whose public half
+ * the proof names (`sk`). Returns base64 (standard, with padding).
+ */
+export async function signClientBinding(
+  sessionKey: Ed25519KeyIdentity,
+  payload: string
+): Promise<string> {
+  const signature = await sessionKey.sign(
+    new TextEncoder().encode(CLIENT_SIGNATURE_PREFIX + payload)
+  );
+  return toBase64(new Uint8Array(signature));
+}
+
 /** Root public key (DER) of the identity that signed the proof. */
 function proofRootKey(proof: ConnectProof): Uint8Array {
   try {
@@ -70,6 +105,8 @@ export function checkProof(
     nonce: string;
     audience: string;
     requires_api: boolean;
+    /** `session_pubkey` exactly as sent (base64url DER, no padding). */
+    sessionPubkey: string;
   }
 ): void {
   if (
@@ -96,6 +133,12 @@ export function checkProof(
   }
   if (payload.principal !== expected.principal) {
     fail("the identity proof is for another principal");
+  }
+  if (typeof payload.sk !== "string") {
+    fail("the identity proof is not bound to a session key");
+  }
+  if (payload.sk !== expected.sessionPubkey) {
+    fail("the identity proof was issued to another session key");
   }
   if (expected.requires_api && payload.api !== true) {
     fail("API access was not granted");
