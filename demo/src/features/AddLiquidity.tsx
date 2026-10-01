@@ -2,27 +2,42 @@ import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
+import { useReturnState } from "../useReturnState";
 
 export function AddLiquidity() {
   const { odinConnect, requestUser, tokens } = useOdinContext();
   const [result, setResult] = useState<string | null>(null);
   const [amount, setAmount] = useState("0.0002");
   const [token, setToken] = useState("2jj5");
+  const redirect = useReturnState({
+    action: "add_liquidity",
+    label: "add liquidity",
+    success: (f) =>
+      `Successfully added liquidity of ${f.amount} BTC to ${f.token}`,
+    restore: (f) => {
+      setToken(f.token);
+      setAmount(f.amount);
+    },
+    setResult,
+  });
 
   const handleAddLiquidity = async (
     event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
+    setResult(null);
+    const resume = redirect.state({ token, amount });
     try {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
       }
-      const user = await requestUser();
-      const result = await user.addLiquidity({
+      const user = await requestUser(resume);
+      const added = await user.addLiquidity({
         btcAmount: OdinUtils.convertToOdinAmount(amount),
         token: token,
+        returnState: resume,
       });
-      console.log("Liquidity added:", result);
+      console.log("Liquidity added:", added);
       setResult(`Successfully added liquidity of ${amount} BTC to ${token}`);
     } catch (error) {
       console.error("Error adding liquidity:", error);

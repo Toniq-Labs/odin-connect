@@ -42,6 +42,7 @@ Layered. Public surface is small; everything else is internal services composed 
 - **Popup + postMessage is the auth/action mechanism.** No direct canister calls — the Odin frontend (origin from `ORIGINS`) handles signing in a popup; the SDK only opens the URL and listens for the reply. Always verify `event.origin === this.origin` before trusting a message.
 - **Environments** ([src/models/environment.ts](src/models/environment.ts)): `prod`/`dev`/`local`/`legacy`. `Connect` maps `prod`→`prod`, `legacy`→`legacy`, and everything else to `dev` for the API base URL, but keeps the full env for popup origins.
 - **Token-creation validators** ([src/utils/index.ts](src/utils/index.ts)): `createTokenValidators` map runs in `createToken`/`uploadImage`; each returns an error string or `undefined`. Add field rules there, not inline.
+- **Redirect mode** ([src/services/redirect.ts](src/services/redirect.ts)): `RedirectClient` replaces the popup with a same-tab round trip. The pending request (nonce, path, connect session key, and the caller's `returnState`) lives in `sessionStorage`, never in the URL; only `return_url` + `state` go to Odin, and the result comes back in the `#odin_connect=` fragment. New action options types extend `RedirectCallOptions` so `returnState` flows through `baseAction()`.
 
 ## Conventions for changes
 

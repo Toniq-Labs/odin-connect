@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
+import { useReturnState } from "../useReturnState";
 
 export function IcrcApprove() {
   const { tokens, odinConnect, requestUser } = useOdinContext();
@@ -9,10 +10,24 @@ export function IcrcApprove() {
   const [spender, setSpender] = useState("");
   const [amount, setAmount] = useState("1000");
   const [result, setResult] = useState<string | null>(null);
+  // Restores the form and reports the outcome after a redirect-mode round trip
+  const redirect = useReturnState({
+    action: "icrc_approve",
+    label: "approve",
+    success: (f) =>
+      `Successfully approved ${f.amount} of ${f.token} for spender ${f.spender}`,
+    restore: (f) => {
+      setToken(f.token);
+      setSpender(f.spender);
+      setAmount(f.amount);
+    },
+    setResult,
+  });
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setResult(null);
+    const resume = redirect.state({ token, spender, amount });
     try {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
@@ -22,11 +37,12 @@ export function IcrcApprove() {
       if (!tokenInfo) {
         throw new Error(`Token ${token} not found`);
       }
-      const user = await requestUser();
+      const user = await requestUser(resume);
       await user.icrcApprove({
         token,
         spender,
         amount: OdinUtils.convertToOdinAmount(amount, tokenInfo),
+        returnState: resume,
       });
       setResult(
         `Successfully approved ${amount} of ${token} for spender ${spender}`

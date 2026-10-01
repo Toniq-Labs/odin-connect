@@ -314,6 +314,35 @@ describe("returnState", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it("rejects a returnState that exceeds the sessionStorage quota", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+    await expect(
+      connect.odin.buy({
+        principal: "p",
+        token: "2jjj",
+        btcAmount: 1n,
+        returnState: { blob: "x".repeat(1024) },
+      })
+    ).rejects.toThrow("returnState is too large for sessionStorage");
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("still reports unusable sessionStorage for other setItem errors", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("denied", "SecurityError");
+    });
+    await expect(
+      connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n })
+    ).rejects.toThrow("sessionStorage, which is unavailable");
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("keeps createToken returnState out of the authorize URL", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);

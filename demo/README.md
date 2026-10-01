@@ -1,3 +1,33 @@
+# OdinConnect demo
+
+Run from the repository root with `npm run demo` (builds the SDK, installs it
+here, starts Vite).
+
+## Redirect mode: resuming forms with `returnState`
+
+In redirect mode (`mode: "redirect"`, or `"auto"` inside a wallet in-app
+browser) every `connect()` and action navigates this tab to Odin and back, so
+the page reloads and in-memory form state is gone. The demo passes what each
+form needs as the SDK's `returnState`, which stays in `sessionStorage` and
+comes back from `handleRedirectResult()`:
+
+- [src/useReturnState.ts](src/useReturnState.ts) is what each form uses.
+  `state(fields)` builds the value; pass it to both `requestUser()` and the
+  action. On the next load the hook calls `restore(fields)` to refill the
+  inputs and `setResult` with a message built from the outcome.
+- [src/OdinContextProvider.tsx](src/OdinContextProvider.tsx) calls
+  `handleRedirectResult()` before `restoreSession()` (which would drop the
+  `returnState` of a connect result) and forwards `requestUser(returnState)`
+  into `connect({ returnState })`.
+
+If the user was not connected, that `connect()` redirects first and the
+action never runs. The result is then a connect result carrying the form's
+`returnState`; the form is restored with a "Connected. Submit again" message
+and is never resubmitted automatically.
+
+`returnState` is plain JSON plus bigints, so the create-token image `File`
+is not carried and must be selected again.
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

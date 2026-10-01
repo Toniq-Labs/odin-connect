@@ -43,11 +43,30 @@ export interface PendingRedirect {
  * Per-call option shared by `connect()` and every action. In redirect mode
  * the page unloads, so anything the app needs to resume (current step, token,
  * amounts) can ride along here and comes back as `result.returnState` from
- * `handleRedirectResult()`. Must be JSON-serializable; bigints are preserved.
- * Ignored in popup mode, where the awaited call simply resolves.
+ * `handleRedirectResult()`. Ignored in popup mode, where the awaited call
+ * simply resolves.
+ *
+ * It is stored in `sessionStorage` as JSON, so only plain JSON plus `bigint`
+ * survives: a `File`, `Map`, `Date` or function is dropped or stringified the
+ * way `JSON.stringify` does it. Bigints are kept by tagging them as
+ * `{ "$odin_bigint": "<digits>" }`, so an object of exactly that shape is
+ * reserved and would come back as a bigint. A value that cannot be
+ * serialized (circular) or does not fit in `sessionStorage` rejects the call
+ * before navigating.
  */
 export interface RedirectCallOptions {
   returnState?: unknown;
+}
+
+/** True for the quota error browsers throw from `Storage.setItem`. */
+function isQuotaError(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === "QuotaExceededError" ||
+      error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+      error.code === 22 ||
+      error.code === 1014)
+  );
 }
 
 const BIGINT_TAG = "$odin_bigint";
@@ -85,12 +104,27 @@ export class PendingRedirectStorage {
 
   /**
    * Save and read back; false when sessionStorage is unusable. Throws when
-   * `returnState` is not serializable (e.g. circular references).
+   * `returnState` is not serializable (e.g. circular references) or too
+   * large for sessionStorage.
    */
   save(pending: PendingRedirect): boolean {
-    const value = stringifyPending(pending);
+    let value: string;
+    try {
+      value = stringifyPending(pending);
+    } catch {
+      throw new Error(
+        "returnState must be JSON-serializable (bigints are allowed)"
+      );
+    }
     try {
       sessionStorage.setItem(this._key, value);
+    } catch (error) {
+      if (isQuotaError(error)) {
+        throw new Error("returnState is too large for sessionStorage");
+      }
+      return false;
+    }
+    try {
       return sessionStorage.getItem(this._key) === value;
     } catch {
       return false;
@@ -217,10 +251,9 @@ export class RedirectClient {
     let saved: boolean;
     try {
       saved = this._pending.save({ ...pending, state });
-    } catch {
-      return Promise.reject(
-        new Error("returnState must be JSON-serializable (bigints are allowed)")
-      );
+    } catch (error) {
+      // Not serializable or too large; save() says which.
+      return Promise.reject(error);
     }
     if (!saved) {
       return Promise.reject(

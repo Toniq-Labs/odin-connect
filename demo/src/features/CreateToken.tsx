@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { OdinUtils } from "odin-connect";
+import { useReturnState } from "../useReturnState";
 const randomInt = Math.floor(Math.random() * 1000);
 
 export function CreateToken() {
@@ -17,6 +18,26 @@ export function CreateToken() {
   const [twitter, setTwitter] = useState("");
   const [preBuy, setPreBuy] = useState("");
   const [discount, setDiscount] = useState("");
+  // returnState is plain JSON, so the image File is not carried: after a
+  // connect-first redirect the text fields are restored but the image has to
+  // be selected again.
+  const redirect = useReturnState({
+    action: "create_token",
+    label: "create the token (select the image again first)",
+    success: (f) => `Token ${f.name} (${f.ticker}) created successfully!`,
+    restore: (f) => {
+      setName(f.name);
+      setTicker(f.ticker);
+      setVanityTicker(f.vanityTicker);
+      setDescription(f.description);
+      setWebsite(f.website);
+      setTelegram(f.telegram);
+      setTwitter(f.twitter);
+      setPreBuy(f.preBuy);
+      setDiscount(f.discount);
+    },
+    setResult,
+  });
 
   return (
     <div className="trade-form">
@@ -106,6 +127,17 @@ export function CreateToken() {
       <button
         disabled={loading}
         onClick={async () => {
+          const resume = redirect.state({
+            name,
+            ticker,
+            vanityTicker,
+            description,
+            website,
+            telegram,
+            twitter,
+            preBuy,
+            discount,
+          });
           try {
             setResult(null);
             setLoading(true);
@@ -113,7 +145,7 @@ export function CreateToken() {
               throw new Error("OdinConnect is not initialized");
             }
 
-            const user = await requestUser();
+            const user = await requestUser(resume);
 
             if (!image) {
               throw new Error("No image selected");
@@ -132,6 +164,7 @@ export function CreateToken() {
               twitter,
               buy: buyAmount,
               discount,
+              returnState: resume,
             });
             setResult(`Token created successfully!`);
             setLoading(false);

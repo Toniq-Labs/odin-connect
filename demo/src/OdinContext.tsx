@@ -14,8 +14,9 @@ type OdinContextType = {
   setConnectedUser: (user: OdinConnectedUser | null) => void;
   tokens: ReadonlyArray<OdinToken>;
   setTokens: (tokens: ReadonlyArray<OdinToken>) => void;
-  /* get the connected user, if not call odinConnect.connect() */
-  requestUser: () => Promise<OdinConnectedUser>;
+  /* get the connected user, if not call odinConnect.connect(); `returnState`
+     is forwarded to that connect() so a redirect-mode connect carries it */
+  requestUser: (returnState?: unknown) => Promise<OdinConnectedUser>;
   /* popup UI language, applied to the next popup opened */
   lang: OdinLang;
   setLang: (lang: OdinLang) => void;

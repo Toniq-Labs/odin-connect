@@ -39,11 +39,17 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     setOdinConnect(odin);
 
     // Finish a redirect-mode connect() or action first, so its outcome
-    // (including a rejection) is visible
+    // (including a rejection) and its returnState are visible. This must run
+    // before restoreSession(), which would consume a connect result and drop
+    // the returnState.
     let restoredUser: OdinConnectedUser | null = null;
     try {
       const result = odin.handleRedirectResult();
-      setRedirectResult(result);
+      // The fragment is consumed on the first call, so a StrictMode re-run
+      // sees null; keep the result from the first run.
+      if (result) {
+        setRedirectResult(result);
+      }
       if (result?.action === "connect" && result.status === "connected") {
         restoredUser = result.user;
       }
@@ -80,17 +86,23 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     [odinConnect]
   );
 
-  const requestUser = useCallback(async (): Promise<OdinConnectedUser> => {
-    if (!odinConnect) {
-      throw new Error("OdinConnect is not initialized");
-    }
-    if (connectedUser) {
-      return connectedUser;
-    }
-    const user = await odinConnect.connect();
-    setConnectedUser(user);
-    return user;
-  }, [connectedUser, odinConnect]);
+  const requestUser = useCallback(
+    async (returnState?: unknown): Promise<OdinConnectedUser> => {
+      if (!odinConnect) {
+        throw new Error("OdinConnect is not initialized");
+      }
+      if (connectedUser) {
+        return connectedUser;
+      }
+      // In redirect mode this connect() navigates away and never resolves;
+      // the caller's returnState comes back with the connect result so the
+      // form can be restored and submitted again.
+      const user = await odinConnect.connect({ returnState });
+      setConnectedUser(user);
+      return user;
+    },
+    [connectedUser, odinConnect]
+  );
 
   useEffect(() => {
     if (odinConnect) {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
+import { useReturnState } from "../useReturnState";
 
 export function Transfer() {
   const { tokens, odinConnect, requestUser } = useOdinContext();
@@ -11,10 +12,23 @@ export function Transfer() {
   const [token, setToken] = useState("2jj5");
   const [amount, setAmount] = useState("1000");
   const [result, setResult] = useState<string | null>(null);
+  const redirect = useReturnState({
+    action: "transfer",
+    label: "transfer",
+    success: (f) =>
+      `Successfully transferred ${f.amount} of ${f.token} to ${f.recipient}`,
+    restore: (f) => {
+      setRecipient(f.recipient);
+      setToken(f.token);
+      setAmount(f.amount);
+    },
+    setResult,
+  });
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setResult(null);
+    const resume = redirect.state({ recipient, token, amount });
     try {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
@@ -24,12 +38,12 @@ export function Transfer() {
       if (!tokenInfo) {
         throw new Error(`Token ${token} not found`);
       }
-      setResult(null);
-      const user = await requestUser();
+      const user = await requestUser(resume);
       await user.transfer({
         destination: recipient,
         token,
         amount: OdinUtils.convertToOdinAmount(amount, tokenInfo),
+        returnState: resume,
       });
       setResult(
         `Successfully transferred ${amount} of ${token} to ${recipient}`

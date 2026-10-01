@@ -2,16 +2,28 @@ import { useState, type FormEvent } from "react";
 import { useOdinContext } from "../OdinContext";
 import { TokenSelect } from "../ui/TokenSelect";
 import { OdinUtils } from "odin-connect";
+import { useReturnState } from "../useReturnState";
 
 export function Sell() {
   const { odinConnect, requestUser, tokens } = useOdinContext();
   const [amount, setAmount] = useState("10000");
   const [token, setToken] = useState("2jj5");
   const [result, setResult] = useState<string | null>(null);
+  const redirect = useReturnState({
+    action: "sell",
+    label: "sell",
+    success: (f) => `Successfully sold ${f.amount} of ${f.token}`,
+    restore: (f) => {
+      setToken(f.token);
+      setAmount(f.amount);
+    },
+    setResult,
+  });
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setResult(null);
+    const resume = redirect.state({ token, amount });
     try {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
@@ -22,11 +34,12 @@ export function Sell() {
         throw new Error("Invalid token selected");
       }
 
-      const user = await requestUser();
+      const user = await requestUser(resume);
 
       await user.sell({
         tokenAmount: OdinUtils.convertToOdinAmount(amount, tokenInfo),
         token,
+        returnState: resume,
       });
       setResult(`Successfully sold ${amount} of $${tokenInfo.name}`);
     } catch (error) {

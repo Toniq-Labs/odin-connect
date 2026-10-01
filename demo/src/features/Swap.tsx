@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useOdinContext } from "../OdinContext";
 import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
+import { useReturnState } from "../useReturnState";
 
 export function Swap() {
   const { odinConnect, tokens, requestUser } = useOdinContext();
@@ -9,6 +10,18 @@ export function Swap() {
   const [tokenFrom, setTokenFrom] = useState("2jj5");
   const [tokenTo, setTokenTo] = useState("2jjj");
   const [amountFrom, setAmountFrom] = useState("1000");
+  const redirect = useReturnState({
+    action: "swap",
+    label: "swap",
+    success: (f) =>
+      `Successfully swapped ${f.amountFrom} of ${f.tokenFrom} to ${f.tokenTo}`,
+    restore: (f) => {
+      setTokenFrom(f.tokenFrom);
+      setTokenTo(f.tokenTo);
+      setAmountFrom(f.amountFrom);
+    },
+    setResult,
+  });
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -18,6 +31,7 @@ export function Swap() {
       return;
     }
 
+    const resume = redirect.state({ tokenFrom, tokenTo, amountFrom });
     try {
       const fromTokenData = tokens.find((t) => t.id === tokenFrom);
       if (!fromTokenData) {
@@ -28,13 +42,17 @@ export function Swap() {
         fromTokenData
       );
 
-      const user = await requestUser();
-      const result = await user.swap({
+      const user = await requestUser(resume);
+      const swapped = await user.swap({
         fromToken: tokenFrom,
         toToken: tokenTo,
         fromAmount,
+        returnState: resume,
       });
-      console.log("Swap successful:", result);
+      console.log("Swap successful:", swapped);
+      setResult(
+        `Successfully swapped ${amountFrom} of ${tokenFrom} to ${tokenTo}`
+      );
     } catch (error) {
       if (error instanceof Error) {
         setResult("Error: " + error.message);

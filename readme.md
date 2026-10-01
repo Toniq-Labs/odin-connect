@@ -287,9 +287,12 @@ await user.buy({ token: "2jjj", btcAmount: 10_000_000n });
 In redirect mode the page reloads, so an awaited `connect()` / action never
 returns and in-memory state is gone. Pass anything you need to continue as
 `returnState`; it is kept with the one-time nonce in `sessionStorage` (never
-sent to Odin) and comes back on `handleRedirectResult()`. Any JSON value
-works, and bigints are preserved. In popup mode it is ignored and the awaited
-call resolves as usual, so the same code works in both modes:
+sent to Odin) and comes back on `handleRedirectResult()`. Any plain JSON value
+works, and bigints are preserved (a `File`, `Map` or `Date` is not: it is
+dropped or stringified like `JSON.stringify` does). A value that cannot be
+serialized or does not fit in `sessionStorage` rejects the call before
+navigating. In popup mode it is ignored and the awaited call resolves as
+usual, so the same code works in both modes:
 
 ```typescript
 type Resume = { step: "approve"; token: string; amount: bigint };
@@ -311,6 +314,14 @@ if (result?.action === "icrc_approve" && result.returnState) {
   else showError("Approval was rejected");
 }
 ```
+
+If the user was not connected yet, pass the same `returnState` to
+`connect()` as well: in redirect mode the connect round trip happens first,
+the action never runs, and the result is `{ action: "connect", ... }` with
+your `returnState` attached, so you can restore the page and let the user
+submit again. Call `handleRedirectResult()` before `restoreSession()` for
+this; `restoreSession()` consumes a connect result and drops its
+`returnState`.
 
 ## Session Restoration
 

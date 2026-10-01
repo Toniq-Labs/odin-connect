@@ -2,17 +2,31 @@ import { useState } from "react";
 import { useOdinContext } from "../OdinContext";
 import { OdinUtils } from "odin-connect";
 import { TokenSelect } from "../ui/TokenSelect";
+import { useReturnState } from "../useReturnState";
 
 export function RemoveLiquidity() {
   const { odinConnect, requestUser, tokens } = useOdinContext();
   const [result, setResult] = useState<string | null>(null);
   const [amount, setAmount] = useState("100");
   const [token, setToken] = useState("2jj5");
+  const redirect = useReturnState({
+    action: "remove_liquidity",
+    label: "remove liquidity",
+    success: (f) =>
+      `Successfully removed liquidity of ${f.amount} ${f.token}:LP`,
+    restore: (f) => {
+      setToken(f.token);
+      setAmount(f.amount);
+    },
+    setResult,
+  });
 
   const handleRemoveLiquidity = async (
     event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
+    setResult(null);
+    const resume = redirect.state({ token, amount });
     try {
       if (!odinConnect) {
         throw new Error("OdinConnect is not initialized");
@@ -22,11 +36,12 @@ export function RemoveLiquidity() {
         throw new Error("Invalid token selected");
       }
 
-      const user = await requestUser();
+      const user = await requestUser(resume);
 
       await user.removeLiquidity({
         lpAmount: OdinUtils.convertToOdinAmount(amount, tokenData),
         token: token,
+        returnState: resume,
       });
       setResult(`Successfully removed liquidity of ${amount} ${token}:LP`);
     } catch (error) {

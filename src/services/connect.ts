@@ -306,8 +306,9 @@ export class Connect {
    * request (stale, foreign or replayed).
    *
    * A successful connect is also persisted like a popup connect, and
-   * `restoreSession()` handles connect results itself, so call this first if
-   * you need to tell "rejected" from "not connected" or read action results.
+   * `restoreSession()` handles connect results itself (dropping their
+   * `returnState`), so call this first if you need to tell "rejected" from
+   * "not connected", read action results, or read a connect `returnState`.
    */
   handleRedirectResult<
     ReturnState = unknown,
