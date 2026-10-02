@@ -500,7 +500,7 @@ type OdinRequestState = {
   input: /* per action, see below */;
   detail?: OdinActionDetail; // icrc_approve: { block_index }
   returnState?: unknown;
-  error?: string; // for "failed" and "unverified"
+  error?: string; // "failed" / "unverified": why; "rejected": OdinRejectReason
 };
 ```
 
@@ -535,6 +535,26 @@ declines, and `"failed"` otherwise (popup blocked, Odin reported an error, a
 `createToken` validation or upload error). The `user.<action>()` promises
 work as in 1.6.0: popup mode resolves `true` or rejects; redirect mode never
 settles.
+
+#### Rejection reasons
+
+When Odin cannot offer the request, its error screen has a "Back to app"
+button. It returns a `"rejected"` result (popup and redirect mode), and
+`request.error` holds a reason code (`OdinRejectReason`). A plain Reject
+leaves `error` unset. Popup promises still reject with the 1.6.0 text
+("User rejected the connection" / the action's failure text).
+
+| `request.error` | Meaning |
+|-----------------|---------|
+| `untrusted_origin` | A delegation target canister does not list your origin in its ICRC-28 trusted origins. Add your origin to every target canister's `icrc28_trusted_origins`. |
+| `invalid_targets` | A `targets` canister id is invalid or not allowed. |
+| `no_targets` | `requires_delegation` without any `targets`. |
+| `invalid_session_key` | The session public key is missing or malformed. |
+| `missing_request_id` | No request id, or no identity, to bind the identity proof. |
+| `unsupported_identity` | The user's wallet cannot sign the identity proof. |
+| `no_action` | Odin has no authorize page for this action. |
+
+Odin may add codes; treat an unknown one as a plain rejection.
 
 ### Session persistence
 
@@ -973,6 +993,7 @@ import type {
   OdinRequestInput,
   OdinAction,
   OdinActionDetail,
+  OdinRejectReason,
   SessionData,
 } from "odin-connect";
 ```

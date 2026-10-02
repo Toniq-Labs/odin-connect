@@ -7,6 +7,7 @@ import {
   apiAccepts,
   clientSignatureValid,
   odinApproveDetail,
+  odinBackToApp,
   odinConnectMessage,
   odinReturnTarget,
 } from "../../test/odin-page";
@@ -394,6 +395,22 @@ describe("Connect redirect mode", () => {
     expect(window.location.hash).toBe("");
   });
 
+  it("reports a rejected connect with Odin's reason as error", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.connect({ requires_delegation: true, targets: ["aaaaa-aa"] });
+    const url = navigatedUrl(navigate);
+    const { message, ...rest } = odinBackToApp(url, "untrusted_origin");
+    returnWith(url, message, rest);
+    const { state } = await reload();
+    expect(state.request).toMatchObject({
+      action: "connect",
+      status: "rejected",
+      error: "untrusted_origin",
+    });
+    expect(state.user).toBeNull();
+  });
+
   it("ignores a result whose state does not match, and strips it", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);
@@ -694,6 +711,26 @@ describe("Action redirect mode", () => {
       status: "rejected",
     });
     expect(state.request).not.toHaveProperty("error");
+  });
+
+  it("reports a rejected action with Odin's reason as error", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.odin.icrcApprove({
+      principal: "p",
+      token: "2jjj",
+      spender: "aaaaa-aa",
+      amount: 1n,
+    });
+    const url = navigatedUrl(navigate);
+    const { message, ...rest } = odinBackToApp(url, "invalid_session_key");
+    returnWith(url, message, rest);
+    const { state } = await reload();
+    expect(state.request).toMatchObject({
+      action: "icrc_approve",
+      status: "rejected",
+      error: "invalid_session_key",
+    });
   });
 
   it("reports any other message as failed", async () => {

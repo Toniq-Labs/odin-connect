@@ -6,6 +6,7 @@ import { StateStore, type OdinState } from "./state";
 import {
   apiAccepts,
   odinApproveDetail,
+  odinBackToApp,
   odinConnectMessage,
 } from "../../test/odin-page";
 
@@ -128,6 +129,37 @@ describe("popup connect → state", () => {
     ]);
     expect(connect.state.request).not.toHaveProperty("error");
     expect(connect.user).toBeNull();
+  });
+
+  it("pending → rejected with Odin's reason as error; the promise still rejects as in 1.6.0", async () => {
+    const connect = await readyConnect();
+    const open = openSpy();
+    const promise = connect.connect({
+      requires_delegation: true,
+      targets: ["aaaaa-aa"],
+    });
+    const url = open.mock.calls[0][0] as URL;
+    const { message, detail } = odinBackToApp(url, "untrusted_origin");
+    answer(connect, "/authorize/connect", message, detail);
+    await expect(promise).rejects.toThrow("User rejected the connection");
+    expect(connect.state.request).toMatchObject({
+      action: "connect",
+      status: "rejected",
+      error: "untrusted_origin",
+    });
+    expect(connect.user).toBeNull();
+  });
+
+  it("ignores a reason that is not a short code", async () => {
+    const connect = await readyConnect();
+    openSpy();
+    const promise = connect.connect();
+    answer(connect, "/authorize/connect", "rejected", {
+      reason: "<b>not a code</b>",
+    });
+    await expect(promise).rejects.toThrow("User rejected the connection");
+    expect(connect.state.request?.status).toBe("rejected");
+    expect(connect.state.request).not.toHaveProperty("error");
   });
 
   it("pending → unverified with the verification error", async () => {
@@ -347,6 +379,26 @@ describe("popup actions → state", () => {
       action: "buy",
       status: "failed",
       error: "Purchase failed or was cancelled",
+    });
+  });
+
+  it("pending → rejected with Odin's reason; the promise rejects with the action's failure text", async () => {
+    const connect = await readyConnect();
+    const user = await connectedUser(connect);
+    const open = openSpy();
+    const promise = user.swap({
+      fromToken: "btc",
+      toToken: "2jjj",
+      fromAmount: 1n,
+    });
+    const url = open.mock.calls[0][0] as URL;
+    const { message, detail } = odinBackToApp(url, "no_action");
+    answer(connect, "/authorize/swap", message, detail);
+    await expect(promise).rejects.toThrow("Swap failed or was cancelled");
+    expect(connect.state.request).toMatchObject({
+      action: "swap",
+      status: "rejected",
+      error: "no_action",
     });
   });
 

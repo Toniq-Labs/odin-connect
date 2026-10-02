@@ -133,10 +133,24 @@ function readDetail(detail: unknown): OdinActionDetail | undefined {
     : undefined;
 }
 
+const REJECT_REASON_PATTERN = /^[a-z0-9_]{1,64}$/;
+
+/**
+ * Odin's `detail.reason` on a rejection (an `OdinRejectReason` code), else
+ * undefined. Only short snake_case codes are accepted.
+ */
+export function readRejectReason(detail: unknown): string | undefined {
+  const reason = readDetail(detail)?.reason;
+  return typeof reason === "string" && REJECT_REASON_PATTERN.test(reason)
+    ? reason
+    : undefined;
+}
+
 /**
  * How an action result maps to a request status: the action's success
- * message → `"success"`, `"rejected"` → `"rejected"`, anything else →
- * `"failed"` (with the action's failure text as `error`).
+ * message → `"success"`, `"rejected"` → `"rejected"` (with Odin's
+ * `detail.reason` as `error`, if any), anything else → `"failed"` (with the
+ * action's failure text as `error`).
  */
 export function actionOutcome(
   action: OdinAction,
@@ -151,7 +165,10 @@ export function actionOutcome(
     const parsed = readDetail(detail);
     return { status: "success", ...(parsed ? { detail: parsed } : {}) };
   }
-  if (message === "rejected") return { status: "rejected" };
+  if (message === "rejected") {
+    const reason = readRejectReason(detail);
+    return { status: "rejected", ...(reason ? { error: reason } : {}) };
+  }
   return { status: "failed", error: ACTIONS[action].failure };
 }
 

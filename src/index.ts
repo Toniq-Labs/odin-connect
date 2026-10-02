@@ -6,6 +6,7 @@ export type {
 export type {
   OdinAction,
   OdinActionDetail,
+  OdinRejectReason,
   OdinRequestInput,
   OdinRequestState,
   OdinRequestStatus,

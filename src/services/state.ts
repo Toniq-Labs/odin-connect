@@ -33,7 +33,8 @@ export type OdinActionDetail = {
 /**
  * - `"pending"`: started; the popup is open or the tab is on its way to Odin.
  * - `"success"`: Odin confirmed it (a connect also passed every verification).
- * - `"rejected"`: the user declined in the Odin page.
+ * - `"rejected"`: the user declined in the Odin page, or went back to the app
+ *   from an Odin error screen (then `error` holds an `OdinRejectReason`).
  * - `"failed"`: anything else (popup blocked, Odin reported an error, ...).
  * - `"unverified"`: connect only; Odin's answer could not be verified, the
  *   user is not connected and nothing was stored.
@@ -86,10 +87,36 @@ export type OdinRequestState = {
     detail?: OdinActionDetail;
     /** Whatever was passed as `returnState` to the call, in both modes. */
     returnState?: unknown;
-    /** Why it is `"failed"` or `"unverified"`. */
+    /**
+     * Why it is `"failed"` or `"unverified"`. On `"rejected"`: the reason
+     * code (`OdinRejectReason`) when the user went back to the app from an
+     * Odin error screen; absent when the user simply declined.
+     */
     error?: string;
   };
 }[keyof OdinRequestInput];
+
+/**
+ * Codes Odin sends (v=2) when the user goes back to the app from an
+ * authorize error screen. They land in `state.request.error` with status
+ * `"rejected"`. Odin may add codes; treat unknown ones as a plain rejection.
+ * - `untrusted_origin`: a delegation target canister does not list the app's
+ *   origin in its ICRC-28 trusted origins.
+ * - `invalid_targets`: a `targets` canister id is invalid or not allowed.
+ * - `no_targets`: a delegation was requested without target canisters.
+ * - `invalid_session_key`: the session public key is missing or malformed.
+ * - `missing_request_id`: no request id, or no identity, to bind the proof.
+ * - `unsupported_identity`: the user's wallet cannot sign the identity proof.
+ * - `no_action`: Odin has no authorize page for this action.
+ */
+export type OdinRejectReason =
+  | "untrusted_origin"
+  | "invalid_targets"
+  | "no_targets"
+  | "invalid_session_key"
+  | "missing_request_id"
+  | "unsupported_identity"
+  | "no_action";
 
 export type OdinState = {
   /** `"initializing"` until `ready()` has restored the session. */

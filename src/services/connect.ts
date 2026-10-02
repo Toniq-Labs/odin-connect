@@ -7,7 +7,13 @@ import {
 import { ConnectedUser } from "./connected-user";
 import { Environment, ORIGINS } from "../models/environment";
 import { WindowClient, WindowClientSettings } from "./window";
-import { ACTIONS, actionOutcome, OdinCanisterClient, quiet } from "./canister";
+import {
+  ACTIONS,
+  actionOutcome,
+  OdinCanisterClient,
+  quiet,
+  readRejectReason,
+} from "./canister";
 import { SessionStorage } from "./storage";
 import { isDelegationValid } from "../utils/session";
 import { OdinLang } from "../models/lang";
@@ -449,10 +455,12 @@ export class Connect {
           ) {
             window.removeEventListener("message", handleMessage);
             if (event.data.message === "rejected") {
+              const reason = readRejectReason(event.data.detail);
               this._store.dispatch({
                 type: "settle",
                 id: requestId,
                 status: "rejected",
+                ...(reason ? { error: reason } : {}),
               });
               reject(new Error("User rejected the connection"));
               return;
@@ -627,7 +635,14 @@ export class Connect {
         ...extra,
       };
       if (result.message === "rejected") {
-        return { request: { ...request, status: "rejected" } };
+        const reason = readRejectReason(result.detail);
+        return {
+          request: {
+            ...request,
+            status: "rejected",
+            ...(reason ? { error: reason } : {}),
+          },
+        };
       }
       if (!pending.sessionKey) {
         // every connect saves its key; without it the proof can't be redeemed

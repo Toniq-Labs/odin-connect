@@ -86,6 +86,17 @@ export function odinApproveDetail(blockIndex: bigint) {
   return { block_index: blockIndex.toString() };
 }
 
+/**
+ * What the Odin page sends when the user taps "Back to app" on an authorize
+ * error screen: `"rejected"`, plus `detail: { reason }` for v=2 only (v=1
+ * gets exactly the old `{ message: "rejected" }`).
+ */
+export function odinBackToApp(url: URL, reason: string) {
+  return url.searchParams.get("v") === "2"
+    ? { message: "rejected", detail: { reason } }
+    : { message: "rejected" };
+}
+
 export interface OdinPageOptions {
   /** Odin identity of the user (default: a fresh Ed25519 key). */
   user?: SignIdentity;

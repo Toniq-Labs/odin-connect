@@ -117,8 +117,24 @@ function applyOdinState({ user, request }) {
   if (request?.action === "connect" && request.status === "unverified") {
     showError("Could not verify the sign-in. Please try again.");
   }
+  if (request?.action === "connect" && request.status === "rejected") {
+    if (request.error === "untrusted_origin") {
+      // Odin's ICRC-28 check failed: a target canister does not list this
+      // app's origin in icrc28_trusted_origins. Not fixable by retrying.
+      showError("This app's origin is not trusted by the target canisters.");
+    } else {
+      showError("Sign-in was cancelled.");
+    }
+  }
 }
 ```
+
+A `"rejected"` request carries `request.error` when the user tapped "Back
+to app" on an Odin error screen: `untrusted_origin`, `invalid_targets`,
+`no_targets`, `invalid_session_key`, `missing_request_id`,
+`unsupported_identity` or `no_action` (`OdinRejectReason`; see the readme's
+"Rejection reasons"). A plain Reject leaves it unset. Treat unknown codes as
+a plain rejection.
 
 Rules:
 - Use `request.input` instead of variables captured before the call; they
