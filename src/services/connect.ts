@@ -517,7 +517,8 @@ export class Connect {
         }
         window.addEventListener("message", handleMessage);
         // closed without an answer (the page's own "rejected" on unload is
-        // not reliable): settle it as rejected; a late answer is ignored
+        // not reliable): settle it as rejected after the grace period; an
+        // answer within it is handled as usual, a later one is ignored
         stopWatching = watchPopupClosed(opened, requestId, this._store, () => {
           window.removeEventListener("message", handleMessage);
           this._store.dispatch({

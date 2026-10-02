@@ -553,12 +553,14 @@ leaves `error` unset. Popup promises still reject with the 1.6.0 text
 | `missing_request_id` | No request id, or no identity, to bind the identity proof. |
 | `unsupported_identity` | The user's wallet cannot sign the identity proof. |
 | `no_action` | Odin has no authorize page for this action. |
-| `popup_closed` | Set by the SDK, popup mode only: the popup was closed without an answer (checked every 500 ms). |
+| `popup_closed` | Set by the SDK, popup mode only: the popup was closed without an answer (checked every 500 ms, then a 1.5 s grace period for an answer posted just before the close). |
 
 A closed popup settles the pending `connect()` or action as `"rejected"` /
 `popup_closed`, so the app never waits forever; the popup promise rejects
-with the same text as a user rejection. If Odin's answer arrives anyway, the
-first of the two wins and the other is ignored.
+with the same text as a user rejection. Odin posts its answer and then closes
+the popup, so the SDK waits a 1.5 s grace period after it sees the
+popup closed: an answer arriving in that time is handled as usual (a connect
+is still fully verified). An answer after the grace period is ignored.
 
 Odin may add codes; treat an unknown one as a plain rejection.
 
@@ -686,6 +688,9 @@ Relative to 1.6.0 and 1.7.0:
   longer consumes redirect connect results.
 - Redirect mode returns to `origin + pathname` (no query, no fragment) and
   restores the query once the result is read.
+- **A popup closed without an answer settles the request** as `"rejected"`
+  with `error: "popup_closed"` (after a 1.5 s grace period); the promise
+  rejects with the usual rejection text. In 1.6.0 / 1.7.0 it never settled.
 
 ### New in 2.0
 
@@ -697,6 +702,10 @@ Relative to 1.6.0 and 1.7.0:
 - `returnState` on every call; action results can carry `detail`
   (`icrc_approve`: `block_index`). Popup actions still resolve
   `true`.
+- Rejection reasons: a `"rejected"` request carries `state.request.error`
+  (`OdinRejectReason`, e.g. `untrusted_origin`, `no_targets`,
+  `popup_closed`) when Odin's "Back to app" or a closed popup ended it (see
+  [Rejection reasons](#rejection-reasons)).
 
 ## Connected User Operations
 

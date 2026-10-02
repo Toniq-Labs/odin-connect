@@ -274,8 +274,9 @@ double effects are safe (odin-api is asked once).
   window, please always allow popups and try again") instead of hanging.
 - A popup the user closes without answering settles the request as
   `"rejected"` with `error: "popup_closed"` (the promise rejects with the
-  usual rejection text). Do not keep buttons disabled until a reload: re-enable
-  them on any settled status.
+  usual rejection text) once a 1.5 s grace period has passed; an answer
+  Odin posted just before closing the popup still wins. Do not keep buttons
+  disabled until a reload: re-enable them on any settled status.
 - A new verified connect replaces the stored session (the previous user's
   JWT and delegation are cleared).
 - Only the latest request updates `state`; a connect that finishes after a

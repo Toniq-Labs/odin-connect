@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Connect, resetRedirectOutcomes } from "./connect";
 import type { ConnectedUser } from "./connected-user";
-import { POPUP_CLOSED_POLL_MS } from "./canister";
+import { POPUP_CLOSED_GRACE_MS, POPUP_CLOSED_POLL_MS } from "./canister";
 import type { OdinState } from "./state";
 import { apiAccepts, odinConnectMessage } from "../../test/odin-page";
 
@@ -40,6 +40,21 @@ function poll(ticks = 1) {
   vi.advanceTimersByTime(POPUP_CLOSED_POLL_MS * ticks);
 }
 
+/**
+ * Pending poll / grace timers. jsdom's storage events also use `setTimeout`
+ * (delay 0): let those run first so only the watch's timers are counted.
+ */
+function watchTimers() {
+  vi.advanceTimersByTime(0);
+  return vi.getTimerCount();
+}
+
+/** The poll sees the closed popup, then the whole grace period passes. */
+function pollAndWaitGrace() {
+  poll();
+  vi.advanceTimersByTime(POPUP_CLOSED_GRACE_MS);
+}
+
 async function readyConnect() {
   const connect = new Connect({ name: "test", env: "dev", mode: "popup" });
   await connect.ready();
@@ -59,8 +74,11 @@ async function connectedUser(connect: Connect): Promise<ConnectedUser> {
 }
 
 beforeEach(() => {
-  // only the poll's timers: crypto and promises keep running for real
-  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  // only the poll's and the grace period's timers: crypto and promises keep
+  // running for real
+  vi.useFakeTimers({
+    toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"],
+  });
   window.history.replaceState(null, "", "/app");
   sessionStorage.clear();
   localStorage.clear();
@@ -84,6 +102,10 @@ describe("popup closed without an answer", () => {
 
     win.closed = true;
     poll();
+    // seen closed: still pending for the grace period
+    vi.advanceTimersByTime(POPUP_CLOSED_GRACE_MS - 1);
+    expect(connect.state.request?.status).toBe("pending");
+    vi.advanceTimersByTime(1);
     await expect(promise).rejects.toThrow("User rejected the connection");
     expect(connect.state.request).toMatchObject({
       action: "connect",
@@ -95,7 +117,7 @@ describe("popup closed without an answer", () => {
       "rejected",
     ]);
     expect(connect.user).toBeNull();
-    expect(vi.getTimerCount()).toBe(0);
+    expect(watchTimers()).toBe(0);
   });
 
   it("action: settles rejected / popup_closed; the promise rejects with the action's failure text", async () => {
@@ -109,7 +131,7 @@ describe("popup closed without an answer", () => {
       amount: 1n,
     });
     win.closed = true;
-    poll();
+    pollAndWaitGrace();
     await expect(promise).rejects.toThrow(
       "ICRC approve failed or was cancelled"
     );
@@ -120,10 +142,10 @@ describe("popup closed without an answer", () => {
     });
     // a still-connected user stays connected
     expect(connect.user).toBe(user);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(watchTimers()).toBe(0);
   });
 
-  it("a late answer after the close is ignored (first settle wins)", async () => {
+  it("an answer after the grace period is ignored (first settle wins)", async () => {
     const connect = await readyConnect();
     const verify = vi
       .spyOn(connect.api, "verifyConnect")
@@ -133,11 +155,12 @@ describe("popup closed without an answer", () => {
     const open = openSpy(win);
     const promise = connect.connect({ requires_api: true });
     const url = open.mock.calls[0][0] as URL;
+    const message = await odinConnectMessage(url);
     win.closed = true;
-    poll();
-    answer(connect, win, "/authorize/connect", await odinConnectMessage(url));
+    pollAndWaitGrace();
+    answer(connect, win, "/authorize/connect", message);
     await expect(promise).rejects.toThrow("User rejected the connection");
-    await new Promise((r) => setTimeout(r, 0));
+    await vi.advanceTimersByTimeAsync(0);
     expect(verify).not.toHaveBeenCalled();
     expect(states.map((s) => s.request?.status)).toEqual([
       "pending",
@@ -147,7 +170,7 @@ describe("popup closed without an answer", () => {
     expect(localStorage.length).toBe(0);
   });
 
-  it("action: a late success after the close is ignored", async () => {
+  it("action: a success after the grace period is ignored", async () => {
     const connect = await readyConnect();
     const user = await connectedUser(connect);
     const states = record(connect);
@@ -155,7 +178,7 @@ describe("popup closed without an answer", () => {
     openSpy(win);
     const promise = user.buy({ token: "2jjj", btcAmount: 1n });
     win.closed = true;
-    poll();
+    pollAndWaitGrace();
     answer(connect, win, "/authorize/buy", "purchased");
     await expect(promise).rejects.toThrow("Purchase failed or was cancelled");
     expect(states.map((s) => s.request?.status)).toEqual([
@@ -186,7 +209,7 @@ describe("popup answered, then closed", () => {
     // the Odin page closes itself right after answering
     win.closed = true;
     poll(4);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(watchTimers()).toBe(0);
     await vi.waitFor(() => expect(accept).toBeTypeOf("function"));
     expect(connect.state.request?.status).toBe("pending");
     accept();
@@ -214,7 +237,133 @@ describe("popup answered, then closed", () => {
       "pending",
       "success",
     ]);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(watchTimers()).toBe(0);
+  });
+});
+
+describe("grace period after the popup closed", () => {
+  it("connect: an answer 200 ms after the close still succeeds (fully verified)", async () => {
+    const connect = await readyConnect();
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const states = record(connect);
+    const win = popup();
+    const open = openSpy(win);
+    const promise = connect.connect({ requires_api: true });
+    const url = open.mock.calls[0][0] as URL;
+    const message = await odinConnectMessage(url);
+    win.closed = true;
+    poll();
+    vi.advanceTimersByTime(200);
+    answer(connect, win, "/authorize/connect", message);
+    const user = await promise;
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(user.principal).toBe(message.principal);
+    // the grace timer is gone: nothing fires later
+    expect(watchTimers()).toBe(0);
+    vi.advanceTimersByTime(POPUP_CLOSED_GRACE_MS * 2);
+    expect(states.map((s) => s.request?.status)).toEqual([
+      "pending",
+      "success",
+    ]);
+    expect(connect.state.request).not.toHaveProperty("error");
+    expect(connect.user).toBe(user);
+  });
+
+  it("action: a success 200 ms after the close settles success, no popup_closed", async () => {
+    const connect = await readyConnect();
+    const user = await connectedUser(connect);
+    const states = record(connect);
+    const win = popup();
+    openSpy(win);
+    const promise = user.icrcApprove({
+      token: "2jjj",
+      spender: "aaaaa-aa",
+      amount: 1n,
+    });
+    win.closed = true;
+    poll();
+    vi.advanceTimersByTime(200);
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: connect.origin,
+        source: win,
+        data: {
+          path: "/authorize/icrc_approve",
+          message: "approved",
+          detail: { block_index: "7" },
+        },
+      })
+    );
+    await expect(promise).resolves.toBe(true);
+    expect(watchTimers()).toBe(0);
+    vi.advanceTimersByTime(POPUP_CLOSED_GRACE_MS * 2);
+    expect(states.map((s) => s.request?.status)).toEqual([
+      "pending",
+      "success",
+    ]);
+    expect(connect.state.request).not.toHaveProperty("error");
+  });
+
+  it("no answer: settles popup_closed only once the grace period ends", async () => {
+    const connect = await readyConnect();
+    const user = await connectedUser(connect);
+    const win = popup();
+    openSpy(win);
+    const promise = user.sell({ token: "2jjj", tokenAmount: 1n });
+    win.closed = true;
+    poll();
+    // the poll stopped; only the grace timer is left
+    expect(watchTimers()).toBe(1);
+    vi.advanceTimersByTime(POPUP_CLOSED_GRACE_MS - 1);
+    expect(connect.state.request?.status).toBe("pending");
+    vi.advanceTimersByTime(1);
+    await expect(promise).rejects.toThrow("Sell failed or was cancelled");
+    expect(connect.state.request).toMatchObject({
+      status: "rejected",
+      error: "popup_closed",
+    });
+    expect(watchTimers()).toBe(0);
+  });
+
+  it("superseded during the grace period: the old request does nothing", async () => {
+    const connect = await readyConnect();
+    const user = await connectedUser(connect);
+    const winA = popup();
+    const winB = popup();
+    openSpy(winA);
+    void user.buy({ token: "2jjj", btcAmount: 1n });
+    winA.closed = true;
+    poll();
+    expect(watchTimers()).toBe(1);
+    openSpy(winB);
+    void user.sell({ token: "2jjj", tokenAmount: 1n });
+    // A's grace timer is cleared, B's poll runs
+    expect(watchTimers()).toBe(1);
+    const states = record(connect);
+    vi.advanceTimersByTime(POPUP_CLOSED_GRACE_MS);
+    expect(states).toEqual([]);
+    expect(connect.state.request).toMatchObject({
+      action: "sell",
+      status: "pending",
+    });
+  });
+
+  it("disconnect() during the grace period: nothing settles", async () => {
+    const connect = await readyConnect();
+    const states = record(connect);
+    const win = popup();
+    openSpy(win);
+    void connect.connect();
+    win.closed = true;
+    poll();
+    expect(watchTimers()).toBe(1);
+    connect.disconnect();
+    expect(watchTimers()).toBe(0);
+    vi.advanceTimersByTime(POPUP_CLOSED_GRACE_MS);
+    expect(connect.state.request).toBeNull();
+    expect(states.map((s) => s.request?.status)).toEqual(["pending", undefined]);
   });
 });
 
@@ -226,11 +375,11 @@ describe("popup watch lifecycle", () => {
     const winB = popup();
     openSpy(winA);
     void user.buy({ token: "2jjj", btcAmount: 1n });
-    expect(vi.getTimerCount()).toBe(1);
+    expect(watchTimers()).toBe(1);
     openSpy(winB);
     void user.sell({ token: "2jjj", tokenAmount: 1n });
     // A stopped watching as soon as B replaced it
-    expect(vi.getTimerCount()).toBe(1);
+    expect(watchTimers()).toBe(1);
     const states = record(connect);
     winA.closed = true;
     poll(3);
@@ -243,13 +392,13 @@ describe("popup watch lifecycle", () => {
 
     // B's own popup still settles B
     winB.closed = true;
-    poll();
+    pollAndWaitGrace();
     expect(connect.state.request).toMatchObject({
       action: "sell",
       status: "rejected",
       error: "popup_closed",
     });
-    expect(vi.getTimerCount()).toBe(0);
+    expect(watchTimers()).toBe(0);
   });
 
   it("a superseded connect's popup closing leaves the newer connect pending", async () => {
@@ -260,7 +409,7 @@ describe("popup watch lifecycle", () => {
     void connect.connect();
     openSpy(winB);
     void connect.connect();
-    expect(vi.getTimerCount()).toBe(1);
+    expect(watchTimers()).toBe(1);
     winA.closed = true;
     poll(2);
     expect(connect.state.request).toMatchObject({
@@ -275,9 +424,9 @@ describe("popup watch lifecycle", () => {
     const win = popup();
     openSpy(win);
     void user.buy({ token: "2jjj", btcAmount: 1n });
-    expect(vi.getTimerCount()).toBe(1);
+    expect(watchTimers()).toBe(1);
     connect.disconnect();
-    expect(vi.getTimerCount()).toBe(0);
+    expect(watchTimers()).toBe(0);
     win.closed = true;
     poll();
     expect(connect.state.request).toBeNull();
@@ -289,10 +438,10 @@ describe("popup watch lifecycle", () => {
     const win = popup();
     openSpy(win);
     const promise = connect.connect();
-    expect(vi.getTimerCount()).toBe(1);
+    expect(watchTimers()).toBe(1);
     answer(connect, win, "/authorize/connect", "rejected");
     await expect(promise).rejects.toThrow("User rejected the connection");
-    expect(vi.getTimerCount()).toBe(0);
+    expect(watchTimers()).toBe(0);
     expect(connect.state.request).not.toHaveProperty("error");
     expect(states.map((s) => s.request?.status)).toEqual([
       "pending",
@@ -304,6 +453,6 @@ describe("popup watch lifecycle", () => {
     const connect = await readyConnect();
     vi.spyOn(window, "open").mockReturnValue(null);
     await expect(connect.connect()).rejects.toThrow(/allow popups/);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(watchTimers()).toBe(0);
   });
 });

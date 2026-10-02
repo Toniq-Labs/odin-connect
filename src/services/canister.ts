@@ -190,11 +190,21 @@ export function quiet<T>(promise: Promise<T>): Promise<T> {
 export const POPUP_CLOSED_POLL_MS = 500;
 
 /**
- * Watch a request's popup until it closes, and call `onClosed` then. Stops
- * (clears its timer) when the returned function is called (the request got
- * its answer), and on its own once `requestId` is no longer the pending
- * `state.request` (it settled, a newer request replaced it, `disconnect()`).
- * `onClosed` is called at most once, and never after `stop()`.
+ * How long a closed popup's answer is still waited for. The Odin page posts
+ * its result and then closes itself, so a poll can see `closed` before the
+ * answer's message event has been handled.
+ */
+export const POPUP_CLOSED_GRACE_MS = 1500;
+
+/**
+ * Watch a request's popup until it closes, and call `onClosed` then — once
+ * the popup has stayed closed for `POPUP_CLOSED_GRACE_MS` without an answer
+ * (an answer arriving meanwhile is handled as usual and calls `stop()`).
+ * Stops (clears its timers) when the returned function is called (the
+ * request got its answer), and on its own once `requestId` is no longer the
+ * pending `state.request` (it settled, a newer request replaced it,
+ * `disconnect()`), also during the grace period. `onClosed` is called at
+ * most once, and never after `stop()`.
  */
 export function watchPopupClosed(
   popup: Window,
@@ -204,22 +214,32 @@ export function watchPopupClosed(
 ): () => void {
   let stopped = false;
   let unsubscribe: (() => void) | null = null;
+  let grace: ReturnType<typeof setTimeout> | null = null;
+  const isPending = () => {
+    if (!store) return true;
+    const { request } = store.state;
+    return request?.id === requestId && request.status === "pending";
+  };
   const stop = () => {
     if (stopped) return;
     stopped = true;
     clearInterval(timer);
+    if (grace !== null) clearTimeout(grace);
     unsubscribe?.();
   };
   const timer = setInterval(() => {
-    if (!popup.closed) return;
-    stop();
-    onClosed();
+    if (!popup.closed || grace !== null) return;
+    clearInterval(timer);
+    // closed: give an answer that was posted right before it time to land
+    grace = setTimeout(() => {
+      const pending = isPending();
+      stop();
+      if (pending) onClosed();
+    }, POPUP_CLOSED_GRACE_MS);
   }, POPUP_CLOSED_POLL_MS);
   unsubscribe =
-    store?.subscribe(({ request }) => {
-      if (request?.id !== requestId || request.status !== "pending") {
-        stop();
-      }
+    store?.subscribe(() => {
+      if (!isPending()) stop();
     }) ?? null;
   return stop;
 }
@@ -380,7 +400,8 @@ export class OdinCanisterClient {
         }
         window.addEventListener("message", handleMessage);
         // closed without an answer (the page's own "rejected" on unload is
-        // not reliable): settle it as rejected; a late answer is ignored
+        // not reliable): settle it as rejected after the grace period; an
+        // answer within it is handled as usual, a later one is ignored
         stopWatching = watchPopupClosed(opened, requestId, this._store, () => {
           window.removeEventListener("message", handleMessage);
           this._store?.dispatch({
