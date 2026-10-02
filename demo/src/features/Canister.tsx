@@ -6,7 +6,7 @@ import { DEMO_CANISTER_ID, DEMO_IC_HOST } from "../constants";
 import JSONBig from "@apimatic/json-bigint";
 
 export function Canister() {
-  const { connectedUser, setConnectedUser, odinConnect } = useOdinContext();
+  const { connectedUser, odinConnect } = useOdinContext();
   const [agent, setAgent] = useState<HttpAgent | null>(null);
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<unknown | null>(null);
@@ -55,8 +55,8 @@ export function Canister() {
         targets: [DEMO_CANISTER_ID],
       });
 
+      // also lands in odinConnect.state.user, so connectedUser updates
       console.log("Connected user with delegation:", user);
-      setConnectedUser(user);
     } catch (error) {
       console.error(error);
     }

@@ -10,6 +10,11 @@ export default defineConfig({
   clean: true,
   minify: true,
   treeshake: true,
-  external: ["axios", "@apimatic/json-bigint", "@dfinity/identity"],
+  external: [
+    "axios",
+    "@apimatic/json-bigint",
+    "@dfinity/identity",
+    "@dfinity/principal",
+  ],
   outDir: "dist",
 });
