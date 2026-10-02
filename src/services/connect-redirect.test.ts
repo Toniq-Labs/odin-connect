@@ -6,6 +6,7 @@ import { PENDING_REDIRECT_MAX_AGE_MS, REDIRECT_RESULT_KEY } from "./redirect";
 import {
   apiAccepts,
   clientSignatureValid,
+  odinApproveDetail,
   odinConnectMessage,
   odinReturnTarget,
 } from "../../test/odin-page";
@@ -723,10 +724,8 @@ describe("Action redirect mode", () => {
     expect(url.searchParams.get("request_id")).toBe(
       url.searchParams.get("state")
     );
-    const detail = {
-      block_index: "123456789012345678901",
-      memo: "ab".repeat(32),
-    };
+    const detail = odinApproveDetail(123456789012345678901n);
+    expect(detail).toEqual({ block_index: "123456789012345678901" });
     returnWith(url, "approved", { detail });
     const { state } = await reload();
     expect(state.request).toEqual({

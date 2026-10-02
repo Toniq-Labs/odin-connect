@@ -97,7 +97,7 @@ function parsePending(raw: string): unknown {
 export interface RedirectResult {
   path: string;
   message: unknown;
-  /** Extra result data (e.g. `{ block_index, memo }` for icrc_approve). */
+  /** Extra result data (e.g. `{ block_index }` for icrc_approve). */
   detail?: unknown;
   state: string;
 }

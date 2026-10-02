@@ -3,7 +3,11 @@ import { Ed25519KeyIdentity } from "@dfinity/identity";
 import { Connect, resetRedirectOutcomes } from "./connect";
 import type { ConnectedUser } from "./connected-user";
 import { StateStore, type OdinState } from "./state";
-import { apiAccepts, odinConnectMessage } from "../../test/odin-page";
+import {
+  apiAccepts,
+  odinApproveDetail,
+  odinConnectMessage,
+} from "../../test/odin-page";
 
 const POPUP = { closed: false } as Window;
 
@@ -312,7 +316,7 @@ describe("popup actions → state", () => {
       input: { token: "2jjj", spender: "aaaaa-aa", amount: 10n ** 30n },
       returnState: { step: "approve" },
     });
-    const detail = { block_index: "42", memo: "ab".repeat(32) };
+    const detail = odinApproveDetail(42n);
     answer(connect, "/authorize/icrc_approve", "approved", detail);
     await expect(promise).resolves.toBe(true);
     expect(states.map((s) => s.request?.status)).toEqual([

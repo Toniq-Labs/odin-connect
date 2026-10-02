@@ -20,12 +20,13 @@ export type OdinAction =
 
 /**
  * Extra data Odin returns with an action result. `icrc_approve` carries
- * `block_index` (decimal string) and `memo` (hex of sha256(request_id));
- * other actions carry nothing today.
+ * `block_index`, the ledger block of the approval as a decimal string. Odin
+ * sends no ICRC-2 memo (the Odin canister rejects approvals that carry one).
+ * Other actions carry nothing today.
  */
 export type OdinActionDetail = {
+  /** `icrc_approve`: ledger block index of the approval (decimal string). */
   block_index?: string;
-  memo?: string;
   [key: string]: unknown;
 };
 

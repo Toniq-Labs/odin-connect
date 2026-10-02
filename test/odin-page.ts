@@ -77,6 +77,15 @@ export function odinReturnTarget(authorizeUrl: URL): URL {
   return target;
 }
 
+/**
+ * The `detail` the Odin page sends with a v=2 `icrc_approve` success:
+ * the ledger block index only. Odin sends no ICRC-2 memo (the Odin canister
+ * rejects approvals that carry one).
+ */
+export function odinApproveDetail(blockIndex: bigint) {
+  return { block_index: blockIndex.toString() };
+}
+
 export interface OdinPageOptions {
   /** Odin identity of the user (default: a fresh Ed25519 key). */
   user?: SignIdentity;

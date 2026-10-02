@@ -141,9 +141,10 @@ If the user rejects the transaction, the popup sends `"rejected"`:
 1.6.0).
 
 Every authorize URL carries `v=2` and a fresh, random `request_id`. For
-`icrcApprove()`, Odin sets the ICRC-2 memo to `sha256(request_id)`; the
-result exposes the ledger block index as `state.request.detail.block_index`
-(decimal string) and `detail.memo` (hex). The `icrcApprove()` promise still
+`icrcApprove()`, the result exposes the ledger block index of the approval as
+`state.request.detail.block_index` (decimal string). Odin sends no ICRC-2
+memo: the Odin canister rejects approvals that carry one, so an approval is
+not bound to its `request_id` on chain. The `icrcApprove()` promise still
 resolves `true`.
 
 ### API Request Flow
@@ -497,7 +498,7 @@ type OdinRequestState = {
   // "add_liquidity" | "remove_liquidity" | "icrc_approve" | "create_token"
   status: "pending" | "success" | "rejected" | "failed" | "unverified";
   input: /* per action, see below */;
-  detail?: OdinActionDetail; // icrc_approve: { block_index, memo }
+  detail?: OdinActionDetail; // icrc_approve: { block_index }
   returnState?: unknown;
   error?: string; // for "failed" and "unverified"
 };
@@ -668,7 +669,7 @@ Relative to 1.6.0 and 1.7.0:
   both land in `state.request`.
 - `requires_api` works in redirect mode (1.7.0 rejected it).
 - `returnState` on every call; action results can carry `detail`
-  (`icrc_approve`: `block_index`, `memo`). Popup actions still resolve
+  (`icrc_approve`: `block_index`). Popup actions still resolve
   `true`.
 
 ## Connected User Operations
