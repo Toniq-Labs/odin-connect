@@ -111,8 +111,10 @@ export type OdinRequestState = {
  * - `unsupported_identity`: the user's wallet cannot sign the identity proof.
  * - `no_action`: Odin has no authorize page for this action.
  *
- * Set by the SDK itself (popup mode only):
- * - `popup_closed`: the popup was closed without an answer.
+ * Set by the SDK itself:
+ * - `popup_closed` (popup mode): the popup was closed without an answer.
+ * - `navigated_back` (redirect mode): the user pressed Back on Odin and the
+ *   browser restored this page from its back-forward cache, with no result.
  */
 export type OdinRejectReason =
   | "untrusted_origin"
@@ -122,7 +124,8 @@ export type OdinRejectReason =
   | "missing_request_id"
   | "unsupported_identity"
   | "no_action"
-  | "popup_closed";
+  | "popup_closed"
+  | "navigated_back";
 
 export type OdinState = {
   /** `"initializing"` until `ready()` has restored the session. */

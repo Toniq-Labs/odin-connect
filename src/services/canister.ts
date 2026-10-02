@@ -136,6 +136,7 @@ function readDetail(detail: unknown): OdinActionDetail | undefined {
 
 /** SDK-only reject reason: the popup was closed without an answer. */
 export const POPUP_CLOSED: OdinRejectReason = "popup_closed";
+export const NAVIGATED_BACK: OdinRejectReason = "navigated_back";
 
 const REJECT_REASON_PATTERN = /^[a-z0-9_]{1,64}$/;
 
@@ -354,7 +355,14 @@ export class OdinCanisterClient {
               input,
               returnState,
             },
-            requestId
+            requestId,
+            () =>
+              this._store?.dispatch({
+                type: "settle",
+                id: requestId,
+                status: "rejected",
+                error: NAVIGATED_BACK,
+              })
           )
           .catch((error) => {
             throw this.fail(requestId, error);

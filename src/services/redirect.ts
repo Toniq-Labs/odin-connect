@@ -269,11 +269,18 @@ export class RedirectClient {
    * `url`), so Odin can sign it as the nonce. The returned promise never
    * settles (the page unloads) unless sessionStorage is unusable, in which
    * case it rejects before navigating.
+   *
+   * If the user presses Back on Odin, browsers often restore this page from
+   * the back-forward cache instead of reloading it, so nothing would ever
+   * settle the pending request. `onBack` is called once in that case (a
+   * persisted `pageshow` with no redirect result in the URL), after the
+   * pending entry (and its session secret) has been dropped.
    */
   start<T>(
     url: URL,
     pending: Omit<PendingRedirect, "state" | "createdAt" | "returnHref">,
-    state: string
+    state: string,
+    onBack?: () => void
   ): Promise<T> {
     let saved: boolean;
     try {
@@ -295,6 +302,18 @@ export class RedirectClient {
     }
     url.searchParams.append("return_url", currentReturnUrl());
     url.searchParams.append("state", state);
+    if (onBack && typeof window !== "undefined") {
+      const onPageShow = (event: PageTransitionEvent) => {
+        if (!event.persisted) return;
+        window.removeEventListener("pageshow", onPageShow);
+        if (readFragmentValue()) return; // a result came back: ready() handles it
+        if (this._pending.peek()?.state === state) {
+          this._pending.take();
+        }
+        onBack();
+      };
+      window.addEventListener("pageshow", onPageShow);
+    }
     this._window.navigate(url);
     return new Promise<T>(() => {});
   }

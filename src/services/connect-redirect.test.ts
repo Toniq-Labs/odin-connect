@@ -1284,3 +1284,92 @@ describe("Odin page return_url rule (stand-in)", () => {
     ).rejects.toThrow("query");
   });
 });
+
+describe("Back from Odin restores the page from the back-forward cache", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/app?x=1");
+    sessionStorage.clear();
+    localStorage.clear();
+    resetRedirectOutcomes();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function pageShow(persisted: boolean) {
+    const event = new Event("pageshow");
+    Object.defineProperty(event, "persisted", { value: persisted });
+    window.dispatchEvent(event);
+  }
+
+  it("settles a pending connect as rejected / navigated_back and drops the secret", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    await connect.ready();
+    spyNavigate(connect);
+    void connect.connect();
+    expect(connect.state.request?.status).toBe("pending");
+    expect(sessionStorage.length).toBe(1);
+
+    pageShow(true);
+
+    expect(connect.state.request).toMatchObject({
+      action: "connect",
+      status: "rejected",
+      error: "navigated_back",
+    });
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it("settles a pending action as rejected / navigated_back", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    await connect.ready();
+    spyNavigate(connect);
+    void connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n });
+
+    pageShow(true);
+
+    expect(connect.state.request).toMatchObject({
+      action: "buy",
+      status: "rejected",
+      error: "navigated_back",
+    });
+  });
+
+  it("ignores a normal page load and a restore that carries a result", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    await connect.ready();
+    spyNavigate(connect);
+    void connect.connect();
+
+    pageShow(false);
+    expect(connect.state.request?.status).toBe("pending");
+
+    window.history.replaceState(null, "", `/app#${REDIRECT_RESULT_KEY}=x`);
+    pageShow(true);
+    expect(connect.state.request?.status).toBe("pending");
+    expect(sessionStorage.length).toBe(1);
+  });
+
+  it("does not touch a newer request", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    await connect.ready();
+    spyNavigate(connect);
+    void connect.connect();
+    const first = connect.state.request?.id;
+    void connect.odin.sell({ principal: "p", token: "2jjj", tokenAmount: 1n });
+    const second = connect.state.request?.id;
+    expect(second).not.toBe(first);
+
+    pageShow(true);
+
+    // Both listeners fire; the stale connect's settle is ignored, the sell is
+    // the current request and becomes rejected.
+    expect(connect.state.request).toMatchObject({
+      id: second,
+      action: "sell",
+      status: "rejected",
+      error: "navigated_back",
+    });
+  });
+});

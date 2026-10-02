@@ -554,6 +554,7 @@ leaves `error` unset. Popup promises still reject with the 1.6.0 text
 | `unsupported_identity` | The user's wallet cannot sign the identity proof. |
 | `no_action` | Odin has no authorize page for this action. |
 | `popup_closed` | Set by the SDK, popup mode only: the popup was closed without an answer (checked every 500 ms, then a 1.5 s grace period for an answer posted just before the close). |
+| `navigated_back` | Set by the SDK, redirect mode only: the user pressed Back on Odin and the browser restored the app page from its back-forward cache without a result. |
 
 A closed popup settles the pending `connect()` or action as `"rejected"` /
 `popup_closed`, so the app never waits forever; the popup promise rejects

@@ -11,6 +11,7 @@ import {
   ACTIONS,
   actionOutcome,
   OdinCanisterClient,
+  NAVIGATED_BACK,
   POPUP_CLOSED,
   quiet,
   readRejectReason,
@@ -434,7 +435,14 @@ export class Connect {
               targets,
               returnState,
             },
-            requestId
+            requestId,
+            () =>
+              this._store.dispatch({
+                type: "settle",
+                id: requestId,
+                status: "rejected",
+                error: NAVIGATED_BACK,
+              })
           )
           .catch((error) => {
             throw this.settleError(requestId, "failed", error);

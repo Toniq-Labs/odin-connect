@@ -159,7 +159,7 @@ A `"rejected"` request carries `request.error` when the user tapped "Back
 to app" on an Odin error screen (`untrusted_origin`, `invalid_targets`,
 `no_targets`, `invalid_session_key`, `missing_request_id`,
 `unsupported_identity`, `no_action`) or closed the popup without answering
-(`popup_closed`, set by the SDK in popup mode) — `OdinRejectReason`; see the
+(`popup_closed`, set by the SDK in popup mode; `navigated_back`, set by the SDK in redirect mode when the user presses Back on Odin) — `OdinRejectReason`; see the
 readme's "Rejection reasons". A plain Reject leaves it unset. Treat unknown
 codes as a plain rejection. For a plain rejection (no `error`), supply your
 own copy (e.g. "Approval was rejected"); the SDK has no message for it.
