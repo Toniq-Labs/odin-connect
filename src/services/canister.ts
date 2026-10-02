@@ -11,6 +11,7 @@ import {
 import {
   OdinAction,
   OdinActionDetail,
+  OdinRejectReason,
   OdinRequestInput,
   OdinRequestState,
   StateStore,
@@ -133,6 +134,9 @@ function readDetail(detail: unknown): OdinActionDetail | undefined {
     : undefined;
 }
 
+/** SDK-only reject reason: the popup was closed without an answer. */
+export const POPUP_CLOSED: OdinRejectReason = "popup_closed";
+
 const REJECT_REASON_PATTERN = /^[a-z0-9_]{1,64}$/;
 
 /**
@@ -180,6 +184,44 @@ export function actionOutcome(
 export function quiet<T>(promise: Promise<T>): Promise<T> {
   promise.catch(() => {});
   return promise;
+}
+
+/** How often an open popup is checked for having been closed. */
+export const POPUP_CLOSED_POLL_MS = 500;
+
+/**
+ * Watch a request's popup until it closes, and call `onClosed` then. Stops
+ * (clears its timer) when the returned function is called (the request got
+ * its answer), and on its own once `requestId` is no longer the pending
+ * `state.request` (it settled, a newer request replaced it, `disconnect()`).
+ * `onClosed` is called at most once, and never after `stop()`.
+ */
+export function watchPopupClosed(
+  popup: Window,
+  requestId: string,
+  store: StateStore | null,
+  onClosed: () => void
+): () => void {
+  let stopped = false;
+  let unsubscribe: (() => void) | null = null;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(timer);
+    unsubscribe?.();
+  };
+  const timer = setInterval(() => {
+    if (!popup.closed) return;
+    stop();
+    onClosed();
+  }, POPUP_CLOSED_POLL_MS);
+  unsubscribe =
+    store?.subscribe(({ request }) => {
+      if (request?.id !== requestId || request.status !== "pending") {
+        stop();
+      }
+    }) ?? null;
+  return stop;
 }
 
 type ActionRequest<A extends OdinAction> = {
@@ -301,12 +343,14 @@ export class OdinCanisterClient {
     }
     return quiet(
       new Promise<boolean>((resolve, reject) => {
+        let stopWatching = () => {};
         const handleMessage = (event: MessageEvent) => {
           if (
             event.origin === this.origin &&
             event.data?.path === "/" + odinPath
           ) {
             window.removeEventListener("message", handleMessage);
+            stopWatching();
             const outcome = actionOutcome(
               action,
               event.data.message,
@@ -335,6 +379,18 @@ export class OdinCanisterClient {
           return;
         }
         window.addEventListener("message", handleMessage);
+        // closed without an answer (the page's own "rejected" on unload is
+        // not reliable): settle it as rejected; a late answer is ignored
+        stopWatching = watchPopupClosed(opened, requestId, this._store, () => {
+          window.removeEventListener("message", handleMessage);
+          this._store?.dispatch({
+            type: "settle",
+            id: requestId,
+            status: "rejected",
+            error: POPUP_CLOSED,
+          });
+          reject(new Error(failure));
+        });
       })
     );
   }

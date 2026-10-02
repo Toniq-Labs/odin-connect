@@ -33,8 +33,9 @@ export type OdinActionDetail = {
 /**
  * - `"pending"`: started; the popup is open or the tab is on its way to Odin.
  * - `"success"`: Odin confirmed it (a connect also passed every verification).
- * - `"rejected"`: the user declined in the Odin page, or went back to the app
- *   from an Odin error screen (then `error` holds an `OdinRejectReason`).
+ * - `"rejected"`: the user declined in the Odin page, went back to the app
+ *   from an Odin error screen, or closed the popup without answering (then
+ *   `error` holds an `OdinRejectReason`).
  * - `"failed"`: anything else (popup blocked, Odin reported an error, ...).
  * - `"unverified"`: connect only; Odin's answer could not be verified, the
  *   user is not connected and nothing was stored.
@@ -90,7 +91,8 @@ export type OdinRequestState = {
     /**
      * Why it is `"failed"` or `"unverified"`. On `"rejected"`: the reason
      * code (`OdinRejectReason`) when the user went back to the app from an
-     * Odin error screen; absent when the user simply declined.
+     * Odin error screen or closed the popup; absent when the user simply
+     * declined.
      */
     error?: string;
   };
@@ -108,6 +110,9 @@ export type OdinRequestState = {
  * - `missing_request_id`: no request id, or no identity, to bind the proof.
  * - `unsupported_identity`: the user's wallet cannot sign the identity proof.
  * - `no_action`: Odin has no authorize page for this action.
+ *
+ * Set by the SDK itself (popup mode only):
+ * - `popup_closed`: the popup was closed without an answer.
  */
 export type OdinRejectReason =
   | "untrusted_origin"
@@ -116,7 +121,8 @@ export type OdinRejectReason =
   | "invalid_session_key"
   | "missing_request_id"
   | "unsupported_identity"
-  | "no_action";
+  | "no_action"
+  | "popup_closed";
 
 export type OdinState = {
   /** `"initializing"` until `ready()` has restored the session. */

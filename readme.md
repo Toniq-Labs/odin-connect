@@ -531,7 +531,7 @@ principal; amounts stay `bigint`, also across a redirect:
 | `create_token` | the token fields, with `image` = the uploaded image URL (never the `File`; set once the upload finished) |
 
 An action is `"success"` when Odin confirms it, `"rejected"` when the user
-declines, and `"failed"` otherwise (popup blocked, Odin reported an error, a
+declines (or closes the popup, see below), and `"failed"` otherwise (popup blocked, Odin reported an error, a
 `createToken` validation or upload error). The `user.<action>()` promises
 work as in 1.6.0: popup mode resolves `true` or rejects; redirect mode never
 settles.
@@ -553,6 +553,12 @@ leaves `error` unset. Popup promises still reject with the 1.6.0 text
 | `missing_request_id` | No request id, or no identity, to bind the identity proof. |
 | `unsupported_identity` | The user's wallet cannot sign the identity proof. |
 | `no_action` | Odin has no authorize page for this action. |
+| `popup_closed` | Set by the SDK, popup mode only: the popup was closed without an answer (checked every 500 ms). |
+
+A closed popup settles the pending `connect()` or action as `"rejected"` /
+`popup_closed`, so the app never waits forever; the popup promise rejects
+with the same text as a user rejection. If Odin's answer arrives anyway, the
+first of the two wins and the other is ignored.
 
 Odin may add codes; treat an unknown one as a plain rejection.
 

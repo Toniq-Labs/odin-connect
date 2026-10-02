@@ -130,11 +130,12 @@ function applyOdinState({ user, request }) {
 ```
 
 A `"rejected"` request carries `request.error` when the user tapped "Back
-to app" on an Odin error screen: `untrusted_origin`, `invalid_targets`,
+to app" on an Odin error screen (`untrusted_origin`, `invalid_targets`,
 `no_targets`, `invalid_session_key`, `missing_request_id`,
-`unsupported_identity` or `no_action` (`OdinRejectReason`; see the readme's
-"Rejection reasons"). A plain Reject leaves it unset. Treat unknown codes as
-a plain rejection.
+`unsupported_identity`, `no_action`) or closed the popup without answering
+(`popup_closed`, set by the SDK in popup mode) — `OdinRejectReason`; see the
+readme's "Rejection reasons". A plain Reject leaves it unset. Treat unknown
+codes as a plain rejection.
 
 Rules:
 - Use `request.input` instead of variables captured before the call; they

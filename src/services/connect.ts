@@ -11,8 +11,10 @@ import {
   ACTIONS,
   actionOutcome,
   OdinCanisterClient,
+  POPUP_CLOSED,
   quiet,
   readRejectReason,
+  watchPopupClosed,
 } from "./canister";
 import { SessionStorage } from "./storage";
 import { isDelegationValid } from "../utils/session";
@@ -445,6 +447,7 @@ export class Connect {
     return quiet(
       new Promise<ConnectedUser>((resolve, reject) => {
         let opened: Window | null = null;
+        let stopWatching = () => {};
         const handleMessage = async (event: MessageEvent) => {
           if (
             event.origin === this.origin &&
@@ -454,6 +457,9 @@ export class Connect {
             event.data?.path === "/authorize/connect"
           ) {
             window.removeEventListener("message", handleMessage);
+            // answered: the popup closing now (it does) is not a rejection,
+            // also while the answer is being verified
+            stopWatching();
             if (event.data.message === "rejected") {
               const reason = readRejectReason(event.data.detail);
               this._store.dispatch({
@@ -510,6 +516,18 @@ export class Connect {
           return;
         }
         window.addEventListener("message", handleMessage);
+        // closed without an answer (the page's own "rejected" on unload is
+        // not reliable): settle it as rejected; a late answer is ignored
+        stopWatching = watchPopupClosed(opened, requestId, this._store, () => {
+          window.removeEventListener("message", handleMessage);
+          this._store.dispatch({
+            type: "settle",
+            id: requestId,
+            status: "rejected",
+            error: POPUP_CLOSED,
+          });
+          reject(new Error("User rejected the connection"));
+        });
       })
     );
   }
