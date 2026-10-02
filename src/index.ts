@@ -3,7 +3,18 @@ export type {
   ConnectMode as OdinConnectMode,
   RedirectCallOptions as OdinRedirectCallOptions,
 } from "./services/redirect";
-export type { OdinAction, OdinRedirectResult } from "./services/connect";
+export type {
+  OdinAction,
+  OdinActionDetail,
+  OdinRejectReason,
+  OdinRequestInput,
+  OdinRequestState,
+  OdinRequestStatus,
+  OdinState,
+  OdinStateListener,
+} from "./services/state";
+export { INITIAL_ODIN_STATE } from "./services/state";
+export { ConnectVerificationError as OdinConnectVerificationError } from "./services/verify-connect";
 export { isInAppBrowser } from "./utils/in-app-browser";
 export type { User as OdinUser } from "./models/user";
 export type { Balance as OdinBalance } from "./models/balance";

@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { AxiosError, AxiosResponse } from "axios";
 import { OdinApiClient } from "./api";
 
 describe("ApiClient", () => {
@@ -127,5 +128,59 @@ describe("ApiClient", () => {
       page: 1,
       limit: 10,
     });
+  });
+});
+
+describe("OdinApiClient.verifyConnect", () => {
+  const body = {
+    payload: "{}",
+    signature: "c2ln",
+    delegation: null,
+    publicKey: "cGs=",
+    audience: "https://app.example",
+    nonce: "n".repeat(32),
+    issue_jwt: true,
+    client_signature: "Y2xpZW50",
+  };
+
+  it("POSTs the proof with client_signature to {base}/connect/verify per env", async () => {
+    for (const [env, base] of [
+      ["prod", "https://api.odin.fun/v2"],
+      ["legacy", "https://api.odin.fun/v1"],
+      ["dev", "https://api.odin.fun/dev"],
+    ] as const) {
+      const api = new OdinApiClient(env);
+      const response = { principal: "aaaaa-aa", username: null, jwt: "j" };
+      const post = vi
+        .spyOn(api["_httpClient"], "post")
+        .mockResolvedValue(response);
+      await expect(api.verifyConnect(body)).resolves.toEqual(response);
+      expect(post).toHaveBeenCalledWith(`${base}/connect/verify`, body);
+    }
+  });
+
+  it("rejects with the API's message on a 401", async () => {
+    const api = new OdinApiClient("prod");
+    vi.spyOn(api["_httpClient"], "post").mockRejectedValue(
+      new AxiosError(
+        "Request failed with status code 401",
+        "ERR_BAD_REQUEST",
+        undefined,
+        undefined,
+        {
+          status: 401,
+          data: { message: "Invalid signature" },
+        } as AxiosResponse
+      )
+    );
+    await expect(api.verifyConnect(body)).rejects.toThrow("Invalid signature");
+  });
+
+  it("falls back to the axios message when the body has none", async () => {
+    const api = new OdinApiClient("prod");
+    vi.spyOn(api["_httpClient"], "post").mockRejectedValue(
+      new AxiosError("Network Error", "ERR_NETWORK")
+    );
+    await expect(api.verifyConnect(body)).rejects.toThrow("Network Error");
   });
 });

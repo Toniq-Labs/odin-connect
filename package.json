@@ -15,7 +15,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "MIGRATION-2.0.md"
   ],
   "scripts": {
     "build": "tsup",
@@ -51,6 +52,7 @@
   "dependencies": {
     "@apimatic/json-bigint": "^1.2.0",
     "@dfinity/identity": "^3.4.3",
+    "@dfinity/principal": "^3.4.3",
     "axios": "^1.12.0"
   },
   "overrides": {

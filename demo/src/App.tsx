@@ -15,7 +15,7 @@ import { IcrcApprove } from "./features/IcrcApprove";
 import { Examples } from "./features/Examples";
 import { LanguageSelect } from "./ui/LanguageSelect";
 import { ModeSelect } from "./ui/ModeSelect";
-import { RedirectResult } from "./ui/RedirectResult";
+import { RequestResult } from "./ui/RequestResult";
 
 function App() {
   return (
@@ -25,7 +25,7 @@ function App() {
           <h1>Connect</h1>
           <LanguageSelect />
           <ModeSelect />
-          <RedirectResult />
+          <RequestResult />
           <Connect />
         </section>
         <section>

@@ -4,10 +4,10 @@ import {
   type OdinConnectedUser,
   type OdinConnectMode,
   type OdinLang,
-  type OdinRedirectResult,
   type OdinToken,
 } from "odin-connect";
 import { OdinContext } from "./OdinContext";
+import { useOdinState } from "./useOdinState";
 
 const MODE_KEY = "odin-demo:mode";
 
@@ -17,46 +17,24 @@ const loadMode = (): OdinConnectMode => {
 };
 
 export const OdinProvider = ({ children }: { children: ReactNode }) => {
-  const [odinConnect, setOdinConnect] = useState<OdinConnect | null>(null);
-  const [connectedUser, setConnectedUser] = useState<OdinConnectedUser | null>(
-    null
+  // Initialize OdinConnect once with your app name, target environment and
+  // popup language. `mode` applies to connect() and every action. The
+  // constructor already restores the session and applies a redirect result
+  const [odinConnect] = useState<OdinConnect>(
+    () =>
+      new OdinConnect({
+        name: "Demo",
+        env: "dev",
+        lang: "en",
+        mode: loadMode(),
+      })
   );
+  // One source for both modes: a popup result and a redirect result read by
+  // ready() on the next load both land in this state
+  const { status, user: connectedUser, request } = useOdinState(odinConnect);
   const [tokens, setTokens] = useState<ReadonlyArray<OdinToken>>([]);
   const [lang, setLangState] = useState<OdinLang>("en");
   const [mode, setModeState] = useState<OdinConnectMode>(loadMode);
-  const [redirectResult, setRedirectResult] =
-    useState<OdinRedirectResult | null>(null);
-
-  useEffect(() => {
-    // Initialize OdinConnect with your app name, target environment and popup language
-    // `mode` applies to connect() and every action
-    const odin = new OdinConnect({
-      name: "Demo",
-      env: "dev",
-      lang: "en",
-      mode: loadMode(),
-    });
-    setOdinConnect(odin);
-
-    // Finish a redirect-mode connect() or action first, so its outcome
-    // (including a rejection) is visible
-    let restoredUser: OdinConnectedUser | null = null;
-    try {
-      const result = odin.handleRedirectResult();
-      setRedirectResult(result);
-      if (result?.action === "connect" && result.status === "connected") {
-        restoredUser = result.user;
-      }
-    } catch (error) {
-      console.error("Redirect result failed:", error);
-    }
-
-    // Otherwise attempt to restore a previous session from localStorage
-    restoredUser ??= odin.restoreSession();
-    if (restoredUser) {
-      setConnectedUser(restoredUser);
-    }
-  }, []);
 
   const setLang = useCallback(
     (value: OdinLang) => {
@@ -87,9 +65,8 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     if (connectedUser) {
       return connectedUser;
     }
-    const user = await odinConnect.connect();
-    setConnectedUser(user);
-    return user;
+    // popup: resolves with the user (also in state); redirect: navigates away
+    return odinConnect.connect();
   }, [connectedUser, odinConnect]);
 
   useEffect(() => {
@@ -115,8 +92,8 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
     <OdinContext.Provider
       value={{
         odinConnect,
+        status,
         connectedUser,
-        setConnectedUser,
         tokens,
         setTokens,
         requestUser,
@@ -124,7 +101,7 @@ export const OdinProvider = ({ children }: { children: ReactNode }) => {
         setLang,
         mode,
         setMode,
-        redirectResult,
+        request,
       }}
     >
       {children}
