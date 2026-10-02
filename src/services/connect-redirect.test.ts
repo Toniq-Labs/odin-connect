@@ -222,3 +222,127 @@ describe("Action redirect mode", () => {
     });
   });
 });
+
+describe("returnState", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/migrate?step=2");
+    sessionStorage.clear();
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("hands action returnState back after the redirect, keeping bigints", () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    const returnState = { step: "commit", token: "2jjj", amount: 12345n };
+    void connect.odin.icrcApprove({
+      principal: "p",
+      token: "2jjj",
+      spender: "aaaaa-aa",
+      amount: 12345n,
+      returnState,
+    });
+    const url = navigatedUrl(navigate);
+    // never sent to Odin
+    expect(url.searchParams.has("returnState")).toBe(false);
+    expect(url.href).not.toContain("commit");
+
+    returnWith(url, "approved");
+    const result = connect.handleRedirectResult<typeof returnState>();
+    expect(result).toEqual({
+      action: "icrc_approve",
+      status: "success",
+      returnState,
+    });
+    expect(typeof result?.returnState?.amount).toBe("bigint");
+  });
+
+  it("returns returnState on a rejected action too", () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.odin.transfer({
+      principal: "p",
+      token: "2jjj",
+      amount: 1n,
+      destination: "aaaaa-aa",
+      returnState: { step: "transfer" },
+    });
+    returnWith(navigatedUrl(navigate), "rejected");
+    expect(connect.handleRedirectResult()).toEqual({
+      action: "transfer",
+      status: "failed",
+      returnState: { step: "transfer" },
+    });
+  });
+
+  it("hands connect returnState back", () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.connect({ returnState: { from: "landing" } });
+    returnWith(navigatedUrl(navigate), "rejected");
+    expect(connect.handleRedirectResult()).toEqual({
+      action: "connect",
+      status: "rejected",
+      returnState: { from: "landing" },
+    });
+  });
+
+  it("is undefined when not provided", () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    void connect.odin.buy({ principal: "p", token: "2jjj", btcAmount: 1n });
+    returnWith(navigatedUrl(navigate), "purchased");
+    expect(connect.handleRedirectResult()?.returnState).toBeUndefined();
+  });
+
+  it("rejects a non-serializable returnState before navigating", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    await expect(
+      connect.odin.buy({
+        principal: "p",
+        token: "2jjj",
+        btcAmount: 1n,
+        returnState: circular,
+      })
+    ).rejects.toThrow("returnState must be JSON-serializable");
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps createToken returnState out of the authorize URL", async () => {
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    const navigate = spyNavigate(connect);
+    vi.spyOn(connect.api, "uploadImage").mockResolvedValue("https://img");
+    void connect.odin.createToken({
+      principal: "p",
+      name: "Token",
+      ticker: "TKN",
+      image: new File([], "a.png"),
+      returnState: { step: "create" },
+    });
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledOnce());
+    const url = navigatedUrl(navigate);
+    expect(url.pathname).toBe("/authorize/create_token");
+    expect(url.searchParams.has("returnState")).toBe(false);
+    expect(url.href).not.toContain("create%22");
+  });
+
+  it("is ignored in popup mode", async () => {
+    const connect = new Connect({ name: "test" });
+    vi.spyOn(window, "open").mockReturnValue(null);
+    await expect(
+      connect.odin.buy({
+        principal: "p",
+        token: "2jjj",
+        btcAmount: 1n,
+        returnState: { step: "x" },
+      })
+    ).rejects.toThrow();
+    expect(sessionStorage.length).toBe(0);
+  });
+});

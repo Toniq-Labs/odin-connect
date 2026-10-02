@@ -35,6 +35,39 @@ export interface PendingRedirect {
   sessionKey?: string;
   /** connect only */
   requires_delegation?: boolean;
+  /** App data handed back by `handleRedirectResult()` (redirect mode only). */
+  returnState?: unknown;
+}
+
+/**
+ * Per-call option shared by `connect()` and every action. In redirect mode
+ * the page unloads, so anything the app needs to resume (current step, token,
+ * amounts) can ride along here and comes back as `result.returnState` from
+ * `handleRedirectResult()`. Must be JSON-serializable; bigints are preserved.
+ * Ignored in popup mode, where the awaited call simply resolves.
+ */
+export interface RedirectCallOptions {
+  returnState?: unknown;
+}
+
+const BIGINT_TAG = "$odin_bigint";
+
+/** JSON.stringify that keeps bigints (tagged) instead of throwing. */
+function stringifyPending(value: unknown): string {
+  return JSON.stringify(value, (_key, v) =>
+    typeof v === "bigint" ? { [BIGINT_TAG]: v.toString() } : v
+  );
+}
+
+function parsePending(raw: string): unknown {
+  return JSON.parse(raw, (_key, v) =>
+    v !== null &&
+    typeof v === "object" &&
+    Object.keys(v).length === 1 &&
+    typeof v[BIGINT_TAG] === "string"
+      ? BigInt(v[BIGINT_TAG])
+      : v
+  );
 }
 
 export interface RedirectResult {
@@ -50,10 +83,13 @@ export class PendingRedirectStorage {
     this._key = `odin_connect:${slug}:${env}:pending_redirect`;
   }
 
-  /** Save and read back; false when sessionStorage is unusable. */
+  /**
+   * Save and read back; false when sessionStorage is unusable. Throws when
+   * `returnState` is not serializable (e.g. circular references).
+   */
   save(pending: PendingRedirect): boolean {
+    const value = stringifyPending(pending);
     try {
-      const value = JSON.stringify(pending);
       sessionStorage.setItem(this._key, value);
       return sessionStorage.getItem(this._key) === value;
     } catch {
@@ -66,7 +102,7 @@ export class PendingRedirectStorage {
     try {
       const raw = sessionStorage.getItem(this._key);
       if (!raw) return null;
-      const parsed = JSON.parse(raw);
+      const parsed = parsePending(raw) as PendingRedirect;
       if (
         typeof parsed?.state !== "string" ||
         typeof parsed?.path !== "string"
@@ -178,7 +214,15 @@ export class RedirectClient {
    */
   start<T>(url: URL, pending: Omit<PendingRedirect, "state">): Promise<T> {
     const state = createState();
-    if (!this._pending.save({ ...pending, state })) {
+    let saved: boolean;
+    try {
+      saved = this._pending.save({ ...pending, state });
+    } catch {
+      return Promise.reject(
+        new Error("returnState must be JSON-serializable (bigints are allowed)")
+      );
+    }
+    if (!saved) {
       return Promise.reject(
         new Error("Redirect mode needs sessionStorage, which is unavailable")
       );

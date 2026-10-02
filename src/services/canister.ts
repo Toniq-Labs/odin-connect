@@ -2,55 +2,55 @@ import { createTokenValidators } from "../utils";
 import { DEFAULT_LANG } from "../utils/lang";
 import { OdinApiClient } from "./api";
 import { AppInitOptions, Connect } from "./connect";
-import { RedirectClient } from "./redirect";
+import { RedirectCallOptions, RedirectClient } from "./redirect";
 import { WindowClient } from "./window";
 
-export interface SellOptions {
+export interface SellOptions extends RedirectCallOptions {
   principal: string;
   token: string;
   tokenAmount: bigint;
 }
 
-export interface BuyOptions {
+export interface BuyOptions extends RedirectCallOptions {
   principal: string;
   token: string;
   btcAmount: bigint;
 }
 
-export interface TransferOptions {
+export interface TransferOptions extends RedirectCallOptions {
   principal: string;
   token: string;
   amount: bigint;
   destination: string;
 }
 
-export interface AddLiquidityOptions {
+export interface AddLiquidityOptions extends RedirectCallOptions {
   principal: string;
   btcAmount: bigint;
   token: string;
 }
 
-export interface RemoveLiquidityOptions {
+export interface RemoveLiquidityOptions extends RedirectCallOptions {
   principal: string;
   lpAmount: bigint;
   token: string;
 }
 
-export interface SwapOptions {
+export interface SwapOptions extends RedirectCallOptions {
   principal: string;
   fromToken: string;
   toToken: string;
   fromAmount: bigint;
 }
 
-export interface IcrcApproveOptions {
+export interface IcrcApproveOptions extends RedirectCallOptions {
   principal: string;
   token: string;
   spender: string;
   amount: bigint;
 }
 
-export interface CreateTokenParams {
+export interface CreateTokenParams extends RedirectCallOptions {
   principal: string;
   name: string;
   ticker: string;
@@ -104,8 +104,10 @@ export class OdinCanisterClient {
     odinPath,
     receivedMessageFromOrigin,
     resolve: resolveMessages,
+    returnState,
   }: {
     params: Record<string, string | undefined>;
+    returnState?: unknown;
     odinPath: string;
     receivedMessageFromOrigin: string | ((message: string) => boolean);
     resolve: {
@@ -130,6 +132,7 @@ export class OdinCanisterClient {
           typeof receivedMessageFromOrigin === "string"
             ? receivedMessageFromOrigin
             : undefined,
+        returnState,
       });
     }
     return new Promise<ResolveType>((resolve, reject) => {
@@ -171,7 +174,7 @@ export class OdinCanisterClient {
     });
   }
 
-  sell({ token, tokenAmount, principal }: SellOptions) {
+  sell({ token, tokenAmount, principal, returnState }: SellOptions) {
     return this.baseAction<boolean, string>({
       params: {
         principal,
@@ -179,6 +182,7 @@ export class OdinCanisterClient {
         amount: tokenAmount.toString(),
       },
       odinPath: "authorize/sell",
+      returnState,
       receivedMessageFromOrigin: "sold",
       resolve: {
         success: () => true,
@@ -188,7 +192,7 @@ export class OdinCanisterClient {
     });
   }
 
-  buy({ principal, token, btcAmount }: BuyOptions) {
+  buy({ principal, token, btcAmount, returnState }: BuyOptions) {
     return this.baseAction<boolean, string>({
       params: {
         principal,
@@ -196,6 +200,7 @@ export class OdinCanisterClient {
         amount: btcAmount.toString(),
       },
       odinPath: "authorize/buy",
+      returnState,
       receivedMessageFromOrigin: "purchased",
       resolve: {
         success: () => true,
@@ -205,7 +210,13 @@ export class OdinCanisterClient {
     });
   }
 
-  transfer({ principal, token, amount, destination }: TransferOptions) {
+  transfer({
+    principal,
+    token,
+    amount,
+    destination,
+    returnState,
+  }: TransferOptions) {
     return this.baseAction<boolean, string>({
       params: {
         principal,
@@ -214,6 +225,7 @@ export class OdinCanisterClient {
         destination,
       },
       odinPath: "authorize/transfer",
+      returnState,
       receivedMessageFromOrigin: "transferred",
       resolve: {
         success: () => true,
@@ -223,7 +235,12 @@ export class OdinCanisterClient {
     });
   }
 
-  addLiquidity({ principal, btcAmount, token }: AddLiquidityOptions) {
+  addLiquidity({
+    principal,
+    btcAmount,
+    token,
+    returnState,
+  }: AddLiquidityOptions) {
     return this.baseAction<boolean, string>({
       params: {
         principal,
@@ -231,6 +248,7 @@ export class OdinCanisterClient {
         token,
       },
       odinPath: "authorize/add_liquidity",
+      returnState,
       receivedMessageFromOrigin: "addedLiquidity",
       resolve: {
         success: () => true,
@@ -240,7 +258,12 @@ export class OdinCanisterClient {
     });
   }
 
-  removeLiquidity({ principal, lpAmount, token }: RemoveLiquidityOptions) {
+  removeLiquidity({
+    principal,
+    lpAmount,
+    token,
+    returnState,
+  }: RemoveLiquidityOptions) {
     return this.baseAction<boolean, string>({
       params: {
         principal,
@@ -248,6 +271,7 @@ export class OdinCanisterClient {
         token,
       },
       odinPath: "authorize/remove_liquidity",
+      returnState,
       receivedMessageFromOrigin: "removedLiquidity",
       resolve: {
         success: () => true,
@@ -257,7 +281,13 @@ export class OdinCanisterClient {
     });
   }
 
-  swap({ principal, fromToken: from, toToken: to, fromAmount }: SwapOptions) {
+  swap({
+    principal,
+    fromToken: from,
+    toToken: to,
+    fromAmount,
+    returnState,
+  }: SwapOptions) {
     return this.baseAction<boolean, string>({
       params: {
         principal,
@@ -266,6 +296,7 @@ export class OdinCanisterClient {
         amount: fromAmount.toString(),
       },
       odinPath: "authorize/swap",
+      returnState,
       receivedMessageFromOrigin: "swapped",
       resolve: {
         success: () => true,
@@ -275,7 +306,13 @@ export class OdinCanisterClient {
     });
   }
 
-  icrcApprove({ principal, token, spender, amount }: IcrcApproveOptions) {
+  icrcApprove({
+    principal,
+    token,
+    spender,
+    amount,
+    returnState,
+  }: IcrcApproveOptions) {
     return this.baseAction<boolean, string>({
       params: {
         principal,
@@ -284,6 +321,7 @@ export class OdinCanisterClient {
         amount: amount.toString(),
       },
       odinPath: "authorize/icrc_approve",
+      returnState,
       receivedMessageFromOrigin: "approved",
       resolve: {
         success: () => true,
@@ -293,7 +331,7 @@ export class OdinCanisterClient {
     });
   }
 
-  async createToken({ image, ...params }: CreateTokenParams) {
+  async createToken({ image, returnState, ...params }: CreateTokenParams) {
     // check if token field param validators exist and run them
     for (const key in createTokenValidators) {
       if (key in params) {
@@ -322,6 +360,7 @@ export class OdinCanisterClient {
         buy: params.buy?.toString(),
       },
       odinPath: "authorize/create_token",
+      returnState,
       receivedMessageFromOrigin: "tokenCreated",
       resolve: {
         success: () => true,
