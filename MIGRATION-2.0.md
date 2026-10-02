@@ -2,8 +2,9 @@
 
 This file is written for an AI coding agent (Claude Code, Cursor, Codex, …)
 asked to upgrade an application that uses `odin-connect` from **1.6.x or
-1.7.x to 2.0**. It is shipped inside the npm package, so in the app's repo
-it is at `node_modules/odin-connect/MIGRATION-2.0.md`. Humans can read the
+1.7.x to 2.0**. It is shipped inside the npm package from 2.0.0 on, so once
+the app depends on 2.x it is at `node_modules/odin-connect/MIGRATION-2.0.md`
+(an app still on 1.x does not have that file yet). Humans can read the
 "Migrating to 2.0.0" section of the readme instead; both say the same thing.
 
 Follow the steps in order. Do not skip the verification step.
@@ -29,7 +30,7 @@ Run these from the app's repo root and keep the output for your report:
 grep -rn -E \
   --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' \
   --include='*.mjs' --include='*.vue' --include='*.svelte' \
-  "odin-connect|OdinConnect|restoreSession|handleRedirectResult|lastRedirectResult|OdinRedirectResult|requires_api|requires_delegation|mode:[[:space:]]*\"(popup|redirect|auto)\"" \
+  "odin-connect|OdinConnect|restoreSession|handleRedirectResult|lastRedirectResult|OdinRedirectResult|requires_api|requires_delegation|mode:[[:space:]]*\"(popup|redirect|auto)\"|\.(connect|disconnect|buy|sell|transfer|swap|addLiquidity|removeLiquidity|icrcApprove|createToken)\(" \
   --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=build .
 grep -n '"odin-connect"' package.json
 ```
@@ -54,6 +55,15 @@ npm install odin-connect@^2.0.0   # or pnpm add / yarn add
 
 2.0 is a major version: `^1.x` ranges will not pick it up on their own.
 
+Testing an unreleased 2.0 build (before it is on npm): run `npm pack` in
+the odin-connect repo and install the tarball **temporarily**
+(`npm install /path/to/odin-connect-<version>.tgz`). Never commit a `file:`
+or tarball dependency; once 2.0 is released, put back `^2.0.0` and
+regenerate the lockfile. A pack built before the release version bump
+reports the old version (e.g. `1.7.0`) in `package.json`, so do not trust
+the version number: confirm you have 2.0 by checking that
+`node_modules/odin-connect/dist/index.d.ts` declares `getServerState`.
+
 ## Step 3 — Decide the scope
 
 - **Recommended (full migration):** do Steps 4–7. The app then works in
@@ -69,6 +79,20 @@ Step 4: inside wallet browsers it would redirect, come back, and show the
 user as not logged in.
 
 ## Step 4 — Render from state
+
+Typical mapping from an app's own auth state machine:
+
+| App state | 2.0 state |
+|---|---|
+| idle / logged out | `status: "ready"`, `user: null`, no pending `request` |
+| connecting | `request.action === "connect"` and `request.status === "pending"` |
+| connected | `user !== null` |
+| error | `request.action === "connect"` and `request.status` is `"rejected"`, `"failed"` or `"unverified"` |
+| (loading) | `status: "initializing"` |
+
+Check `user` first: a user who is still connected stays connected when a
+re-connect is rejected (`user` is set **and** `request.status` is
+`"rejected"`); show them as connected, not as an error screen.
 
 ### 4a. One instance, then `subscribe` + `ready`
 
@@ -104,7 +128,9 @@ After (2.0, works in popup and redirect mode):
 
 ```ts
 // button handler: just start it
-odin.user?.icrcApprove({ token, spender, amount });
+const user = odin.user;
+if (!user) return showError("Connect first");
+void user.icrcApprove({ token, spender, amount });
 
 // in applyOdinState:
 function applyOdinState({ user, request }) {
@@ -135,16 +161,48 @@ to app" on an Odin error screen (`untrusted_origin`, `invalid_targets`,
 `unsupported_identity`, `no_action`) or closed the popup without answering
 (`popup_closed`, set by the SDK in popup mode) — `OdinRejectReason`; see the
 readme's "Rejection reasons". A plain Reject leaves it unset. Treat unknown
-codes as a plain rejection.
+codes as a plain rejection. For a plain rejection (no `error`), supply your
+own copy (e.g. "Approval was rejected"); the SDK has no message for it.
+
+Starting an action without awaiting it is safe: the returned promise is
+already marked handled, so ignoring it never causes an unhandled rejection.
+Do not write `odin.user?.icrcApprove(…)` as a statement: it silently does
+nothing when `user` is null, and lint (`no-floating-promises`) flags it.
+Check for the user, show an error if it is missing, and use `void` as above.
 
 Rules:
 - Use `request.input` instead of variables captured before the call; they
   are gone after a redirect. Use `returnState` (any JSON, bigints allowed)
   only for extra app context that is not part of the call's inputs, e.g.
   `user.icrcApprove({ …, returnState: { step: "approve" } })` →
-  `request.returnState`.
+  `request.returnState`. If the follow-up needs values that are not the
+  call's own arguments, they must go in `returnState`; nothing else survives
+  a redirect.
+- Two flows that start the same action (e.g. a deposit and a withdrawal that
+  both `icrcApprove` the same spender) can have identical `input`: tag each
+  call's `returnState` (`{ flow: "deposit" }`) and match on
+  `request.returnState` as well as `request.action`.
 - Key handlers on `request.action` + `request.status`, and make them
-  idempotent: the handler may see the same `request` again on re-render.
+  idempotent. A settled request stays in `state` until the next request, and
+  effects re-run (re-render, React StrictMode, remount), so the handler sees
+  it again. When the follow-up moves value this is mandatory: claim
+  `request.id` **synchronously, before any `await`**, in storage that
+  outlives the component (module scope), e.g.
+
+  ```ts
+  const handled = new Set<string>(); // module scope, not component state
+  function onApproved(request) {
+    if (handled.has(request.id)) return;
+    handled.add(request.id); // claim before awaiting anything
+    void commitDeposit(request.input);
+  }
+  ```
+- After a redirect reload, async resources the app rebuilds from the session
+  (e.g. a canister actor created from `user`'s delegation identity) can arrive
+  after the `success` state. Wait for them before acting, and do not mark
+  the request handled until you actually act (in the example above, return
+  before `handled.add` while the actor is not ready, and run the handler
+  again when it is).
 - **Never** call `connect()` automatically when `request.status` is
   `"rejected"` or `"unverified"` — in redirect mode that sends the user
   straight back to Odin in a loop. Show a retry button instead.
@@ -176,7 +234,9 @@ export function useOdin() {
 ```
 
 Pass `odin.getServerState` (not `getState`) as the third argument so
-server-rendered HTML hydrates without a mismatch. While
+server-rendered HTML hydrates without a mismatch. With
+`useSyncExternalStore` you do not call `ready()` or `subscribe()` yourself:
+React subscribes, and the constructor already started `ready()`; while
 `status === "initializing"`, render a loading state. React StrictMode's
 double effects are safe (odin-api is asked once).
 
@@ -193,7 +253,10 @@ double effects are safe (odin-api is asked once).
 - **Query string:** in redirect mode Odin returns to `origin + pathname`
   (no query) and the SDK restores the original query once the result is
   read. Code that reads `location.search` on load must read it **after**
-  `await odin.ready()`.
+  `await odin.ready()`. Readers that consume and remove a parameter on the
+  first load, before any connect or action can start (e.g. a referral code
+  stored and stripped at startup), are unaffected: the query they saw is the
+  one before any redirect.
 - **CSP:** if the app sets `connect-src`, add `https://api.odin.fun` (every
   connect is verified there).
 - **Open redirects:** if the app has any page that forwards to a URL taken
@@ -209,6 +272,10 @@ double effects are safe (odin-api is asked once).
   result could not be verified). Existing `catch` blocks should show a retry.
 - A blocked connect popup now **rejects** ("Failed to open authorize/connect
   window, please always allow popups and try again") instead of hanging.
+- A popup the user closes without answering settles the request as
+  `"rejected"` with `error: "popup_closed"` (the promise rejects with the
+  usual rejection text). Do not keep buttons disabled until a reload: re-enable
+  them on any settled status.
 - A new verified connect replaces the stored session (the previous user's
   JWT and delegation are cleared).
 - Only the latest request updates `state`; a connect that finishes after a
@@ -220,7 +287,8 @@ double effects are safe (odin-api is asked once).
 
 ## Step 7 — Verify
 
-1. Typecheck, lint, unit tests and production build of the app pass.
+1. The checks the app has (typecheck, lint, format, unit tests, production
+   build — whichever exist) pass.
 2. Desktop browser, default mode: connect → user shown; one action → the
    handler runs on `success`; reject in Odin → `rejected` shown, no loop.
 3. Redirect path without a wallet browser: temporarily construct with

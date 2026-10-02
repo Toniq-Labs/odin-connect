@@ -580,7 +580,7 @@ odinConnect.disconnect();
 
 ### Custom app slug
 
-Storage keys are scoped by a slug derived from your app name (e.g. `"My App"` becomes `"my-app"`). You can provide a custom slug to control the storage key:
+Storage keys are scoped by a slug derived from your app name: the name in lowercase kebab-case plus a short hash of it, so the key is `odin_connect:<slug>-<hash>:<env>:session` (e.g. `"My App"` becomes `my-app-12b`, key `odin_connect:my-app-12b:prod:session`). Renaming the app therefore starts with no stored session. You can provide a custom slug to control the storage key; it is used as is:
 
 ```typescript
 const odinConnect = new OdinConnect({
@@ -599,8 +599,8 @@ const odinConnect = new OdinConnect({
 ## Migrating to 2.0.0
 
 > **Using a coding agent?** Point it at
-> [`MIGRATION-2.0.md`](./MIGRATION-2.0.md) (also shipped in the package at
-> `node_modules/odin-connect/MIGRATION-2.0.md`): step-by-step upgrade
+> [`MIGRATION-2.0.md`](./MIGRATION-2.0.md) (also shipped in the package
+> from 2.0.0 on, at `node_modules/odin-connect/MIGRATION-2.0.md`): step-by-step upgrade
 > instructions written for agents, with search commands, code changes,
 > pitfalls and a verification checklist.
 
