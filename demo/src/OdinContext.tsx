@@ -4,14 +4,16 @@ import type {
   OdinConnectedUser,
   OdinConnectMode,
   OdinLang,
-  OdinRedirectResult,
+  OdinRequestState,
   OdinToken,
 } from "odin-connect";
 
 type OdinContextType = {
   odinConnect: OdinConnect | null;
+  /* state.status: "initializing" until ready() restored the session */
+  status: "initializing" | "ready";
+  /* state.user: restored, or set by a popup or redirect connect */
   connectedUser: OdinConnectedUser | null;
-  setConnectedUser: (user: OdinConnectedUser | null) => void;
   tokens: ReadonlyArray<OdinToken>;
   setTokens: (tokens: ReadonlyArray<OdinToken>) => void;
   /* get the connected user, if not call odinConnect.connect() */
@@ -22,8 +24,8 @@ type OdinContextType = {
   /* popup / redirect / auto, applied to connect() and every action */
   mode: OdinConnectMode;
   setMode: (mode: OdinConnectMode) => void;
-  /* outcome of the redirect this page load returned from, if any */
-  redirectResult: OdinRedirectResult | null;
+  /* state.request: the latest connect() or action, popup or redirect */
+  request: OdinRequestState | null;
 };
 
 export const OdinContext = createContext<OdinContextType | undefined>(
