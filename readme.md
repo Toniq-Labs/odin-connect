@@ -245,7 +245,7 @@ and odin-api is asked once.
 ```typescript
 const odinConnect = new OdinConnect({
   name: "Demo App",   // Your app name (shown in auth popup)
-  env: "prod",        // "prod" | "dev" | "local" | "legacy"
+  env: "prod",        // "prod" | "staging" | "dev" | "local" | "legacy"
   lang: "en",         // Popup UI language: "en" | "zh" (default "en")
   mode: "auto",       // "auto" (default) | "popup" | "redirect", see below
 });
@@ -976,6 +976,7 @@ OdinUtils.createTokenValidators.telegram("https://t.me/...");
 | Environment | Frontend URL | API Base URL |
 |-------------|-------------|-------------|
 | `prod` (default) | `https://odin.fun` | `https://api.odin.fun/v2` |
+| `staging` | `https://staging.odin.fun` | `https://api.odin.fun/v2` |
 | `dev` | `https://dev.odin.fun` | `https://api.odin.fun/dev` |
 | `local` | `http://localhost:5173` | `https://api.odin.fun/dev` |
 | `legacy` | `https://legacy.odin.fun` | `https://api.odin.fun/v1` |

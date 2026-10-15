@@ -12,6 +12,11 @@ describe("Connect env → API base URL mapping", () => {
     expect(connect["_api"].BASE_URL).toBe("https://api.odin.fun/v2");
   });
 
+  it("should map staging env to the prod API base URL", () => {
+    const connect = new Connect({ env: "staging" });
+    expect(connect["_api"].BASE_URL).toBe("https://api.odin.fun/v2");
+  });
+
   it("should collapse dev/local to the dev API base URL", () => {
     expect(new Connect({ env: "dev" })["_api"].BASE_URL).toBe(
       "https://api.odin.fun/dev"

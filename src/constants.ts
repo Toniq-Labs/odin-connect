@@ -10,6 +10,7 @@ export const BASE_URL_ENV = {
   prod: "https://api.odin.fun/v2",
   local: "https://api.odin.fun/dev",
   legacy: "https://api.odin.fun/v1",
+  staging: "https://api.odin.fun/v2",
 };
 
 export const IMAGE_CDN_ENV = {
@@ -17,6 +18,7 @@ export const IMAGE_CDN_ENV = {
   prod: "https://images.odin.fun/v2",
   local: "https://images.odin.fun/dev",
   legacy: "https://images.odin.fun",
+  staging: "https://images.odin.fun/v2",
 };
 
 export type OdinEnv = keyof typeof IMAGE_CDN_ENV;

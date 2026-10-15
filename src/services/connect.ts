@@ -740,9 +740,18 @@ export class Connect {
     return new ConnectedUser(principal, identity, api, this._odin);
   }
 
+  /**
+   * API environment for the configured frontend env. `staging.odin.fun` is a
+   * frontend-only environment backed by the prod API and image CDN, so it
+   * collapses to `prod`; `local` collapses to `dev`.
+   */
   private get apiEnv(): "prod" | "dev" | "legacy" {
     const env = this._appInfo?.env;
-    return env === "prod" ? "prod" : env === "legacy" ? "legacy" : "dev";
+    return env === "prod" || env === "staging"
+      ? "prod"
+      : env === "legacy"
+        ? "legacy"
+        : "dev";
   }
 
   private get disconnectGeneration(): number {

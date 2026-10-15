@@ -3,6 +3,7 @@ export const ORIGINS = {
   prod: "https://odin.fun",
   dev: "https://dev.odin.fun",
   legacy: "https://legacy.odin.fun",
+  staging: "https://staging.odin.fun",
 };
 
 export type Environment = keyof typeof ORIGINS;

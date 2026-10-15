@@ -8,6 +8,12 @@ describe("buildTokenImageUrl", () => {
     );
   });
 
+  it("should build the token image URL for the staging environment", () => {
+    expect(buildTokenImageUrl("2jjj", "staging")).toBe(
+      "https://images.odin.fun/v2/token/2jjj"
+    );
+  });
+
   it("should build the token image URL for the legacy environment", () => {
     expect(buildTokenImageUrl("2jjj", "legacy")).toBe(
       "https://images.odin.fun/token/2jjj"
