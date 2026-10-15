@@ -196,7 +196,7 @@ export class Connect {
     };
     this._appInfo.slug = this._appInfo.slug || slugify(this._appInfo.name);
     this._appInfo.lang = normalizeOdinLang(this._appInfo.lang);
-    this._api = new OdinApiClient(this.apiEnv);
+    this._api = new OdinApiClient(this.currentEnv);
     this._window = new WindowClient();
     this._redirect = new RedirectClient(
       this._window,
@@ -735,23 +735,9 @@ export class Connect {
     identity,
     jwt,
   }: VerifiedConnection): ConnectedUser {
-    const api = new OdinApiClient(this.apiEnv);
+    const api = new OdinApiClient(this.currentEnv);
     api.apiKey = jwt;
     return new ConnectedUser(principal, identity, api, this._odin);
-  }
-
-  /**
-   * API environment for the configured frontend env. `staging.odin.fun` is a
-   * frontend-only environment backed by the prod API and image CDN, so it
-   * collapses to `prod`; `local` collapses to `dev`.
-   */
-  private get apiEnv(): "prod" | "dev" | "legacy" {
-    const env = this._appInfo?.env;
-    return env === "prod" || env === "staging"
-      ? "prod"
-      : env === "legacy"
-        ? "legacy"
-        : "dev";
   }
 
   private get disconnectGeneration(): number {

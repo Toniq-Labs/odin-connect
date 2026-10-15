@@ -13,6 +13,7 @@ import { createTokenValidators } from "../utils";
 import { AchievementCategory } from "../models/achievement";
 import { Transaction } from "../models/transactions";
 import { BASE_URL_ENV, IMAGE_CDN_ENV } from "../constants";
+import { Environment } from "../models/environment";
 
 export type Pagination = {
   page: number;
@@ -61,9 +62,9 @@ export class OdinApiClient {
   private _apiKey: string | null = null;
   private _httpClient: HttpClient;
   readonly BASE_URL: string;
-  readonly ENV: "prod" | "dev" | "legacy";
+  readonly ENV: Environment;
 
-  constructor(env: "prod" | "dev" | "legacy" = "prod") {
+  constructor(env: Environment = "prod") {
     this._httpClient = new HttpClient();
     this.BASE_URL = BASE_URL_ENV[env];
     this.ENV = env;

@@ -146,8 +146,10 @@ describe("OdinApiClient.verifyConnect", () => {
   it("POSTs the proof with client_signature to {base}/connect/verify per env", async () => {
     for (const [env, base] of [
       ["prod", "https://api.odin.fun/v2"],
+      ["staging", "https://api.odin.fun/v2"],
       ["legacy", "https://api.odin.fun/v1"],
       ["dev", "https://api.odin.fun/dev"],
+      ["local", "https://api.odin.fun/dev"],
     ] as const) {
       const api = new OdinApiClient(env);
       const response = { principal: "aaaaa-aa", username: null, jwt: "j" };

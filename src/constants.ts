@@ -1,3 +1,5 @@
+import type { Environment } from "./models/environment";
+
 /**
  * Authorize protocol version sent as `v` on every authorize URL. `2` means:
  * `session_pubkey` instead of the session secret, a signed identity proof in
@@ -5,7 +7,8 @@
  */
 export const PROTOCOL_VERSION = "2";
 
-export const BASE_URL_ENV = {
+/** API base URL per frontend env. One row per `Environment` (type-checked). */
+export const BASE_URL_ENV: Record<Environment, string> = {
   dev: "https://api.odin.fun/dev",
   prod: "https://api.odin.fun/v2",
   local: "https://api.odin.fun/dev",
@@ -13,7 +16,8 @@ export const BASE_URL_ENV = {
   staging: "https://api.odin.fun/v2",
 };
 
-export const IMAGE_CDN_ENV = {
+/** Image CDN base URL per frontend env. One row per `Environment`. */
+export const IMAGE_CDN_ENV: Record<Environment, string> = {
   dev: "https://images.odin.fun/dev",
   prod: "https://images.odin.fun/v2",
   local: "https://images.odin.fun/dev",
@@ -21,4 +25,4 @@ export const IMAGE_CDN_ENV = {
   staging: "https://images.odin.fun/v2",
 };
 
-export type OdinEnv = keyof typeof IMAGE_CDN_ENV;
+export type OdinEnv = Environment;
