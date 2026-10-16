@@ -51,6 +51,18 @@ export class HttpClient {
     });
   }
 
+  async patch<ResponseType, DataType = string>(
+    url: string,
+    data?: DataType,
+    options?: AxiosRequestConfig
+  ) {
+    return this.fetch<ResponseType>(url, {
+      method: "PATCH",
+      data,
+      ...options,
+    });
+  }
+
   async delete<ResponseType>(url: string, options?: AxiosRequestConfig) {
     return this.fetch<ResponseType>(url, { method: "DELETE", ...options });
   }

@@ -14,6 +14,8 @@ import { AchievementCategory } from "../models/achievement";
 import { Transaction } from "../models/transactions";
 import { BASE_URL_ENV, IMAGE_CDN_ENV } from "../constants";
 import { Environment } from "../models/environment";
+import { OdinCommunitiesClient } from "./communities";
+import { toApiError } from "./api-error";
 
 export type Pagination = {
   page: number;
@@ -63,11 +65,18 @@ export class OdinApiClient {
   private _httpClient: HttpClient;
   readonly BASE_URL: string;
   readonly ENV: Environment;
+  /** Communities API adapter. Shares this client's HTTP client and API key. */
+  readonly communities: OdinCommunitiesClient;
 
   constructor(env: Environment = "prod") {
     this._httpClient = new HttpClient();
     this.BASE_URL = BASE_URL_ENV[env];
     this.ENV = env;
+    this.communities = new OdinCommunitiesClient(
+      this._httpClient,
+      this.BASE_URL,
+      () => this._apiKey
+    );
   }
 
   getUser(id: string) {
@@ -290,16 +299,7 @@ export class OdinApiClient {
         VerifyConnectRequest
       >(`${this.BASE_URL}/connect/verify`, body);
     } catch (error) {
-      if (error instanceof Error && error.name === "AxiosError") {
-        const axiosError = error as AxiosError<{ message?: unknown }>;
-        const message = axiosError.response?.data?.message;
-        throw new Error(
-          typeof message === "string" && message ? message : axiosError.message
-        );
-      }
-      throw error instanceof Error
-        ? error
-        : new Error("Connect verification failed");
+      throw toApiError(error, "Connect verification failed");
     }
   }
 
