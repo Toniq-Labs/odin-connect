@@ -131,6 +131,60 @@ describe("ApiClient", () => {
   });
 });
 
+describe("OdinApiClient image uploads", () => {
+  const png = new File([new Uint8Array([137, 80, 78, 71])], "a.png", {
+    type: "image/png",
+  });
+
+  it("uploadImage surfaces a NestJS validation message array", async () => {
+    const api = new OdinApiClient("dev");
+    api.apiKey = "jwt";
+    const err = new AxiosError("Request failed with status code 400");
+    err.response = {
+      status: 400,
+      data: { message: ["file too large", "unsupported type"] },
+    } as AxiosResponse;
+    vi.spyOn(api["_httpClient"], "post").mockRejectedValue(err);
+    await expect(api.uploadImage(png)).rejects.toThrow(
+      "file too large; unsupported type"
+    );
+  });
+
+  it("uploadImage keeps the validator's message for a bad file", async () => {
+    const api = new OdinApiClient("dev");
+    api.apiKey = "jwt";
+    const post = vi.spyOn(api["_httpClient"], "post");
+    const bad = new File(["x"], "a.txt", { type: "text/plain" });
+    await expect(api.uploadImage(bad)).rejects.toBeInstanceOf(Error);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("updateTokenImage rejects with the API's message (catch now fires)", async () => {
+    const api = new OdinApiClient("dev");
+    api.apiKey = "jwt";
+    const err = new AxiosError("Request failed with status code 403");
+    err.response = {
+      status: 403,
+      data: { message: "Not the token creator" },
+    } as AxiosResponse;
+    vi.spyOn(api["_httpClient"], "post").mockRejectedValue(err);
+    await expect(api.updateTokenImage("2jjj", png)).rejects.toThrow(
+      "Not the token creator"
+    );
+  });
+
+  it("updateTokenImage resolves with the response on success", async () => {
+    const api = new OdinApiClient("dev");
+    api.apiKey = "jwt";
+    vi.spyOn(api["_httpClient"], "post").mockResolvedValue({
+      data: { id: "2jjj" },
+    });
+    await expect(api.updateTokenImage("2jjj", png)).resolves.toEqual({
+      data: { id: "2jjj" },
+    });
+  });
+});
+
 describe("OdinApiClient.verifyConnect", () => {
   const body = {
     payload: "{}",

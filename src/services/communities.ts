@@ -41,7 +41,11 @@ export class OdinCommunitiesClient {
 
   // ---- reads --------------------------------------------------------------
 
-  /** Public communities. `filters.role_in` requires an API key (the API returns 400 otherwise). */
+  /**
+   * Public communities. `filters.role_in` requires an API key (rejects with
+   * "API key is not set" before any request); an empty `role_in` means no
+   * role filter.
+   */
   async getCommunities(
     pagination: Pagination,
     sort?: Sort<CommunitySortableFields>,
@@ -50,8 +54,10 @@ export class OdinCommunitiesClient {
     const params: Record<string, string | number> = { ...pagination };
     if (sort) params.sort = `${sort.field}:${sort.direction}`;
     if (filters.search !== undefined) params.search = filters.search;
-    if (filters.role_in !== undefined)
+    if (filters.role_in?.length) {
+      this.authOptions(true); // role_in is a 400 without a key; fail like a mutation
       params.role_in = filters.role_in.join(",");
+    }
     const response = await this.request(
       () =>
         this._http.get<PaginatedResponse<CommunityListItem>>(

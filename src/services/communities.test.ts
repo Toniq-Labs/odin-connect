@@ -87,6 +87,33 @@ describe("OdinCommunitiesClient", () => {
       });
     });
 
+    it("omits an empty role_in instead of sending role_in=", async () => {
+      api.apiKey = "jwt";
+      const get = vi.spyOn(http, "get").mockResolvedValue({
+        data: [],
+        count: 0,
+        page: 1,
+        limit: 10,
+      });
+      await api.communities.getCommunities({ page: 1, limit: 10 }, undefined, {
+        role_in: [],
+      });
+      expect(get.mock.calls[0][1]).toEqual({
+        params: { page: 1, limit: 10 },
+        headers: { Authorization: "Bearer jwt" },
+      });
+    });
+
+    it("rejects role_in without an API key before any request", async () => {
+      const get = vi.spyOn(http, "get");
+      await expect(
+        api.communities.getCommunities({ page: 1, limit: 10 }, undefined, {
+          role_in: ["owner"],
+        }),
+      ).rejects.toThrow("API key is not set");
+      expect(get).not.toHaveBeenCalled();
+    });
+
     it("casts bigint stats and leaves others untouched", async () => {
       vi.spyOn(http, "get").mockResolvedValue({
         data: [community({ stats: { ...community().stats, fees_total: 7 } })],

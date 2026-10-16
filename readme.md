@@ -990,7 +990,7 @@ const banner = odinConnect.api.communities.getBannerImageUrl(principal);
 | Filter | Type | Description |
 |--------|------|-------------|
 | `search` | `string` | Match username, bio or principal (max 128 chars) |
-| `role_in` | `OdinCommunityRole[]` | Only communities where the connected user holds one of these roles. Requires an API key. |
+| `role_in` | `OdinCommunityRole[]` | Only communities where the connected user holds one of these roles. Requires an API key (rejects with `"API key is not set"` otherwise); an empty array means no role filter. |
 
 #### Member actions
 
