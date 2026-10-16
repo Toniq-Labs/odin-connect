@@ -1,4 +1,3 @@
-import { AxiosError } from "axios";
 import { Activity } from "../models/activity";
 import { Balance } from "../models/balance";
 import {
@@ -14,6 +13,8 @@ import { AchievementCategory } from "../models/achievement";
 import { Transaction } from "../models/transactions";
 import { BASE_URL_ENV, IMAGE_CDN_ENV } from "../constants";
 import { Environment } from "../models/environment";
+import { OdinCommunitiesClient } from "./communities";
+import { toApiError } from "./api-error";
 
 export type Pagination = {
   page: number;
@@ -63,11 +64,18 @@ export class OdinApiClient {
   private _httpClient: HttpClient;
   readonly BASE_URL: string;
   readonly ENV: Environment;
+  /** Communities API adapter. Shares this client's HTTP client and API key. */
+  readonly communities: OdinCommunitiesClient;
 
   constructor(env: Environment = "prod") {
     this._httpClient = new HttpClient();
     this.BASE_URL = BASE_URL_ENV[env];
     this.ENV = env;
+    this.communities = new OdinCommunitiesClient(
+      this._httpClient,
+      this.BASE_URL,
+      () => this._apiKey
+    );
   }
 
   getUser(id: string) {
@@ -143,27 +151,16 @@ export class OdinApiClient {
       });
       return result.data.upload;
     } catch (error) {
-      if (error instanceof Error) {
-        if (error.name === "AxiosError") {
-          const axiosError = error as AxiosError<{ message: string }>;
-          throw new Error(
-            axiosError.response?.data?.message || axiosError.message
-          );
-        } else {
-          throw new Error(error.message);
-        }
-      } else {
-        throw new Error("Image upload failed");
-      }
+      throw toApiError(error, "Image upload failed");
     }
   }
 
-  updateTokenImage(tokenId: string, image: File) {
+  async updateTokenImage(tokenId: string, image: File) {
     if (!this._apiKey) {
       throw new Error("API key is not set");
     }
     try {
-      return this._httpClient.post<{ data: Token }, { image: File }>(
+      return await this._httpClient.post<{ data: Token }, { image: File }>(
         `${this.BASE_URL}/token/${tokenId}/image`,
         { image },
         {
@@ -174,14 +171,7 @@ export class OdinApiClient {
         }
       );
     } catch (error) {
-      if (error instanceof Error && error.name === "AxiosError") {
-        const axiosError = error as AxiosError<{ message: string }>;
-        throw new Error(
-          axiosError.response?.data?.message || axiosError.message
-        );
-      } else {
-        throw new Error("Image update failed");
-      }
+      throw toApiError(error, "Image update failed");
     }
   }
 
@@ -290,16 +280,7 @@ export class OdinApiClient {
         VerifyConnectRequest
       >(`${this.BASE_URL}/connect/verify`, body);
     } catch (error) {
-      if (error instanceof Error && error.name === "AxiosError") {
-        const axiosError = error as AxiosError<{ message?: unknown }>;
-        const message = axiosError.response?.data?.message;
-        throw new Error(
-          typeof message === "string" && message ? message : axiosError.message
-        );
-      }
-      throw error instanceof Error
-        ? error
-        : new Error("Connect verification failed");
+      throw toApiError(error, "Connect verification failed");
     }
   }
 
