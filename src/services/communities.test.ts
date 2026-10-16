@@ -192,6 +192,46 @@ describe("OdinCommunitiesClient", () => {
     });
   });
 
+  describe("read errors", () => {
+    it("getCommunity surfaces the API's 403 message for a private community", async () => {
+      const err = new AxiosError("Request failed with status code 403");
+      err.response = {
+        status: 403,
+        data: { message: "This community is private" },
+      } as AxiosResponse;
+      vi.spyOn(http, "get").mockRejectedValue(err);
+      await expect(api.communities.getCommunity(P)).rejects.toThrow(
+        "This community is private",
+      );
+    });
+
+    it("getMembers / getCommunities / getRecommendedTokens normalise too", async () => {
+      const err = new AxiosError("Request failed with status code 400");
+      err.response = {
+        status: 400,
+        data: { message: ["role_in requires authentication"] },
+      } as AxiosResponse;
+      vi.spyOn(http, "get").mockRejectedValue(err);
+      await expect(
+        api.communities.getMembers(P, { page: 1, limit: 1 }),
+      ).rejects.toThrow("role_in requires authentication");
+      await expect(
+        api.communities.getCommunities({ page: 1, limit: 1 }),
+      ).rejects.toThrow("role_in requires authentication");
+      await expect(
+        api.communities.getRecommendedTokens(P, { page: 1, limit: 1 }),
+      ).rejects.toThrow("role_in requires authentication");
+    });
+
+    it("rejects with a plain Error, not an AxiosError", async () => {
+      vi.spyOn(http, "get").mockRejectedValue(new AxiosError("boom"));
+      const rejection = await api.communities.getCommunity(P).catch((e) => e);
+      expect(rejection).toBeInstanceOf(Error);
+      expect(rejection.name).toBe("Error");
+      expect(rejection.message).toBe("boom");
+    });
+  });
+
   describe("getMembers", () => {
     it("sends role filter and casts comment_ban.id", async () => {
       const get = vi.spyOn(http, "get").mockResolvedValue({

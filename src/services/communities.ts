@@ -24,6 +24,9 @@ import { HttpClient } from "./http";
  *
  * Token amounts (`stats.volume_*`, `stats.fees_*`, chat thresholds) are
  * re-cast to `bigint`; the API serialises them as JSON numbers / strings.
+ *
+ * Every method rejects with an `Error` carrying the API's message (e.g. a
+ * 403 on a private community), never a raw `AxiosError`.
  */
 export class OdinCommunitiesClient {
   private _http: HttpClient;
@@ -49,18 +52,26 @@ export class OdinCommunitiesClient {
     if (filters.search !== undefined) params.search = filters.search;
     if (filters.role_in !== undefined)
       params.role_in = filters.role_in.join(",");
-    const response = await this._http.get<PaginatedResponse<CommunityListItem>>(
-      `${this._baseUrl}/communities`,
-      { params, ...this.authOptions(false) },
+    const response = await this.request(
+      () =>
+        this._http.get<PaginatedResponse<CommunityListItem>>(
+          `${this._baseUrl}/communities`,
+          { params, ...this.authOptions(false) },
+        ),
+      "Failed to load communities",
     );
     return { ...response, data: response.data.map(castCommunity) };
   }
 
   /** One community with the caller's membership and chat access. 403 when private and not a member. */
   async getCommunity(principal: string): Promise<CommunityDetail> {
-    const detail = await this._http.get<CommunityDetail>(
-      `${this._baseUrl}/community/${principal}`,
-      this.authOptions(false),
+    const detail = await this.request(
+      () =>
+        this._http.get<CommunityDetail>(
+          `${this._baseUrl}/community/${principal}`,
+          this.authOptions(false),
+        ),
+      "Failed to load community",
     );
     return castDetail(detail);
   }
@@ -73,18 +84,29 @@ export class OdinCommunitiesClient {
   ): Promise<PaginatedResponse<CommunityMember>> {
     const params: Record<string, string | number> = { ...pagination };
     if (role !== undefined) params.role = role;
-    const response = await this._http.get<PaginatedResponse<CommunityMember>>(
-      `${this._baseUrl}/community/${principal}/members`,
-      { params, ...this.authOptions(false) },
+    const response = await this.request(
+      () =>
+        this._http.get<PaginatedResponse<CommunityMember>>(
+          `${this._baseUrl}/community/${principal}/members`,
+          { params, ...this.authOptions(false) },
+        ),
+      "Failed to load community members",
     );
     return { ...response, data: response.data.map(castMember) };
   }
 
   /** Tokens recommended by the community, newest first. */
-  getRecommendedTokens(principal: string, pagination: Pagination) {
-    return this._http.get<PaginatedResponse<CommunityRecommendedToken>>(
-      `${this._baseUrl}/community/${principal}/tokens`,
-      { params: { ...pagination }, ...this.authOptions(false) },
+  getRecommendedTokens(
+    principal: string,
+    pagination: Pagination,
+  ): Promise<PaginatedResponse<CommunityRecommendedToken>> {
+    return this.request(
+      () =>
+        this._http.get<PaginatedResponse<CommunityRecommendedToken>>(
+          `${this._baseUrl}/community/${principal}/tokens`,
+          { params: { ...pagination }, ...this.authOptions(false) },
+        ),
+      "Failed to load recommended tokens",
     );
   }
 
@@ -97,7 +119,7 @@ export class OdinCommunitiesClient {
 
   /** Join a public community as the connected user. */
   join(principal: string): Promise<CommunityMember> {
-    return this.mutate(
+    return this.request(
       async () =>
         castMember(
           await this._http.post<CommunityMember, undefined>(
@@ -112,7 +134,7 @@ export class OdinCommunitiesClient {
 
   /** Leave a community. The owner cannot leave. */
   leave(principal: string): Promise<void> {
-    return this.mutate(async () => {
+    return this.request(async () => {
       await this._http.delete<void>(
         `${this._baseUrl}/community/${principal}/leave`,
         this.authOptions(true),
@@ -126,7 +148,7 @@ export class OdinCommunitiesClient {
     userId: string,
     role: AssignableCommunityRole,
   ): Promise<CommunityMember> {
-    return this.mutate(
+    return this.request(
       async () =>
         castMember(
           await this._http.post<
@@ -148,7 +170,7 @@ export class OdinCommunitiesClient {
     userId: string,
     role: AssignableCommunityRole,
   ): Promise<CommunityMember> {
-    return this.mutate(
+    return this.request(
       async () =>
         castMember(
           await this._http.patch<
@@ -170,7 +192,7 @@ export class OdinCommunitiesClient {
     userId: string,
     reason?: string,
   ): Promise<void> {
-    return this.mutate(async () => {
+    return this.request(async () => {
       await this._http.post<void, { reason?: string }>(
         `${this._baseUrl}/community/${principal}/members/${userId}/kick`,
         reason === undefined ? {} : { reason },
@@ -185,7 +207,7 @@ export class OdinCommunitiesClient {
     token: string,
     description?: string,
   ): Promise<CommunityRecommendedToken> {
-    return this.mutate(
+    return this.request(
       () =>
         this._http.post<
           CommunityRecommendedToken,
@@ -201,7 +223,7 @@ export class OdinCommunitiesClient {
 
   /** Remove a recommended token (owner/moderator). */
   removeRecommendedToken(principal: string, tokenId: string): Promise<void> {
-    return this.mutate(async () => {
+    return this.request(async () => {
       await this._http.delete<void>(
         `${this._baseUrl}/community/${principal}/tokens/${tokenId}`,
         this.authOptions(true),
@@ -226,7 +248,11 @@ export class OdinCommunitiesClient {
     return { headers: { Authorization: `Bearer ${key}` } };
   }
 
-  private async mutate<T>(fn: () => Promise<T>, fallback: string): Promise<T> {
+  /**
+   * Every call, read or mutation, goes through here so failures surface the
+   * API's message (`toApiError`) rather than a raw `AxiosError`.
+   */
+  private async request<T>(fn: () => Promise<T>, fallback: string): Promise<T> {
     try {
       return await fn();
     } catch (error) {

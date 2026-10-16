@@ -943,7 +943,7 @@ const stats = await odinConnect.api.getUserStats(
 
 ### Communities
 
-Communities are user accounts that opened a community page. Reads are public; when a user is connected with `requires_api: true` the SDK also sends their API key, so responses include the caller's `membership`, `chat_access` and (for owners/admins) `stats.fees_*`.
+Communities are user accounts that opened a community page. Reads are public; when a user is connected with `requires_api: true` the SDK also sends their API key, so responses include the caller's `membership`, `chat_access` and (for owners/admins) `stats.fees_*`. Every method rejects with an `Error` carrying the API's message (for example the 403 on a private community you are not a member of), never a raw axios error.
 
 ```typescript
 // List public communities
