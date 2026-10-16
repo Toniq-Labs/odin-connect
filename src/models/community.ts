@@ -74,10 +74,10 @@ export interface ChatAccess {
 /** The detail response: list row plus the caller's chat verdicts. */
 export interface CommunityDetail extends CommunityListItem {
   chat_access: ChatAccess;
-  /** Minimum recommended-token value (msats) to post in the public chat. */
-  public_chat_threshold: bigint;
-  /** Minimum recommended-token value (msats) to view/post in the private chat. */
-  private_chat_threshold: bigint;
+  /** Minimum recommended-token value (msats) to post in the public chat. Null when the API sends none. */
+  public_chat_threshold: bigint | null;
+  /** Minimum recommended-token value (msats) to view/post in the private chat. Null when the API sends none. */
+  private_chat_threshold: bigint | null;
 }
 
 export type CommunityMemberUser = Pick<

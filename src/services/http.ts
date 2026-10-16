@@ -3,6 +3,9 @@ import JSONBigInt from "@apimatic/json-bigint";
 
 export const bigIntTransformer =
     (data:string) => {
+      // axios calls custom transformers unconditionally (unlike its default,
+      // which skips empty bodies), so a 204 / empty body must pass through.
+      if (typeof data !== "string" || data === "") return data;
       try {
         return JSONBigInt.parse(data);
       } catch (e) {

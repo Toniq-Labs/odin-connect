@@ -964,7 +964,7 @@ const mine = await odinConnect.api.communities.getCommunities(
 const community = await odinConnect.api.communities.getCommunity(principal);
 community.membership;                       // "owner" | "admin" | "moderator" | "member" | null
 community.chat_access.private.can_post;     // boolean
-community.public_chat_threshold;            // bigint (msats)
+community.public_chat_threshold;            // bigint (msats) or null
 
 // Members (newest first), optionally filtered by role
 const members = await odinConnect.api.communities.getMembers(

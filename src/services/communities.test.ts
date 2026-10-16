@@ -150,6 +150,32 @@ describe("OdinCommunitiesClient", () => {
       expect(detail.chat_access.private.can_view_reason).toBe("membership");
     });
 
+    it("returns null thresholds instead of throwing when the API omits them", async () => {
+      vi.spyOn(http, "get").mockResolvedValue(
+        community({
+          chat_access: {},
+          public_chat_threshold: null,
+          private_chat_threshold: undefined,
+        }),
+      );
+      const detail = await api.communities.getCommunity(P);
+      expect(detail.public_chat_threshold).toBeNull();
+      expect(detail.private_chat_threshold).toBeNull();
+    });
+
+    it("accepts numeric thresholds too", async () => {
+      vi.spyOn(http, "get").mockResolvedValue(
+        community({
+          chat_access: {},
+          public_chat_threshold: 5,
+          private_chat_threshold: 7n,
+        }),
+      );
+      const detail = await api.communities.getCommunity(P);
+      expect(detail.public_chat_threshold).toBe(5n);
+      expect(detail.private_chat_threshold).toBe(7n);
+    });
+
     it("sends the Bearer header once an API key is set", async () => {
       api.apiKey = "jwt";
       const get = vi.spyOn(http, "get").mockResolvedValue(
@@ -337,6 +363,24 @@ describe("OdinCommunitiesClient", () => {
       } as AxiosResponse;
       vi.spyOn(http, "post").mockRejectedValue(err);
       await expect(api.communities.join(P)).rejects.toThrow("Already a member");
+    });
+
+    it("joins NestJS validation message arrays", async () => {
+      api.apiKey = "jwt";
+      const err = new AxiosError("Request failed with status code 400");
+      err.response = {
+        status: 400,
+        data: {
+          message: [
+            "reason must be shorter than or equal to 500 characters",
+            "property foo should not exist",
+          ],
+        },
+      } as AxiosResponse;
+      vi.spyOn(http, "post").mockRejectedValue(err);
+      await expect(api.communities.kickMember(P, "u1", "x")).rejects.toThrow(
+        "reason must be shorter than or equal to 500 characters; property foo should not exist",
+      );
     });
 
     it("falls back to axios' message when the API gives none", async () => {

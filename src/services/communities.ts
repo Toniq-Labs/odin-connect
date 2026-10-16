@@ -260,9 +260,20 @@ function castCommunity<T extends Community>(community: T): T {
 function castDetail(detail: CommunityDetail): CommunityDetail {
   return {
     ...castCommunity(detail),
-    public_chat_threshold: BigInt(detail.public_chat_threshold),
-    private_chat_threshold: BigInt(detail.private_chat_threshold),
+    public_chat_threshold: toBigIntOrNull(detail.public_chat_threshold),
+    private_chat_threshold: toBigIntOrNull(detail.private_chat_threshold),
   };
+}
+
+/** `BigInt()` for an API amount that may be a number, decimal string, or absent. */
+function toBigIntOrNull(value: unknown): bigint | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value === "bigint") return value;
+  try {
+    return BigInt(value as string | number);
+  } catch {
+    return null;
+  }
 }
 
 function castMember(member: CommunityMember): CommunityMember {
