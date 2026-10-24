@@ -55,6 +55,11 @@ export interface PendingRedirect {
    * entries saved by older SDK versions.
    */
   returnHref?: string;
+  /**
+   * actions only: the principal the app sent, to check Odin's
+   * `detail.principal` against on the way back.
+   */
+  principal?: string;
 }
 
 /**

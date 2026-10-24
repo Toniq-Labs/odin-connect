@@ -22,11 +22,17 @@ export type OdinAction =
  * Extra data Odin returns with an action result. `icrc_approve` carries
  * `block_index`, the ledger block of the approval as a decimal string. Odin
  * sends no ICRC-2 memo (the Odin canister rejects approvals that carry one).
- * Other actions carry nothing today.
+ * Every success may carry `principal`, the account the action ran for.
  */
 export type OdinActionDetail = {
   /** `icrc_approve`: ledger block index of the approval (decimal string). */
   block_index?: string;
+  /**
+   * The principal the action was executed for. The SDK compares it with the
+   * principal the app sent and fails the request when they differ (see
+   * `PRINCIPAL_MISMATCH_ERROR`); absent from older Odin builds.
+   */
+  principal?: string;
   [key: string]: unknown;
 };
 
@@ -110,6 +116,11 @@ export type OdinRequestState = {
  * - `missing_request_id`: no request id, or no identity, to bind the proof.
  * - `unsupported_identity`: the user's wallet cannot sign the identity proof.
  * - `no_action`: Odin has no authorize page for this action.
+ * - `not_connected`: nobody is signed in on Odin, so the action for the
+ *   principal the app sent could not run. The SDK clears the stored session.
+ * - `principal_mismatch`: the user signed in on Odin is not the principal the
+ *   app sent (the user switched accounts on Odin). The SDK clears the stored
+ *   session.
  *
  * Set by the SDK itself:
  * - `popup_closed` (popup mode): the popup was closed without an answer.
@@ -124,6 +135,8 @@ export type OdinRejectReason =
   | "missing_request_id"
   | "unsupported_identity"
   | "no_action"
+  | "not_connected"
+  | "principal_mismatch"
   | "popup_closed"
   | "navigated_back";
 
@@ -156,8 +169,12 @@ type StateEvent =
       status: Exclude<OdinRequestStatus, "pending">;
       detail?: OdinActionDetail;
       error?: string;
-      /** connect success: the verified user. */
-      user?: ConnectedUser;
+      /**
+       * connect success: the verified user. `null`: an action revealed that
+       * the session is stale (Odin ran it for, or has, another user), so the
+       * user is forgotten while the settled request stays visible.
+       */
+      user?: ConnectedUser | null;
     }
   | { type: "disconnect" };
 
@@ -197,7 +214,11 @@ function reduce(state: OdinState, event: StateEvent): OdinState {
         ...(event.detail ? { detail: event.detail } : {}),
         ...(event.error !== undefined ? { error: event.error } : {}),
       } as OdinRequestState;
-      return snapshot({ ...state, user: event.user ?? state.user, request });
+      return snapshot({
+        ...state,
+        user: event.user === undefined ? state.user : event.user,
+        request,
+      });
     }
     case "disconnect":
       if (state.user === null && state.request === null) return state;

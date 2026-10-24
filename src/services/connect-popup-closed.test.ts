@@ -140,8 +140,9 @@ describe("popup closed without an answer", () => {
       status: "rejected",
       error: "popup_closed",
     });
-    // a still-connected user stays connected
+    // a still-connected user stays connected, session kept
     expect(connect.user).toBe(user);
+    expect(localStorage.length).toBe(1);
     expect(watchTimers()).toBe(0);
   });
 
@@ -363,7 +364,10 @@ describe("grace period after the popup closed", () => {
     expect(watchTimers()).toBe(0);
     vi.advanceTimersByTime(POPUP_CLOSED_GRACE_MS);
     expect(connect.state.request).toBeNull();
-    expect(states.map((s) => s.request?.status)).toEqual(["pending", undefined]);
+    expect(states.map((s) => s.request?.status)).toEqual([
+      "pending",
+      undefined,
+    ]);
   });
 });
 

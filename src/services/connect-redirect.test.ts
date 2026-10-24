@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DelegationChain, Ed25519KeyIdentity } from "@dfinity/identity";
 import { OdinApiClient } from "./api";
+import { PRINCIPAL_MISMATCH_ERROR } from "./canister";
 import { AppInitOptions, Connect, resetRedirectOutcomes } from "./connect";
 import { PENDING_REDIRECT_MAX_AGE_MS, REDIRECT_RESULT_KEY } from "./redirect";
 import {
@@ -806,6 +807,83 @@ describe("Action redirect mode", () => {
       detail: { x: "1" },
     });
     expect(window.location.hash).toBe("");
+  });
+});
+
+describe("Action redirect mode: stale session", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/app");
+    sessionStorage.clear();
+    localStorage.clear();
+    resetRedirectOutcomes();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A stored user (redirect connect), then a redirect `sell` by that user. */
+  async function storedUserSells() {
+    spyVerify().mockImplementation(apiAccepts());
+    const { message } = await returnFromConnect({ requires_api: true });
+    const first = await reload({ mode: "redirect" });
+    expect(first.state.user?.principal).toBe(message.principal);
+    resetRedirectOutcomes();
+    const navigate = spyNavigate(first.connect);
+    void first.state.user!.sell({ token: "2jjj", tokenAmount: 1n });
+    return { url: navigatedUrl(navigate), principal: message.principal };
+  }
+
+  it("keeps the sent principal in the pending record, not in input", async () => {
+    const { principal } = await storedUserSells();
+    const pending = JSON.parse(sessionStorage.getItem(sessionStorage.key(0)!)!);
+    expect(pending.principal).toBe(principal);
+    expect(pending.input).toEqual({
+      token: "2jjj",
+      tokenAmount: { $odin_bigint: "1" },
+    });
+  });
+
+  it("a success for another principal fails the request and forgets the session", async () => {
+    const { url } = await storedUserSells();
+    returnWith(url, "sold", { detail: { principal: "other" } });
+    const { connect: app, state } = await reload();
+    expect(state.request).toMatchObject({
+      id: url.searchParams.get("request_id"),
+      action: "sell",
+      status: "failed",
+      error: PRINCIPAL_MISMATCH_ERROR,
+      detail: { principal: "other" },
+    });
+    expect(state.user).toBeNull();
+    expect(app.api.apiKey).toBeNull();
+    expect(localStorage.length).toBe(0);
+    expect(window.location.hash).toBe("");
+    // a later instance finds no session either
+    expect((await new Connect({ name: "test" }).ready()).user).toBeNull();
+  });
+
+  it("rejected / principal_mismatch forgets the session, keeps the request", async () => {
+    const { url } = await storedUserSells();
+    returnWith(url, "rejected", { detail: { reason: "principal_mismatch" } });
+    const { connect: app, state } = await reload();
+    expect(state.request).toMatchObject({
+      action: "sell",
+      status: "rejected",
+      error: "principal_mismatch",
+    });
+    expect(state.user).toBeNull();
+    expect(app.api.apiKey).toBeNull();
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("a success for the same principal, or without one, keeps the stored user", async () => {
+    const { url, principal } = await storedUserSells();
+    returnWith(url, "sold", { detail: { principal } });
+    const { state } = await reload();
+    expect(state.request).toMatchObject({ status: "success" });
+    expect(state.user?.principal).toBe(principal);
+    expect(localStorage.length).toBe(1);
   });
 });
 
