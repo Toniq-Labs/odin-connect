@@ -138,6 +138,24 @@ function readDetail(detail: unknown): OdinActionDetail | undefined {
 export const POPUP_CLOSED: OdinRejectReason = "popup_closed";
 export const NAVIGATED_BACK: OdinRejectReason = "navigated_back";
 
+/**
+ * Odin reject reasons that mean the stored session no longer matches the
+ * user on Odin (signed out, or signed in as someone else). The SDK forgets
+ * the session when an action is rejected with one of them.
+ */
+export const SESSION_STALE_REASONS: readonly OdinRejectReason[] = [
+  "not_connected",
+  "principal_mismatch",
+];
+
+/**
+ * `state.request.error` of an action that Odin confirmed (`detail.principal`)
+ * for a principal other than the one the app sent. The SDK forgets the
+ * session then too.
+ */
+export const PRINCIPAL_MISMATCH_ERROR =
+  "Odin confirmed the action for a different account";
+
 const REJECT_REASON_PATTERN = /^[a-z0-9_]{1,64}$/;
 
 /**
@@ -151,23 +169,41 @@ export function readRejectReason(detail: unknown): string | undefined {
     : undefined;
 }
 
+export type ActionOutcome = {
+  status: "success" | "rejected" | "failed";
+  detail?: OdinActionDetail;
+  error?: string;
+};
+
 /**
  * How an action result maps to a request status: the action's success
  * message → `"success"`, `"rejected"` → `"rejected"` (with Odin's
  * `detail.reason` as `error`, if any), anything else → `"failed"` (with the
- * action's failure text as `error`).
+ * action's failure text as `error`). A success whose `detail.principal`
+ * differs from `expectedPrincipal` (the principal the app sent) is
+ * `"failed"` with `PRINCIPAL_MISMATCH_ERROR`; a success without
+ * `detail.principal` (older Odin builds) is accepted as is.
  */
 export function actionOutcome(
   action: OdinAction,
   message: unknown,
-  detail: unknown
-): {
-  status: "success" | "rejected" | "failed";
-  detail?: OdinActionDetail;
-  error?: string;
-} {
+  detail: unknown,
+  expectedPrincipal?: string
+): ActionOutcome {
   if (message === ACTIONS[action].success) {
     const parsed = readDetail(detail);
+    if (
+      parsed &&
+      typeof parsed.principal === "string" &&
+      expectedPrincipal !== undefined &&
+      parsed.principal !== expectedPrincipal
+    ) {
+      return {
+        status: "failed",
+        error: PRINCIPAL_MISMATCH_ERROR,
+        detail: parsed,
+      };
+    }
     return { status: "success", ...(parsed ? { detail: parsed } : {}) };
   }
   if (message === "rejected") {
@@ -175,6 +211,20 @@ export function actionOutcome(
     return { status: "rejected", ...(reason ? { error: reason } : {}) };
   }
   return { status: "failed", error: ACTIONS[action].failure };
+}
+
+/**
+ * Whether an action outcome means the stored session is stale: rejected
+ * with a `SESSION_STALE_REASONS` code, or failed because Odin confirmed it
+ * for another principal.
+ */
+export function clearsSession(outcome: ActionOutcome): boolean {
+  if (outcome.status === "rejected") {
+    return SESSION_STALE_REASONS.includes(outcome.error as OdinRejectReason);
+  }
+  return (
+    outcome.status === "failed" && outcome.error === PRINCIPAL_MISMATCH_ERROR
+  );
 }
 
 /**
@@ -259,15 +309,22 @@ export class OdinCanisterClient {
   private _api: OdinApiClient;
   private _redirect: RedirectClient | null;
   private _store: StateStore | null;
+  private _onStaleSession: (() => void) | null;
   origin: string;
 
+  /**
+   * `onStaleSession` is called (popup mode) right after an action settled
+   * with an outcome that `clearsSession()` and `state.user` was forgotten:
+   * `Connect` drops the stored session and API key there.
+   */
   constructor(
     windowClient: WindowClient,
     apiClient: OdinApiClient,
     appInfo: AppInitOptions,
     origin: string,
     redirectClient: RedirectClient | null = null,
-    store: StateStore | null = null
+    store: StateStore | null = null,
+    onStaleSession: (() => void) | null = null
   ) {
     this._window = windowClient;
     this._redirect = redirectClient;
@@ -275,6 +332,7 @@ export class OdinCanisterClient {
     this._appInfo = appInfo;
     this.origin = origin;
     this._store = store;
+    this._onStaleSession = onStaleSession;
   }
 
   get appInfo() {
@@ -337,6 +395,9 @@ export class OdinCanisterClient {
     requestId = createRequestId(),
   }: ActionRequest<A>): Promise<boolean> {
     const { path: odinPath, failure } = ACTIONS[action];
+    // every action sends the user's principal: Odin's answer is checked
+    // against it (see actionOutcome)
+    const expectedPrincipal = params.principal;
     this.startRequest(requestId, action, input, returnState);
     const url = this.createUrl(odinPath, requestId);
     for (const key in params) {
@@ -354,6 +415,7 @@ export class OdinCanisterClient {
               path: "/" + odinPath,
               input,
               returnState,
+              principal: expectedPrincipal,
             },
             requestId,
             () =>
@@ -382,15 +444,26 @@ export class OdinCanisterClient {
             const outcome = actionOutcome(
               action,
               event.data.message,
-              event.data.detail
+              event.data.detail,
+              expectedPrincipal
             );
+            const stale = clearsSession(outcome);
             this._store?.dispatch({
               type: "settle",
               id: requestId,
               ...outcome,
+              // Odin has (or ran this for) another user: forget ours
+              ...(stale ? { user: null } : {}),
             });
+            // only when the settle was applied (a newer request, or
+            // disconnect(), makes it a no-op: nothing to forget then)
+            if (stale && this._store?.state.request?.id === requestId) {
+              this._onStaleSession?.();
+            }
             if (outcome.status === "success") {
               resolve(true);
+            } else if (outcome.error === PRINCIPAL_MISMATCH_ERROR) {
+              reject(new Error(PRINCIPAL_MISMATCH_ERROR));
             } else {
               reject(new Error(failure));
             }

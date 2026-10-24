@@ -553,6 +553,8 @@ leaves `error` unset. Popup promises still reject with the 1.6.0 text
 | `missing_request_id` | No request id, or no identity, to bind the identity proof. |
 | `unsupported_identity` | The user's wallet cannot sign the identity proof. |
 | `no_action` | Odin has no authorize page for this action. |
+| `not_connected` | Nobody is signed in on Odin, so the action for the principal your app sent could not run. The SDK forgets the stored session (see below). |
+| `principal_mismatch` | The user signed in on Odin is not the principal your app sent (the user switched accounts on odin.fun). The SDK forgets the stored session (see below). |
 | `popup_closed` | Set by the SDK, popup mode only: the popup was closed without an answer (checked every 500 ms, then a 1.5 s grace period for an answer posted just before the close). |
 | `navigated_back` | Set by the SDK, redirect mode only: the user pressed Back on Odin and the browser restored the app page from its back-forward cache without a result. |
 
@@ -564,6 +566,27 @@ popup closed: an answer arriving in that time is handled as usual (a connect
 is still fully verified). An answer after the grace period is ignored.
 
 Odin may add codes; treat an unknown one as a plain rejection.
+
+#### Stale sessions (signed out or switched account on odin.fun)
+
+Signing out on odin.fun does not touch the session this SDK stores in your
+app, so `state.user` can outlive the Odin sign-in. Every action sends the
+connected principal to Odin, and Odin answers for the account it actually
+used:
+
+- An action rejected with `not_connected` or `principal_mismatch` settles as
+  `"rejected"` with that code.
+- A success whose `detail.principal` is another account settles as
+  `"failed"` with `request.error` =
+  `"Odin confirmed the action for a different account"` (the detail,
+  including the other principal, is kept on `request.detail`).
+
+In both cases the SDK forgets the session in the same step: the stored
+session and API key are dropped and `state.user` becomes `null`, while
+`state.request` keeps the settled request so you can tell the user what
+happened and offer `connect()` again. This works in popup and redirect mode.
+A success without `detail.principal` (older Odin builds) is accepted as
+before, and no other rejection or failure touches the session.
 
 ### Session persistence
 

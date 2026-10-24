@@ -10,6 +10,7 @@ import { WindowClient, WindowClientSettings } from "./window";
 import {
   ACTIONS,
   actionOutcome,
+  clearsSession,
   OdinCanisterClient,
   NAVIGATED_BACK,
   POPUP_CLOSED,
@@ -78,6 +79,11 @@ interface VerifiedConnection {
 type RedirectOutcome = {
   request: OdinRequestState;
   connected?: VerifiedConnection;
+  /**
+   * An action outcome that `clearsSession()`: the stored session is dropped
+   * and `state.user` stays null (unless a popup connect finished meanwhile).
+   */
+  staleSession?: boolean;
 };
 
 /**
@@ -212,7 +218,8 @@ export class Connect {
       this._appInfo,
       ORIGINS[this._appInfo.env || "prod"],
       this._redirect,
-      this._store
+      this._store,
+      () => this.clearSession()
     );
     this._storage = new SessionStorage(
       this._appInfo.slug!,
@@ -351,12 +358,14 @@ export class Connect {
   ): Promise<void> {
     let request: OdinRequestState | null = null;
     let user: ConnectedUser | null = null;
+    let staleSession = false;
     if (outcome) {
       try {
         const read = await outcome;
         // disconnect() while it was being read: drop it (nothing was stored)
         if (generation === this.disconnectGeneration) {
           request = read.request;
+          staleSession = Boolean(read.staleSession);
           if (read.connected) {
             user = this.bindConnection(read.connected);
           }
@@ -365,10 +374,15 @@ export class Connect {
         // stale or foreign result (fragment already removed): ignored
       }
     }
+    if (staleSession) {
+      // Odin has (or ran the action for) another user: forget the session
+      // (every instance sharing the outcome does this; it is idempotent)
+      this.clearSession();
+    }
     // a rejected or unverified re-connect keeps the stored session
     this._store.dispatch({
       type: "ready",
-      user: user ?? this.loadStoredSession(),
+      user: user ?? (staleSession ? null : this.loadStoredSession()),
       request,
     });
   }
@@ -715,14 +729,21 @@ export class Connect {
     if (!(action in ACTIONS)) {
       throw new Error("Unexpected OdinConnect redirect result");
     }
+    const outcome = actionOutcome(
+      action as OdinAction,
+      result.message,
+      result.detail,
+      pending.principal
+    );
     return {
       request: {
         id: pending.state,
         action: action as OdinAction,
         input: pending.input ?? {},
         ...extra,
-        ...actionOutcome(action as OdinAction, result.message, result.detail),
+        ...outcome,
       } as OdinRequestState,
+      ...(clearsSession(outcome) ? { staleSession: true } : {}),
     };
   }
 
@@ -904,10 +925,15 @@ export class Connect {
   disconnect(): void {
     const key = this.redirectCacheKey;
     disconnects.set(key, (disconnects.get(key) ?? 0) + 1);
-    this._storage.clear();
-    this._api.apiKey = null;
+    this.clearSession();
     redirectOutcomes.delete(key);
     this._store.dispatch({ type: "disconnect" });
+  }
+
+  /** Drop the stored session and the API key (not the state). */
+  private clearSession(): void {
+    this._storage.clear();
+    this._api.apiKey = null;
   }
 
   isSessionValid(): boolean {

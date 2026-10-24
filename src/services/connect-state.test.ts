@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Ed25519KeyIdentity } from "@dfinity/identity";
 import { Connect, resetRedirectOutcomes } from "./connect";
 import type { ConnectedUser } from "./connected-user";
+import { PRINCIPAL_MISMATCH_ERROR } from "./canister";
 import { StateStore, type OdinState } from "./state";
 import {
   apiAccepts,
@@ -532,6 +533,111 @@ describe("popup actions → state", () => {
       action: "sell",
       status: "pending",
     });
+  });
+});
+
+describe("popup actions: stale session (odin.fun signed out or switched account)", () => {
+  it("a success for another principal fails the request and forgets the session", async () => {
+    const connect = await readyConnect();
+    const user = await connectedUser(connect);
+    expect(localStorage.length).toBe(1);
+    const states = record(connect);
+    openSpy();
+    const promise = user.buy({ token: "2jjj", btcAmount: 1n });
+    answer(connect, "/authorize/buy", "purchased", { principal: "other" });
+    await expect(promise).rejects.toThrow(PRINCIPAL_MISMATCH_ERROR);
+    expect(connect.state.request).toMatchObject({
+      action: "buy",
+      status: "failed",
+      error: PRINCIPAL_MISMATCH_ERROR,
+      detail: { principal: "other" },
+    });
+    expect(connect.user).toBeNull();
+    expect(localStorage.length).toBe(0);
+    expect(connect.api.apiKey).toBeNull();
+    // one snapshot: the settled request and the forgotten user together
+    expect(states.map((s) => [s.request?.status, s.user === null])).toEqual([
+      ["pending", false],
+      ["failed", true],
+    ]);
+    expect(
+      (await new Connect({ name: "test", env: "dev" }).ready()).user
+    ).toBeNull();
+  });
+
+  it("rejected / principal_mismatch and not_connected forget the session, the promise rejects as before", async () => {
+    for (const reason of ["principal_mismatch", "not_connected"]) {
+      const connect = await readyConnect();
+      const user = await connectedUser(connect);
+      const open = openSpy();
+      const promise = user.sell({ token: "2jjj", tokenAmount: 1n });
+      const url = open.mock.calls[0][0] as URL;
+      const { message, detail } = odinBackToApp(url, reason);
+      answer(connect, "/authorize/sell", message, detail);
+      await expect(promise).rejects.toThrow("Sell failed or was cancelled");
+      expect(connect.state.request).toMatchObject({
+        action: "sell",
+        status: "rejected",
+        error: reason,
+      });
+      expect(connect.user).toBeNull();
+      expect(localStorage.length).toBe(0);
+      expect(connect.api.apiKey).toBeNull();
+    }
+  });
+
+  it("a success for the same principal, or without one, keeps the user", async () => {
+    const connect = await readyConnect();
+    const user = await connectedUser(connect);
+    openSpy();
+    const same = user.buy({ token: "2jjj", btcAmount: 1n });
+    answer(connect, "/authorize/buy", "purchased", {
+      principal: user.principal,
+    });
+    await expect(same).resolves.toBe(true);
+    expect(connect.user).toBe(user);
+
+    const legacy = user.buy({ token: "2jjj", btcAmount: 1n });
+    answer(connect, "/authorize/buy", "purchased");
+    await expect(legacy).resolves.toBe(true);
+    expect(connect.user).toBe(user);
+    expect(localStorage.length).toBe(1);
+    expect(connect.api.apiKey).toBe("jwt-from-api");
+  });
+
+  it("a plain rejection or any other failure keeps the user", async () => {
+    const connect = await readyConnect();
+    const user = await connectedUser(connect);
+    const open = openSpy();
+    const rejected = user.buy({ token: "2jjj", btcAmount: 1n });
+    const url = open.mock.calls[0][0] as URL;
+    const { message, detail } = odinBackToApp(url, "no_action");
+    answer(connect, "/authorize/buy", message, detail);
+    await expect(rejected).rejects.toThrow();
+    const failed = user.buy({ token: "2jjj", btcAmount: 1n });
+    answer(connect, "/authorize/buy", "boom");
+    await expect(failed).rejects.toThrow();
+    expect(connect.user).toBe(user);
+    expect(localStorage.length).toBe(1);
+  });
+
+  it("a superseded request's stale answer changes neither user nor storage", async () => {
+    const connect = await readyConnect();
+    const user = await connectedUser(connect);
+    openSpy();
+    const first = user.buy({ token: "t", btcAmount: 1n });
+    void user.sell({ token: "t", tokenAmount: 1n });
+    const sellId = connect.state.request?.id;
+    answer(connect, "/authorize/buy", "purchased", { principal: "other" });
+    await expect(first).rejects.toThrow(PRINCIPAL_MISMATCH_ERROR);
+    expect(connect.state.request).toMatchObject({
+      id: sellId,
+      action: "sell",
+      status: "pending",
+    });
+    expect(connect.user).toBe(user);
+    expect(localStorage.length).toBe(1);
+    expect(connect.api.apiKey).toBe("jwt-from-api");
   });
 });
 
