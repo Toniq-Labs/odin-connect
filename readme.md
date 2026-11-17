@@ -25,6 +25,7 @@ A TypeScript SDK for integrating with the [Odin](https://odin.fun) decentralized
 - [Public API](#public-api)
   - [Tokens](#tokens)
   - [Users](#users)
+  - [Communities](#communities)
 - [Utilities](#utilities)
 - [Configuration](#configuration)
 - [Types](#types)
@@ -940,6 +941,75 @@ const stats = await odinConnect.api.getUserStats(
 );
 ```
 
+### Communities
+
+Communities are user accounts that opened a community page. Reads are public; when a user is connected with `requires_api: true` the SDK also sends their API key, so responses include the caller's `membership`, `chat_access` and (for owners/admins) `stats.fees_*`. Every method rejects with an `Error` carrying the API's message (for example the 403 on a private community you are not a member of), never a raw axios error.
+
+```typescript
+// List public communities
+const communities = await odinConnect.api.communities.getCommunities(
+  { page: 1, limit: 10 },                      // Pagination
+  { field: "member_count", direction: "desc" }, // Sort (optional)
+  { search: "odin" }                            // Filters (optional)
+);
+
+// Communities the connected user belongs to (requires an API key)
+const mine = await odinConnect.api.communities.getCommunities(
+  { page: 1, limit: 10 },
+  undefined,
+  { role_in: ["owner", "admin", "moderator", "member"] }
+);
+
+// One community, with the caller's membership and chat access
+const community = await odinConnect.api.communities.getCommunity(principal);
+community.membership;                       // "owner" | "admin" | "moderator" | "member" | null
+community.chat_access.private.can_post;     // boolean
+community.public_chat_threshold;            // bigint (msats) or null
+
+// Members (newest first), optionally filtered by role
+const members = await odinConnect.api.communities.getMembers(
+  principal,
+  { page: 1, limit: 20 },
+  "moderator"
+);
+
+// Tokens the community recommends
+const picks = await odinConnect.api.communities.getRecommendedTokens(
+  principal,
+  { page: 1, limit: 20 }
+);
+
+// Banner image URL
+const banner = odinConnect.api.communities.getBannerImageUrl(principal);
+```
+
+**Available sort fields:** `member_count`, `volume_7d`, `volume_30d`, `volume_6m`, `volume_total`, `power_users_7d`, `power_users_30d`, `power_users_6m`, `power_users_total`, `users_7d`, `users_30d`, `users_6m`, `users_total` (`fees_*` sorts are only honoured for platform admins)
+
+**Available filters:**
+
+| Filter | Type | Description |
+|--------|------|-------------|
+| `search` | `string` | Match username, bio or principal (max 128 chars) |
+| `role_in` | `OdinCommunityRole[]` | Only communities where the connected user holds one of these roles. Requires an API key (rejects with `"API key is not set"` otherwise); an empty array means no role filter. |
+
+#### Member actions
+
+These require the user to be connected with `requires_api: true` (the SDK sends the API key as a Bearer token) and reject with the API's error message otherwise (`"API key is not set"`, `"Already a member"`, ...). Role changes follow the hierarchy `owner > admin > moderator > member`: you can only act on roles below your own, and `owner` is never assignable.
+
+```typescript
+const c = odinConnect.api.communities;
+
+await c.join(principal);                                  // public communities only
+await c.leave(principal);                                 // the owner cannot leave
+await c.addMember(principal, userPrincipal, "moderator"); // owner/admin
+await c.updateMemberRole(principal, userPrincipal, "admin");
+await c.kickMember(principal, userPrincipal, "spam");     // admin+, reason optional
+await c.addRecommendedToken(principal, "2jjj", "Our token"); // owner/moderator
+await c.removeRecommendedToken(principal, "2jjj");
+```
+
+Not covered yet: enabling/editing a community profile (multipart banner upload) and community chat (`/comments` with `context_type=community`).
+
 ## Utilities
 
 OdinConnect exports utility functions under `OdinUtils`:
@@ -1003,6 +1073,19 @@ import type {
   OdinTransaction,
   OdinAchievement,
   OdinAchievementCategory,
+  OdinCommunity,
+  OdinCommunityListItem,
+  OdinCommunityDetail,
+  OdinCommunityProfile,
+  OdinCommunityStats,
+  OdinCommunityRole,
+  OdinCommunityMember,
+  OdinCommunityMemberBan,
+  OdinCommunityRecommendedToken,
+  OdinChatAccess,
+  OdinChatAccessDenialReason,
+  OdinCommunitySortableFields,
+  OdinCommunityFilterFields,
   OdinConnectedUser,
   OdinState,
   OdinRequestState,

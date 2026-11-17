@@ -50,4 +50,12 @@ describe("HttpClient", () => {
 
     expect(bigIntTransformer(`{"num":200}`)["num"]).toBeTypeOf("number");
   });
+
+  it("passes an empty (204) body through without logging", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(bigIntTransformer("")).toBe("");
+    expect(bigIntTransformer(undefined as unknown as string)).toBeUndefined();
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
 });

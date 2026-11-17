@@ -24,6 +24,26 @@ export type {
   TokenWithBalance as OdinTokenWithBalance,
 } from "./models/token";
 export type { Activity as OdinActivity } from "./models/activity";
+export type {
+  Community as OdinCommunity,
+  CommunityListItem as OdinCommunityListItem,
+  CommunityDetail as OdinCommunityDetail,
+  CommunityProfile as OdinCommunityProfile,
+  CommunityStats as OdinCommunityStats,
+  CommunityRole as OdinCommunityRole,
+  AssignableCommunityRole as OdinAssignableCommunityRole,
+  CommunityMember as OdinCommunityMember,
+  CommunityMemberUser as OdinCommunityMemberUser,
+  CommunityMemberBan as OdinCommunityMemberBan,
+  CommunityRecommendedToken as OdinCommunityRecommendedToken,
+  CommunityRecommendedTokenSummary as OdinCommunityRecommendedTokenSummary,
+  ChatAccess as OdinChatAccess,
+  ChatChannelAccess as OdinChatChannelAccess,
+  ChatAccessDenialReason as OdinChatAccessDenialReason,
+  CommunitySortableFields as OdinCommunitySortableFields,
+  CommunityFilterFields as OdinCommunityFilterFields,
+} from "./models/community";
+export type { OdinCommunitiesClient } from "./services/communities";
 export type { Transaction as OdinTransaction } from "./models/transactions";
 export type {
   Achievement as OdinAchievement,
