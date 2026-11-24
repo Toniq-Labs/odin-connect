@@ -122,8 +122,16 @@ export function checkProof(
   } catch {
     fail("the identity proof payload is malformed");
   }
-  if (payload?.typ !== "odin-connect-identity" || payload.v !== 1) {
+  // v1: no session id. v2 (asked for with `proof_v=2`): carries the odin.fun
+  // session id (`sid`), which odin-api checks and puts on the app's JWT.
+  if (
+    payload?.typ !== "odin-connect-identity" ||
+    (payload.v !== 1 && payload.v !== 2)
+  ) {
     fail("the identity proof has an unknown type");
+  }
+  if (payload.v === 2 && typeof payload.sid !== "string") {
+    fail("the identity proof has no session id");
   }
   if (payload.nonce !== expected.nonce) {
     fail("the identity proof belongs to another request");
