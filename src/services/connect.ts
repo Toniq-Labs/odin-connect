@@ -30,7 +30,7 @@ import {
   RedirectClient,
   toBase64Url,
 } from "./redirect";
-import { PROTOCOL_VERSION } from "../constants";
+import { PROTOCOL_VERSION, SESSION_CHECK_INTERVAL_MS } from "../constants";
 import {
   checkDelegationChain,
   checkProof,
@@ -60,6 +60,15 @@ export interface AppInitOptions {
    * `"redirect"`. See `ConnectMode`.
    */
   mode?: ConnectMode;
+  /**
+   * How often, at most, to ask odin-api whether the stored session is still
+   * alive, in ms (default `SESSION_CHECK_INTERVAL_MS`, 5 minutes). Checked on
+   * page load and when the tab becomes visible or regains focus; all tabs of
+   * the app share the timer. `0` checks every time. A logout on odin.fun
+   * logs the app out within this time. Only sessions with an API key
+   * (`requires_api`) are checked.
+   */
+  sessionCheckIntervalMs?: number;
 }
 
 /** A connect result that passed every check, before it is bound to an instance. */
@@ -108,6 +117,16 @@ const REDIRECT_RESULT_REUSE_MS = 10_000;
  * dropped the same way because `disconnect()` clears `state.request`.)
  */
 const disconnects = new Map<string, number>();
+
+/**
+ * Session checks in flight, per `slug:env`, so instances sharing a session
+ * (e.g. React StrictMode) ask odin-api once. Resolves `true` (alive), `false`
+ * (`401`: logged out) or `null` (offline, `5xx`: unknown, not a logout).
+ */
+const sessionChecks = new Map<
+  string,
+  { token: string; promise: Promise<boolean | null> }
+>();
 
 /** Test helper: forget redirect results read so far. Not exported publicly. */
 export function resetRedirectOutcomes(): void {
@@ -218,10 +237,14 @@ export class Connect {
       this._appInfo.slug!,
       this._appInfo.env || "prod"
     );
+    // A 401 on any request sent with the API key ends the session.
+    this._api.onUnauthorized = (token) => this.endSession(token);
     // Restore the session and apply a redirect result now (non-blocking),
     // so `state` fills in without the app calling anything. Not on a server.
     if (typeof window !== "undefined") {
       void this.ready();
+      window.addEventListener("focus", this.handleActivity);
+      document.addEventListener("visibilitychange", this.handleActivity);
     }
   }
 
@@ -371,6 +394,75 @@ export class Connect {
       user: user ?? this.loadStoredSession(),
       request,
     });
+    void this.checkSession();
+  }
+
+  // ---- session check ----------------------------------------------------
+
+  private get sessionCheckIntervalMs(): number {
+    const value = this._appInfo?.sessionCheckIntervalMs;
+    return typeof value === "number" && Number.isFinite(value) && value >= 0
+      ? value
+      : SESSION_CHECK_INTERVAL_MS;
+  }
+
+  /** Tab focus or visibility: check the session if it's due. */
+  private handleActivity = (): void => {
+    if (document.visibilityState === "hidden") return;
+    void this.checkSession();
+  };
+
+  /**
+   * Ask odin-api whether the stored session is still alive, at most once per
+   * `sessionCheckIntervalMs` across all tabs (the last successful check is in
+   * localStorage). A `401` logs the user out; being offline or a `5xx` keeps
+   * the session and leaves the timer alone, so the next load or focus tries
+   * again. Never rejects.
+   */
+  private async checkSession(): Promise<void> {
+    if (this.state.status !== "ready" || !this.state.user) return;
+    const token = this._api.apiKey;
+    if (!token) return;
+    const interval = this.sessionCheckIntervalMs;
+    if (interval > 0 && Date.now() - this._storage.lastCheckedAt() < interval) {
+      return;
+    }
+    const key = this.redirectCacheKey;
+    let check = sessionChecks.get(key);
+    if (!check || check.token !== token) {
+      const promise: Promise<boolean | null> = this._api
+        .checkConnectSession(window.location.origin)
+        .then(
+          (alive) => {
+            // only for the session it checked (not after a disconnect)
+            if (alive && this._storage.load()?.jwt === token) {
+              this._storage.markChecked();
+            }
+            return alive;
+          },
+          () => null
+        )
+        .finally(() => {
+          if (sessionChecks.get(key)?.promise === promise) {
+            sessionChecks.delete(key);
+          }
+        });
+      check = { token, promise };
+      sessionChecks.set(key, check);
+    }
+    if ((await check.promise) === false) {
+      this.endSession(token);
+    }
+  }
+
+  /**
+   * odin-api no longer accepts `token`: log out like `disconnect()`. Ignored
+   * when `token` is not this instance's API key any more (a request from
+   * before a re-connect or disconnect).
+   */
+  private endSession(token: string): void {
+    if (this._api.apiKey !== token) return;
+    this.disconnect();
   }
 
   // ---- connect ----------------------------------------------------------
@@ -840,6 +932,8 @@ export class Connect {
         delegationChain: chain ? JSON.stringify(chain.toJSON()) : null,
         jwt,
       });
+      // odin-api just issued it: no session check is due yet
+      this._storage.markChecked();
     }
   }
 

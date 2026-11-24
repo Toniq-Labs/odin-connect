@@ -7,7 +7,7 @@ import {
   TokenWithBalance,
 } from "../models/token";
 import { User } from "../models/user";
-import { HttpClient } from "./http";
+import { HttpClient, httpStatus } from "./http";
 import { createTokenValidators } from "../utils";
 import { AchievementCategory } from "../models/achievement";
 import { Transaction } from "../models/transactions";
@@ -282,6 +282,34 @@ export class OdinApiClient {
     } catch (error) {
       throw toApiError(error, "Connect verification failed");
     }
+  }
+
+  /**
+   * Ask odin-api whether the API key is still a live session for `audience`
+   * (`GET /connect/session`). Resolves `true` when it is and `false` on a
+   * `401` (expired, wrong audience, or its odin.fun session logged out).
+   * Rejects on anything else (offline, `5xx`): that is not a logout.
+   */
+  async checkConnectSession(audience: string): Promise<boolean> {
+    const key = this._apiKey;
+    if (!key) {
+      throw new Error("API key is not set");
+    }
+    try {
+      await this._httpClient.get<unknown>(`${this.BASE_URL}/connect/session`, {
+        params: { audience },
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      return true;
+    } catch (error) {
+      if (httpStatus(error) === 401) return false;
+      throw toApiError(error, "Session check failed");
+    }
+  }
+
+  /** Called when a request sent with the API key gets a `401` (see HttpClient). */
+  set onUnauthorized(handler: ((token: string) => void) | null) {
+    this._httpClient.onUnauthorized = handler;
   }
 
   set apiKey(key: string | null) {

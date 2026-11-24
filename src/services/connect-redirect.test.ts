@@ -1061,6 +1061,10 @@ describe("sessions stored by 1.6.0 / 1.7.0 restore", () => {
     sessionStorage.clear();
     localStorage.clear();
     resetRedirectOutcomes();
+    // a restored API key is checked with odin-api: keep it off the network
+    vi.spyOn(OdinApiClient.prototype, "checkConnectSession").mockResolvedValue(
+      true
+    );
   });
 
   it("restores a delegation + JWT session", async () => {

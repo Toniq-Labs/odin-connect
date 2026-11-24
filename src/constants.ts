@@ -7,6 +7,14 @@ import type { Environment } from "./models/environment";
  */
 export const PROTOCOL_VERSION = "2";
 
+/**
+ * Default for the `sessionCheckIntervalMs` option: how often, at most, the
+ * SDK asks odin-api whether the stored session is still alive (on page load,
+ * tab focus and visibility). A logout on odin.fun reaches an open app within
+ * this time.
+ */
+export const SESSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
 /** API base URL per frontend env. One row per `Environment` (type-checked). */
 export const BASE_URL_ENV: Record<Environment, string> = {
   dev: "https://api.odin.fun/dev",
