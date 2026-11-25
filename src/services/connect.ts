@@ -41,7 +41,6 @@ import {
 import {
   INITIAL_ODIN_STATE,
   OdinAction,
-  OdinLogoutReason,
   OdinRequestInput,
   OdinRequestState,
   OdinState,
@@ -65,9 +64,10 @@ export interface AppInitOptions {
    * How often, at most, to ask odin-api whether the stored session is still
    * alive, in ms (default `SESSION_CHECK_INTERVAL_MS`, 5 minutes). Checked on
    * page load and when the tab becomes visible or regains focus; all tabs of
-   * the app share the timer. `0` checks every time. A logout on odin.fun
-   * logs the app out within this time. Only sessions with an API key
-   * (`requires_api`) are checked.
+   * the app share the timer. `0` checks every time. A logout on odin.fun is
+   * noticed at the first load or focus after this time (a tab that just stays
+   * focused is not checked again), or at once by any API call that gets a
+   * `401`. Only sessions with an API key (`requires_api`) are checked.
    */
   sessionCheckIntervalMs?: number;
 }
@@ -148,15 +148,22 @@ function sessionPubkeyParam(sessionKey: Ed25519KeyIdentity): string {
 }
 
 /**
- * Whether a JWT's `exp` claim has passed. Unreadable or no `exp`: false. Only
- * used to word a logout; odin-api's answer decides whether there is one.
+ * Client clock allowance when telling an expired key from a revoked one: a
+ * key within this time of its `exp` counts as expired.
+ */
+const EXPIRY_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * Whether a JWT's `exp` claim has passed, allowing `EXPIRY_SKEW_MS` for the
+ * client's clock. Unreadable or no `exp`: false. Only used to word a logout;
+ * odin-api's answer decides whether there is one.
  */
 function isTokenExpired(token: string): boolean {
   try {
     const part = token.split(".")[1];
     const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
     const exp = (JSON.parse(json) as { exp?: unknown }).exp;
-    return typeof exp === "number" && exp * 1000 <= Date.now();
+    return typeof exp === "number" && exp * 1000 <= Date.now() + EXPIRY_SKEW_MS;
   } catch {
     return false;
   }
@@ -440,7 +447,9 @@ export class Connect {
     const token = this._api.apiKey;
     if (!token) return;
     const interval = this.sessionCheckIntervalMs;
-    if (interval > 0 && Date.now() - this._storage.lastCheckedAt() < interval) {
+    const elapsed = Date.now() - this._storage.lastCheckedAt();
+    // a check time in the future (the clock moved back) counts as due
+    if (interval > 0 && elapsed >= 0 && elapsed < interval) {
       return;
     }
     const key = this.redirectCacheKey;
@@ -472,14 +481,28 @@ export class Connect {
   }
 
   /**
-   * odin-api no longer accepts `token`: log out like `disconnect()`, with
-   * `state.logoutReason` `"expired"` when the token's `exp` has passed and
-   * `"revoked"` otherwise. Ignored when `token` is not this instance's API
-   * key any more (a request from before a re-connect or disconnect).
+   * odin-api no longer accepts `token`: log the user out, with
+   * `state.logoutReason` `"expired"` when the token's `exp` has passed (or is
+   * within `EXPIRY_SKEW_MS`, for a client clock that runs slow) and
+   * `"revoked"` otherwise. Ignored when
+   * `token` is not this instance's API key any more (a request from before a
+   * re-connect or disconnect).
+   *
+   * Unlike `disconnect()`, `state.request` is kept, so a request in flight
+   * (e.g. a `createToken` whose upload got the `401`) still settles and the
+   * app sees how it ended. The stored session is cleared only when it still
+   * holds `token`: another tab may have stored a newer session since.
    */
   private endSession(token: string): void {
     if (this._api.apiKey !== token) return;
-    this.clearSession(isTokenExpired(token) ? "expired" : "revoked");
+    if (this._storage.load()?.jwt === token) {
+      this._storage.clear();
+    }
+    this._api.apiKey = null;
+    this._store.dispatch({
+      type: "logout",
+      reason: isTokenExpired(token) ? "expired" : "revoked",
+    });
   }
 
   // ---- connect ----------------------------------------------------------
@@ -1013,17 +1036,12 @@ export class Connect {
 
   /** Forget the stored session; `state.user` and `state.request` become null. */
   disconnect(): void {
-    this.clearSession();
-  }
-
-  /** `disconnect()`, or a logout by the SDK itself when `reason` is set. */
-  private clearSession(reason?: OdinLogoutReason): void {
     const key = this.redirectCacheKey;
     disconnects.set(key, (disconnects.get(key) ?? 0) + 1);
     this._storage.clear();
     this._api.apiKey = null;
     redirectOutcomes.delete(key);
-    this._store.dispatch({ type: "disconnect", reason });
+    this._store.dispatch({ type: "disconnect" });
   }
 
   isSessionValid(): boolean {

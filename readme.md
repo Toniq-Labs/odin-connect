@@ -587,24 +587,29 @@ odinConnect.disconnect();
 
 A stored session with an API key (`requires_api`) ends when odin-api stops
 accepting its JWT: it expired, or the user logged out on odin.fun. The SDK
-then logs the user out as `disconnect()` does (`state.user` becomes `null`),
-so apps that render from `state` need no code for it.
+then logs the user out: `state.user` becomes `null` and the stored session and
+API key are cleared, so apps that render from `state` need no code for it.
+Unlike `disconnect()`, `state.request` is kept, so a request in flight still
+settles (e.g. a `createToken` whose image upload got the `401` ends as
+`"failed"`).
 
 - **Session check:** on page load and when the tab becomes visible or regains
   focus, the SDK asks odin-api `GET /connect/session` whether the session is
   still alive, at most once per `sessionCheckIntervalMs` (default 5 minutes,
   `0` = every time). All tabs of the app share that timer. A logout on
-  odin.fun reaches an open app within this time.
+  odin.fun is noticed at the first load or focus after this time; nothing
+  checks while a tab just stays focused.
 - **Any API call:** a `401` on a request sent with the API key (for example
   an image upload or a communities call) logs the user out at once.
 - Being offline, a `5xx` or a `403` is not a logout: the session is kept and
   the next load or focus checks again.
 
-`state.logoutReason` says why the SDK logged the user out on its own:
-`"revoked"` (odin-api refused a key that had not expired, typically after a
-logout on odin.fun) or `"expired"` (the key reached its expiry time). It is
-absent after your own `disconnect()`, cleared once a user is connected again,
-and not persisted across reloads.
+`state.logoutReason` says why, when the SDK logged the user out after odin-api
+refused the API key: `"revoked"` (the key had not expired, typically after a
+logout on odin.fun) or `"expired"` (the key had reached its expiry time, within
+5 minutes to allow for the device's clock). It is absent after your own
+`disconnect()` and when a reload finds an expired stored session, cleared once
+a user is connected again, and not persisted across reloads.
 
 ```typescript
 odinConnect.subscribe((state) => {

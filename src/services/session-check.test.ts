@@ -190,6 +190,12 @@ describe("session check (SDK-1)", () => {
     await vi.waitFor(() => expect(b.user).toBeNull());
   });
 
+  it("checks when the stored check time is in the future (clock moved back)", async () => {
+    storeSession("jwt-1", Date.now() + 60 * 60 * 1000);
+    await readyConnect();
+    await vi.waitFor(() => expect(check).toHaveBeenCalledOnce());
+  });
+
   it("sessionCheckIntervalMs: 0 checks on every load and focus", async () => {
     storeSession("jwt-1", Date.now());
     await readyConnect({ sessionCheckIntervalMs: 0 });
@@ -308,6 +314,15 @@ describe("log out on 401 (SDK-2)", () => {
     expectLoggedOut(connect, "expired");
   });
 
+  it("says expired for a key within 5 minutes of its exp (slow client clock)", async () => {
+    const jwt = jwtWithExp(Math.floor(Date.now() / 1000) + 120);
+    storeSession(jwt);
+    check.mockResolvedValue(false);
+    const connect = await readyConnect();
+    await vi.waitFor(() => expect(connect.user).toBeNull());
+    expectLoggedOut(connect, "expired");
+  });
+
   it("the app's own disconnect() sets no reason and clears an earlier one", async () => {
     storeSession("jwt-1", Date.now());
     const connect = await readyConnect();
@@ -321,6 +336,60 @@ describe("log out on 401 (SDK-2)", () => {
     await vi.waitFor(() => expect(revoked.state.logoutReason).toBe("revoked"));
     revoked.disconnect();
     expect(revoked.state).not.toHaveProperty("logoutReason");
+  });
+
+  it("keeps a request in flight: a createToken whose upload got 401 ends failed", async () => {
+    storeSession("jwt-1", Date.now());
+    const connect = await readyConnect();
+    mockedAxios.mockRejectedValue(httpError(401));
+    await expect(
+      connect.odin.createToken({
+        principal: PRINCIPAL,
+        name: "Token",
+        ticker: "TKN",
+        image: new File(["x"], "a.png", { type: "image/png" }),
+      })
+    ).rejects.toThrow("Invalid token");
+    expect(connect.user).toBeNull();
+    expect(connect.api.apiKey).toBeNull();
+    expect(localStorage.getItem(sessionKey())).toBeNull();
+    expect(connect.state.request).toMatchObject({
+      action: "create_token",
+      status: "failed",
+      error: "Invalid token",
+    });
+  });
+
+  it("keeps a pending request when the session check logs out", async () => {
+    storeSession("jwt-1", Date.now());
+    const connect = await readyConnect({ sessionCheckIntervalMs: 0 });
+    await vi.waitFor(() => expect(check).toHaveBeenCalledOnce());
+    vi.spyOn(window, "open").mockReturnValue({ closed: false } as Window);
+    void connect.odin
+      .buy({ principal: PRINCIPAL, token: "t", btcAmount: 1n })
+      .catch(() => {});
+    expect(connect.state.request?.status).toBe("pending");
+    check.mockResolvedValue(false);
+    window.dispatchEvent(new Event("focus"));
+    await vi.waitFor(() => expect(connect.user).toBeNull());
+    expect(connect.state.request).toMatchObject({
+      action: "buy",
+      status: "pending",
+    });
+  });
+
+  it("leaves a newer session another tab stored", async () => {
+    storeSession("jwt-1", Date.now());
+    const connect = await readyConnect();
+    // another tab re-connects and stores its own session
+    storeSession("jwt-2", Date.now());
+    const stored = localStorage.getItem(sessionKey());
+    mockedAxios.mockRejectedValue(httpError(401));
+    await expect(connect.api.communities.getCommunities()).rejects.toThrow();
+    expect(connect.user).toBeNull();
+    expect(connect.api.apiKey).toBeNull();
+    expect(localStorage.getItem(sessionKey())).toBe(stored);
+    expect((await create().ready()).user?.principal).toBe(PRINCIPAL);
   });
 
   it("keeps the session when offline: no logout, no new check time", async () => {
@@ -474,7 +543,7 @@ describe("state.logoutReason (SDK-3)", () => {
     const store = new StateStore();
     store.dispatch({ type: "ready", user, request: null });
     expect(store.state).not.toHaveProperty("logoutReason");
-    store.dispatch({ type: "disconnect", reason: "revoked" });
+    store.dispatch({ type: "logout", reason: "revoked" });
     expect(store.state).toEqual({
       status: "ready",
       user: null,
@@ -487,19 +556,37 @@ describe("state.logoutReason (SDK-3)", () => {
   it("the same logout twice is no change", () => {
     const store = new StateStore();
     store.dispatch({ type: "ready", user, request: null });
-    store.dispatch({ type: "disconnect", reason: "expired" });
+    store.dispatch({ type: "logout", reason: "expired" });
     const before = store.state;
-    store.dispatch({ type: "disconnect", reason: "expired" });
+    store.dispatch({ type: "logout", reason: "expired" });
     expect(store.state).toBe(before);
     store.dispatch({ type: "disconnect" });
     expect(store.state).not.toBe(before);
     expect(store.state).not.toHaveProperty("logoutReason");
   });
 
+  it("survives ready() when a connect made while restoring was logged out", () => {
+    const store = new StateStore();
+    store.dispatch({
+      type: "request",
+      request: {
+        id: "r1",
+        action: "connect",
+        status: "pending",
+        input: { requires_api: true, requires_delegation: false, targets: [] },
+      },
+    });
+    store.dispatch({ type: "settle", id: "r1", status: "success", user });
+    store.dispatch({ type: "logout", reason: "revoked" });
+    store.dispatch({ type: "ready", user: null, request: null });
+    expect(store.state.status).toBe("ready");
+    expect(store.state.logoutReason).toBe("revoked");
+  });
+
   it("stays through a new request and clears once a user is connected", () => {
     const store = new StateStore();
     store.dispatch({ type: "ready", user: null, request: null });
-    store.dispatch({ type: "disconnect", reason: "revoked" });
+    store.dispatch({ type: "logout", reason: "revoked" });
     store.dispatch({
       type: "request",
       request: {

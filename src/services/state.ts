@@ -128,11 +128,12 @@ export type OdinRejectReason =
   | "navigated_back";
 
 /**
- * Why the SDK logged the user out on its own (`state.logoutReason`):
- * - `"revoked"`: odin-api no longer accepts the session although it had not
- *   expired, typically because the user logged out on odin.fun. Show e.g.
- *   "You were signed out on odin.fun".
- * - `"expired"`: the session's API key reached its expiry time.
+ * Why the SDK logged the user out after odin-api refused the API key with a
+ * `401` (`state.logoutReason`):
+ * - `"revoked"`: the key had not expired, typically because the user logged
+ *   out on odin.fun. Show e.g. "You were signed out on odin.fun".
+ * - `"expired"`: the key had reached its expiry time (or was within 5
+ *   minutes of it, allowing for the device's clock).
  */
 export type OdinLogoutReason = "revoked" | "expired";
 
@@ -143,10 +144,11 @@ export type OdinState = {
   /** The latest request; a new request replaces it. */
   request: OdinRequestState | null;
   /**
-   * Set when the SDK logged the user out on its own (see
-   * `OdinLogoutReason`); absent otherwise, including after the app's own
-   * `disconnect()`. Cleared when a user is connected again. Not persisted:
-   * gone after a reload.
+   * Set when the SDK logged the user out because odin-api refused the API
+   * key (see `OdinLogoutReason`). Absent otherwise: after the app's own
+   * `disconnect()`, and when a reload finds an expired stored session.
+   * Cleared when a user is connected again. Not persisted: gone after a
+   * reload.
    */
   logoutReason?: OdinLogoutReason;
 };
@@ -175,8 +177,9 @@ type StateEvent =
       /** connect success: the verified user. */
       user?: ConnectedUser;
     }
-  /** Logged out: by the app (no reason) or by the SDK (`reason`). */
-  | { type: "disconnect"; reason?: OdinLogoutReason };
+  | { type: "disconnect" }
+  /** The SDK logged the user out (odin-api refused the API key). */
+  | { type: "logout"; reason: OdinLogoutReason };
 
 function freezeRequest(request: OdinRequestState): OdinRequestState {
   if (Object.isFrozen(request)) return request;
@@ -205,6 +208,8 @@ function reduce(state: OdinState, event: StateEvent): OdinState {
         user: state.user ?? event.user,
         // so is a request started while restoring
         request: state.request ?? event.request,
+        // and an SDK logout of that connect (dropped if a user is restored)
+        logoutReason: state.logoutReason,
       });
     case "request":
       return snapshot({ ...state, request: { ...event.request } });
@@ -219,11 +224,17 @@ function reduce(state: OdinState, event: StateEvent): OdinState {
       } as OdinRequestState;
       return snapshot({ ...state, user: event.user ?? state.user, request });
     }
+    case "logout":
+      // the request in flight is kept: it still settles
+      if (state.user === null && state.logoutReason === event.reason) {
+        return state;
+      }
+      return snapshot({ ...state, user: null, logoutReason: event.reason });
     case "disconnect":
       if (
         state.user === null &&
         state.request === null &&
-        state.logoutReason === event.reason
+        state.logoutReason === undefined
       ) {
         return state;
       }
@@ -231,7 +242,7 @@ function reduce(state: OdinState, event: StateEvent): OdinState {
         ...state,
         user: null,
         request: null,
-        logoutReason: event.reason,
+        logoutReason: undefined,
       });
   }
 }
