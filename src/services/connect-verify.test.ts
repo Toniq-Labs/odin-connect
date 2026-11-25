@@ -496,11 +496,16 @@ describe("verified connect (popup)", () => {
     expect(sent).not.toHaveProperty("sid");
   });
 
-  it("rejects a v2 proof without a string sid", async () => {
+  it("rejects a v2 proof without a non-empty string sid", async () => {
     const verify = vi
       .spyOn(connect.api, "verifyConnect")
       .mockImplementation(apiAccepts());
-    for (const payload of [{ sid: undefined }, { sid: 42 }, { sid: null }]) {
+    for (const payload of [
+      { sid: undefined },
+      { sid: 42 },
+      { sid: null },
+      { sid: "" },
+    ]) {
       const { user, error } = await popupConnect(connect, {}, { payload });
       expect(user).toBeNull();
       expect(error?.message).toMatch(/no session id/);

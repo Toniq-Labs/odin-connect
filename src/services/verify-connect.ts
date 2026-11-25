@@ -130,7 +130,7 @@ export function checkProof(
   ) {
     fail("the identity proof has an unknown type");
   }
-  if (payload.v === 2 && typeof payload.sid !== "string") {
+  if (payload.v === 2 && (typeof payload.sid !== "string" || !payload.sid)) {
     fail("the identity proof has no session id");
   }
   if (payload.nonce !== expected.nonce) {
