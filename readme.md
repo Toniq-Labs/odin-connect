@@ -600,6 +600,20 @@ so apps that render from `state` need no code for it.
 - Being offline, a `5xx` or a `403` is not a logout: the session is kept and
   the next load or focus checks again.
 
+`state.logoutReason` says why the SDK logged the user out on its own:
+`"revoked"` (odin-api refused a key that had not expired, typically after a
+logout on odin.fun) or `"expired"` (the key reached its expiry time). It is
+absent after your own `disconnect()`, cleared once a user is connected again,
+and not persisted across reloads.
+
+```typescript
+odinConnect.subscribe((state) => {
+  if (state.logoutReason === "revoked") {
+    showToast("You were signed out on odin.fun");
+  }
+});
+```
+
 ### Custom app slug
 
 Storage keys are scoped by a slug derived from your app name: the name in lowercase kebab-case plus a short hash of it, so the key is `odin_connect:<slug>-<hash>:<env>:session` (e.g. `"My App"` becomes `my-app-12b`, key `odin_connect:my-app-12b:prod:session`). Renaming the app therefore starts with no stored session. You can provide a custom slug to control the storage key; it is used as is:

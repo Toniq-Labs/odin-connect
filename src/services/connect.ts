@@ -41,6 +41,7 @@ import {
 import {
   INITIAL_ODIN_STATE,
   OdinAction,
+  OdinLogoutReason,
   OdinRequestInput,
   OdinRequestState,
   OdinState,
@@ -144,6 +145,21 @@ function hashCode(str: string): string {
 /** `session_pubkey` param: base64url (no padding) of the public key DER. */
 function sessionPubkeyParam(sessionKey: Ed25519KeyIdentity): string {
   return toBase64Url(new Uint8Array(sessionKey.getPublicKey().toDer()));
+}
+
+/**
+ * Whether a JWT's `exp` claim has passed. Unreadable or no `exp`: false. Only
+ * used to word a logout; odin-api's answer decides whether there is one.
+ */
+function isTokenExpired(token: string): boolean {
+  try {
+    const part = token.split(".")[1];
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    const exp = (JSON.parse(json) as { exp?: unknown }).exp;
+    return typeof exp === "number" && exp * 1000 <= Date.now();
+  } catch {
+    return false;
+  }
 }
 
 function slugify(text: string): string {
@@ -456,13 +472,14 @@ export class Connect {
   }
 
   /**
-   * odin-api no longer accepts `token`: log out like `disconnect()`. Ignored
-   * when `token` is not this instance's API key any more (a request from
-   * before a re-connect or disconnect).
+   * odin-api no longer accepts `token`: log out like `disconnect()`, with
+   * `state.logoutReason` `"expired"` when the token's `exp` has passed and
+   * `"revoked"` otherwise. Ignored when `token` is not this instance's API
+   * key any more (a request from before a re-connect or disconnect).
    */
   private endSession(token: string): void {
     if (this._api.apiKey !== token) return;
-    this.disconnect();
+    this.clearSession(isTokenExpired(token) ? "expired" : "revoked");
   }
 
   // ---- connect ----------------------------------------------------------
@@ -996,12 +1013,17 @@ export class Connect {
 
   /** Forget the stored session; `state.user` and `state.request` become null. */
   disconnect(): void {
+    this.clearSession();
+  }
+
+  /** `disconnect()`, or a logout by the SDK itself when `reason` is set. */
+  private clearSession(reason?: OdinLogoutReason): void {
     const key = this.redirectCacheKey;
     disconnects.set(key, (disconnects.get(key) ?? 0) + 1);
     this._storage.clear();
     this._api.apiKey = null;
     redirectOutcomes.delete(key);
-    this._store.dispatch({ type: "disconnect" });
+    this._store.dispatch({ type: "disconnect", reason });
   }
 
   isSessionValid(): boolean {

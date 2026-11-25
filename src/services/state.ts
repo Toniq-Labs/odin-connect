@@ -127,12 +127,28 @@ export type OdinRejectReason =
   | "popup_closed"
   | "navigated_back";
 
+/**
+ * Why the SDK logged the user out on its own (`state.logoutReason`):
+ * - `"revoked"`: odin-api no longer accepts the session although it had not
+ *   expired, typically because the user logged out on odin.fun. Show e.g.
+ *   "You were signed out on odin.fun".
+ * - `"expired"`: the session's API key reached its expiry time.
+ */
+export type OdinLogoutReason = "revoked" | "expired";
+
 export type OdinState = {
   /** `"initializing"` until `ready()` has restored the session. */
   status: "initializing" | "ready";
   user: ConnectedUser | null;
   /** The latest request; a new request replaces it. */
   request: OdinRequestState | null;
+  /**
+   * Set when the SDK logged the user out on its own (see
+   * `OdinLogoutReason`); absent otherwise, including after the app's own
+   * `disconnect()`. Cleared when a user is connected again. Not persisted:
+   * gone after a reload.
+   */
+  logoutReason?: OdinLogoutReason;
 };
 
 export type OdinStateListener = (state: OdinState) => void;
@@ -159,7 +175,8 @@ type StateEvent =
       /** connect success: the verified user. */
       user?: ConnectedUser;
     }
-  | { type: "disconnect" };
+  /** Logged out: by the app (no reason) or by the SDK (`reason`). */
+  | { type: "disconnect"; reason?: OdinLogoutReason };
 
 function freezeRequest(request: OdinRequestState): OdinRequestState {
   if (Object.isFrozen(request)) return request;
@@ -169,9 +186,12 @@ function freezeRequest(request: OdinRequestState): OdinRequestState {
 }
 
 function snapshot(state: OdinState): OdinState {
+  const { logoutReason, ...rest } = state;
   return Object.freeze({
-    ...state,
+    ...rest,
     request: state.request ? freezeRequest(state.request) : null,
+    // only while nobody is connected, and never as an `undefined` key
+    ...(logoutReason && !state.user ? { logoutReason } : {}),
   });
 }
 
@@ -200,8 +220,19 @@ function reduce(state: OdinState, event: StateEvent): OdinState {
       return snapshot({ ...state, user: event.user ?? state.user, request });
     }
     case "disconnect":
-      if (state.user === null && state.request === null) return state;
-      return snapshot({ ...state, user: null, request: null });
+      if (
+        state.user === null &&
+        state.request === null &&
+        state.logoutReason === event.reason
+      ) {
+        return state;
+      }
+      return snapshot({
+        ...state,
+        user: null,
+        request: null,
+        logoutReason: event.reason,
+      });
   }
 }
 
