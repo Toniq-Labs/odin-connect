@@ -4,6 +4,8 @@ import { Ed25519KeyIdentity } from "@dfinity/identity";
 import { OdinApiClient } from "./api";
 import { AppInitOptions, Connect, resetRedirectOutcomes } from "./connect";
 import { HttpClient } from "./http";
+import { StateStore } from "./state";
+import type { ConnectedUser } from "./connected-user";
 import { SESSION_CHECK_INTERVAL_MS } from "../constants";
 
 vi.mock("axios");
@@ -38,6 +40,16 @@ function disconnectAll() {
 
 const SLUG = create().slug;
 disconnectAll();
+
+/** A JWT-shaped API key (unsigned: only its `exp` is read). */
+function jwtWithExp(exp: number): string {
+  const part = (value: object) =>
+    btoa(JSON.stringify(value))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  return `${part({ alg: "HS256" })}.${part({ user: PRINCIPAL, exp })}.sig`;
+}
 
 function sessionKey(): string {
   return `odin_connect:${SLUG}:dev:session`;
@@ -242,7 +254,8 @@ describe("log out on 401 (SDK-2)", () => {
     vi.restoreAllMocks();
   });
 
-  function expectLoggedOut(connect: Connect) {
+  function expectLoggedOut(connect: Connect, reason = "revoked") {
+    expect(connect.state.logoutReason).toBe(reason);
     expect(connect.user).toBeNull();
     expect(connect.state.request).toBeNull();
     expect(connect.api.apiKey).toBeNull();
@@ -281,6 +294,48 @@ describe("log out on 401 (SDK-2)", () => {
     mockedAxios.mockRejectedValue(httpError(401));
     await expect(connect.api.communities.getCommunities()).rejects.toThrow();
     expectLoggedOut(connect);
+  });
+
+  it("says revoked for a 401 on a key that has not expired", async () => {
+    const jwt = jwtWithExp(Math.floor(Date.now() / 1000) + 3600);
+    storeSession(jwt);
+    check.mockResolvedValue(false);
+    const connect = await readyConnect();
+    await vi.waitFor(() => expect(connect.user).toBeNull());
+    expectLoggedOut(connect, "revoked");
+  });
+
+  it("says expired for a 401 on a key past its exp", async () => {
+    const jwt = jwtWithExp(Math.floor(Date.now() / 1000) - 60);
+    storeSession(jwt, Date.now());
+    const connect = await readyConnect();
+    mockedAxios.mockRejectedValue(httpError(401));
+    await expect(connect.api.communities.getCommunities()).rejects.toThrow();
+    expectLoggedOut(connect, "expired");
+  });
+
+  it("says expired for a key within 5 minutes of its exp (slow client clock)", async () => {
+    const jwt = jwtWithExp(Math.floor(Date.now() / 1000) + 120);
+    storeSession(jwt);
+    check.mockResolvedValue(false);
+    const connect = await readyConnect();
+    await vi.waitFor(() => expect(connect.user).toBeNull());
+    expectLoggedOut(connect, "expired");
+  });
+
+  it("the app's own disconnect() sets no reason and clears an earlier one", async () => {
+    storeSession("jwt-1", Date.now());
+    const connect = await readyConnect();
+    connect.disconnect();
+    expect(connect.user).toBeNull();
+    expect(connect.state).not.toHaveProperty("logoutReason");
+
+    storeSession("jwt-2");
+    check.mockResolvedValue(false);
+    const revoked = await readyConnect();
+    await vi.waitFor(() => expect(revoked.state.logoutReason).toBe("revoked"));
+    revoked.disconnect();
+    expect(revoked.state).not.toHaveProperty("logoutReason");
   });
 
   it("keeps a request in flight: a createToken whose upload got 401 ends failed", async () => {
@@ -478,5 +533,72 @@ describe("HttpClient.onUnauthorized", () => {
     await expect(
       http.get("https://x", { headers: { Authorization: "Bearer t" } })
     ).rejects.toBe(error);
+  });
+});
+
+describe("state.logoutReason (SDK-3)", () => {
+  const user = { principal: PRINCIPAL } as unknown as ConnectedUser;
+
+  it("is set by an SDK logout and absent otherwise", () => {
+    const store = new StateStore();
+    store.dispatch({ type: "ready", user, request: null });
+    expect(store.state).not.toHaveProperty("logoutReason");
+    store.dispatch({ type: "logout", reason: "revoked" });
+    expect(store.state).toEqual({
+      status: "ready",
+      user: null,
+      request: null,
+      logoutReason: "revoked",
+    });
+    expect(Object.isFrozen(store.state)).toBe(true);
+  });
+
+  it("the same logout twice is no change", () => {
+    const store = new StateStore();
+    store.dispatch({ type: "ready", user, request: null });
+    store.dispatch({ type: "logout", reason: "expired" });
+    const before = store.state;
+    store.dispatch({ type: "logout", reason: "expired" });
+    expect(store.state).toBe(before);
+    store.dispatch({ type: "disconnect" });
+    expect(store.state).not.toBe(before);
+    expect(store.state).not.toHaveProperty("logoutReason");
+  });
+
+  it("survives ready() when a connect made while restoring was logged out", () => {
+    const store = new StateStore();
+    store.dispatch({
+      type: "request",
+      request: {
+        id: "r1",
+        action: "connect",
+        status: "pending",
+        input: { requires_api: true, requires_delegation: false, targets: [] },
+      },
+    });
+    store.dispatch({ type: "settle", id: "r1", status: "success", user });
+    store.dispatch({ type: "logout", reason: "revoked" });
+    store.dispatch({ type: "ready", user: null, request: null });
+    expect(store.state.status).toBe("ready");
+    expect(store.state.logoutReason).toBe("revoked");
+  });
+
+  it("stays through a new request and clears once a user is connected", () => {
+    const store = new StateStore();
+    store.dispatch({ type: "ready", user: null, request: null });
+    store.dispatch({ type: "logout", reason: "revoked" });
+    store.dispatch({
+      type: "request",
+      request: {
+        id: "r1",
+        action: "connect",
+        status: "pending",
+        input: { requires_api: true, requires_delegation: false, targets: [] },
+      },
+    });
+    expect(store.state.logoutReason).toBe("revoked");
+    store.dispatch({ type: "settle", id: "r1", status: "success", user });
+    expect(store.state.user).toBe(user);
+    expect(store.state).not.toHaveProperty("logoutReason");
   });
 });

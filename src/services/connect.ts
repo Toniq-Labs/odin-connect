@@ -151,6 +151,28 @@ function sessionPubkeyParam(sessionKey: Ed25519KeyIdentity): string {
   return toBase64Url(new Uint8Array(sessionKey.getPublicKey().toDer()));
 }
 
+/**
+ * Client clock allowance when telling an expired key from a revoked one: a
+ * key within this time of its `exp` counts as expired.
+ */
+const EXPIRY_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * Whether a JWT's `exp` claim has passed, allowing `EXPIRY_SKEW_MS` for the
+ * client's clock. Unreadable or no `exp`: false. Only used to word a logout;
+ * odin-api's answer decides whether there is one.
+ */
+function isTokenExpired(token: string): boolean {
+  try {
+    const part = token.split(".")[1];
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    const exp = (JSON.parse(json) as { exp?: unknown }).exp;
+    return typeof exp === "number" && exp * 1000 <= Date.now() + EXPIRY_SKEW_MS;
+  } catch {
+    return false;
+  }
+}
+
 function slugify(text: string): string {
   const base = text
     .toLowerCase()
@@ -463,7 +485,10 @@ export class Connect {
   }
 
   /**
-   * odin-api no longer accepts `token`: log the user out. Ignored when
+   * odin-api no longer accepts `token`: log the user out, with
+   * `state.logoutReason` `"expired"` when the token's `exp` has passed (or is
+   * within `EXPIRY_SKEW_MS`, for a client clock that runs slow) and
+   * `"revoked"` otherwise. Ignored when
    * `token` is not this instance's API key any more (a request from before a
    * re-connect or disconnect).
    *
@@ -478,7 +503,10 @@ export class Connect {
       this._storage.clear();
     }
     this._api.apiKey = null;
-    this._store.dispatch({ type: "logout" });
+    this._store.dispatch({
+      type: "logout",
+      reason: isTokenExpired(token) ? "expired" : "revoked",
+    });
   }
 
   // ---- connect ----------------------------------------------------------

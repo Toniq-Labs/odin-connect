@@ -608,6 +608,21 @@ settles (e.g. a `createToken` whose image upload got the `401` ends as
 - Being offline, a `5xx` or a `403` is not a logout: the session is kept and
   the next load or focus checks again.
 
+`state.logoutReason` says why, when the SDK logged the user out after odin-api
+refused the API key: `"revoked"` (the key had not expired, typically after a
+logout on odin.fun) or `"expired"` (the key had reached its expiry time, within
+5 minutes to allow for the device's clock). It is absent after your own
+`disconnect()` and when a reload finds an expired stored session, cleared once
+a user is connected again, and not persisted across reloads.
+
+```typescript
+odinConnect.subscribe((state) => {
+  if (state.logoutReason === "revoked") {
+    showToast("You were signed out on odin.fun");
+  }
+});
+```
+
 ### Custom app slug
 
 Storage keys are scoped by a slug derived from your app name: the name in lowercase kebab-case plus a short hash of it, so the key is `odin_connect:<slug>-<hash>:<env>:session` (e.g. `"My App"` becomes `my-app-12b`, key `odin_connect:my-app-12b:prod:session`). Renaming the app therefore starts with no stored session. You can provide a custom slug to control the storage key; it is used as is:
