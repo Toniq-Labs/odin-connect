@@ -137,6 +137,8 @@ function readDetail(detail: unknown): OdinActionDetail | undefined {
 /** SDK-only reject reason: the popup was closed without an answer. */
 export const POPUP_CLOSED: OdinRejectReason = "popup_closed";
 export const NAVIGATED_BACK: OdinRejectReason = "navigated_back";
+/** Odin's reject reason for an action from a user logged out on odin.fun. */
+export const SESSION_REVOKED: OdinRejectReason = "session_revoked";
 
 const REJECT_REASON_PATTERN = /^[a-z0-9_]{1,64}$/;
 

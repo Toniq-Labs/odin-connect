@@ -733,6 +733,41 @@ describe("Action redirect mode", () => {
     });
   });
 
+  it("session_revoked on the next load logs the restored user out", async () => {
+    vi.spyOn(OdinApiClient.prototype, "checkConnectSession").mockResolvedValue(
+      true
+    );
+    const slug = new Connect({ name: "test" }).slug;
+    const sessionKey = `odin_connect:${slug}:prod:session`;
+    localStorage.setItem(
+      sessionKey,
+      JSON.stringify({
+        principal: "aaaaa-aa",
+        sessionKey: JSON.stringify(Ed25519KeyIdentity.generate().toJSON()),
+        delegationChain: null,
+        jwt: "jwt-1",
+      })
+    );
+    localStorage.setItem(`${sessionKey}_checked_at`, String(Date.now()));
+    const connect = new Connect({ name: "test", mode: "redirect" });
+    await connect.ready();
+    const navigate = spyNavigate(connect);
+    void connect.odin.buy({ principal: "aaaaa-aa", token: "t", btcAmount: 1n });
+    const url = navigatedUrl(navigate);
+    const { message, ...rest } = odinBackToApp(url, "session_revoked");
+    returnWith(url, message, rest);
+    const { connect: back, state } = await reload();
+    expect(state.request).toMatchObject({
+      action: "buy",
+      status: "rejected",
+      error: "session_revoked",
+    });
+    await vi.waitFor(() => expect(back.user).toBeNull());
+    expect(back.state.logoutReason).toBe("revoked");
+    expect(back.state.request?.error).toBe("session_revoked");
+    expect(localStorage.getItem(sessionKey)).toBeNull();
+  });
+
   it("reports any other message as failed", async () => {
     const connect = new Connect({ name: "test", mode: "redirect" });
     const navigate = spyNavigate(connect);

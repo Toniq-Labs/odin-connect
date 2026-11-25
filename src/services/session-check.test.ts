@@ -602,3 +602,117 @@ describe("state.logoutReason (SDK-3)", () => {
     expect(store.state).not.toHaveProperty("logoutReason");
   });
 });
+
+describe("session_revoked from an action (SDK-4)", () => {
+  const POPUP = { closed: false } as Window;
+
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    resetRedirectOutcomes();
+    setVisibility("visible");
+    vi.spyOn(OdinApiClient.prototype, "checkConnectSession").mockResolvedValue(
+      true
+    );
+  });
+
+  afterEach(() => {
+    disconnectAll();
+    vi.restoreAllMocks();
+  });
+
+  /** Odin's popup answering the pending action with `message`. */
+  function answer(connect: Connect, path: string, message: unknown, detail?: unknown) {
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: connect.origin,
+        source: POPUP,
+        data: { path, message, ...(detail !== undefined ? { detail } : {}) },
+      })
+    );
+  }
+
+  it("logs out with revoked at once, keeping the rejected request", async () => {
+    // checked a second ago: the timer would not check for 5 minutes
+    storeSession("jwt-1", Date.now() - 1000);
+    const connect = await readyConnect();
+    vi.spyOn(window, "open").mockReturnValue(POPUP);
+    const promise = connect.odin.buy({
+      principal: PRINCIPAL,
+      token: "t",
+      btcAmount: 1n,
+    });
+    const seen: Array<{ user: unknown; error?: string }> = [];
+    connect.subscribe((state) =>
+      seen.push({ user: state.user, error: state.request?.error })
+    );
+    answer(connect, "/authorize/buy", "rejected", { reason: "session_revoked" });
+    await expect(promise).rejects.toThrow();
+    await vi.waitFor(() => expect(connect.user).toBeNull());
+    expect(connect.state.logoutReason).toBe("revoked");
+    expect(connect.state.request).toMatchObject({
+      action: "buy",
+      status: "rejected",
+      error: "session_revoked",
+    });
+    expect(connect.api.apiKey).toBeNull();
+    expect(localStorage.getItem(sessionKey())).toBeNull();
+    // listeners first saw the rejected request, then the logout
+    expect(seen[0].user).not.toBeNull();
+    expect(seen[0].error).toBe("session_revoked");
+    expect(seen.at(-1)?.user).toBeNull();
+  });
+
+  it("logs out a session without an API key (delegation only)", async () => {
+    storeSession(null);
+    const connect = await readyConnect();
+    vi.spyOn(window, "open").mockReturnValue(POPUP);
+    void connect.odin
+      .sell({ principal: PRINCIPAL, token: "t", tokenAmount: 1n })
+      .catch(() => {});
+    answer(connect, "/authorize/sell", "rejected", { reason: "session_revoked" });
+    await vi.waitFor(() => expect(connect.user).toBeNull());
+    expect(connect.state.logoutReason).toBe("revoked");
+    expect(localStorage.getItem(sessionKey())).toBeNull();
+  });
+
+  it("keeps the session for other reject reasons", async () => {
+    storeSession("jwt-1", Date.now());
+    const connect = await readyConnect();
+    vi.spyOn(window, "open").mockReturnValue(POPUP);
+    void connect.odin
+      .buy({ principal: PRINCIPAL, token: "t", btcAmount: 1n })
+      .catch(() => {});
+    answer(connect, "/authorize/buy", "rejected", { reason: "no_action" });
+    await settle();
+    expect(connect.user?.principal).toBe(PRINCIPAL);
+    expect(connect.state).not.toHaveProperty("logoutReason");
+  });
+
+  it("leaves a newer session another tab stored", async () => {
+    storeSession("jwt-1", Date.now());
+    const connect = await readyConnect();
+    storeSession("jwt-2", Date.now());
+    const stored = localStorage.getItem(sessionKey());
+    vi.spyOn(window, "open").mockReturnValue(POPUP);
+    void connect.odin
+      .buy({ principal: PRINCIPAL, token: "t", btcAmount: 1n })
+      .catch(() => {});
+    answer(connect, "/authorize/buy", "rejected", { reason: "session_revoked" });
+    await vi.waitFor(() => expect(connect.user).toBeNull());
+    expect(localStorage.getItem(sessionKey())).toBe(stored);
+  });
+
+  it("does nothing once the user disconnected meanwhile", async () => {
+    storeSession("jwt-1", Date.now());
+    const connect = await readyConnect();
+    vi.spyOn(window, "open").mockReturnValue(POPUP);
+    void connect.odin
+      .buy({ principal: PRINCIPAL, token: "t", btcAmount: 1n })
+      .catch(() => {});
+    answer(connect, "/authorize/buy", "rejected", { reason: "session_revoked" });
+    connect.disconnect(); // before the logout microtask runs
+    await settle();
+    expect(connect.state).not.toHaveProperty("logoutReason");
+  });
+});
