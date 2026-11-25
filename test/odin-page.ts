@@ -110,9 +110,18 @@ export interface OdinPageOptions {
   targets?: Principal[];
   /** Override delegation expiry. */
   expiry?: Date;
+  /**
+   * The user's odin.fun session id. With `proof_v=2` on the URL and a `sid`,
+   * the page signs a v2 proof carrying it; otherwise v1 (default: a fixed
+   * 32-hex id, so v2 when asked; `null` = no session id, so v1).
+   */
+  sid?: string | null;
   /** Override fields in the signed payload. */
   payload?: Record<string, unknown>;
 }
+
+/** Default odin.fun session id of the fake page (a refresh family id). */
+export const ODIN_SID = "0123456789abcdef0123456789abcdef";
 
 /** The success message the Odin page would post for `url`. */
 export async function odinConnectMessage(url: URL, opts: OdinPageOptions = {}) {
@@ -161,14 +170,18 @@ export async function odinConnectMessage(url: URL, opts: OdinPageOptions = {}) {
     delegationChain = chain.toJSON();
   }
 
+  // v2 only when the SDK asks (`proof_v=2`) and the user has a session id.
+  const sid = opts.sid === undefined ? ODIN_SID : opts.sid;
+  const v2 = params.get("proof_v") === "2" && sid !== null;
   const payload = JSON.stringify({
     typ: "odin-connect-identity",
-    v: 1,
+    v: v2 ? 2 : 1,
     aud: params.get("referrer"),
     nonce: params.get("request_id"),
     principal,
     api: params.get("requires_api") === "1",
     sk: sessionPubkey,
+    ...(v2 ? { sid } : {}),
     iat: Date.now(),
     ...opts.payload,
   });

@@ -30,7 +30,7 @@ import {
   RedirectClient,
   toBase64Url,
 } from "./redirect";
-import { PROTOCOL_VERSION } from "../constants";
+import { CONNECT_PROOF_VERSION, PROTOCOL_VERSION } from "../constants";
 import {
   checkDelegationChain,
   checkProof,
@@ -572,6 +572,9 @@ export class Connect {
     // and odin-api only redeems it with a signature from it. Only the public
     // key: the secret never leaves this SDK.
     url.searchParams.append("session_pubkey", sessionPubkeyParam(sessionKey));
+    // Ask for a proof carrying the odin.fun session id (`sid`). Odin signs
+    // v1 instead when the user's session has none; checkProof takes both.
+    url.searchParams.append("proof_v", CONNECT_PROOF_VERSION);
     if (requires_delegation) {
       url.searchParams.append("requires_delegation", "1");
       url.searchParams.append("targets", targets?.join(",") || "");

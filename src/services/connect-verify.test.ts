@@ -7,6 +7,7 @@ import {
   apiAccepts,
   clientSignatureValid,
   odinConnectMessage,
+  ODIN_SID,
   OdinPageOptions,
   siwbLikeIdentity,
 } from "../../test/odin-page";
@@ -465,6 +466,70 @@ describe("verified connect (popup)", () => {
     expect(aud.error?.message).toMatch(/another origin/);
   });
 
+  it("asks for v2 proofs and sends a v2 proof with its sid to odin-api", async () => {
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const { url, user, error } = await popupConnect(connect, {
+      requires_api: true,
+    });
+    expect(error).toBeNull();
+    expect(user).not.toBeNull();
+    expect(url.searchParams.get("proof_v")).toBe("2");
+    const sent = JSON.parse(verify.mock.calls[0][0].payload);
+    expect(sent).toMatchObject({ v: 2, sid: ODIN_SID });
+  });
+
+  it("accepts a v1 proof when odin.fun has no session id to sign", async () => {
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    const { user, error } = await popupConnect(
+      connect,
+      { requires_api: true },
+      { sid: null }
+    );
+    expect(error).toBeNull();
+    expect(user).not.toBeNull();
+    const sent = JSON.parse(verify.mock.calls[0][0].payload);
+    expect(sent.v).toBe(1);
+    expect(sent).not.toHaveProperty("sid");
+  });
+
+  it("rejects a v2 proof without a non-empty string sid", async () => {
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    for (const payload of [
+      { sid: undefined },
+      { sid: 42 },
+      { sid: null },
+      { sid: "" },
+    ]) {
+      const { user, error } = await popupConnect(connect, {}, { payload });
+      expect(user).toBeNull();
+      expect(error?.message).toMatch(/no session id/);
+    }
+    expect(verify).not.toHaveBeenCalled();
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("rejects a proof of an unknown version", async () => {
+    const verify = vi
+      .spyOn(connect.api, "verifyConnect")
+      .mockImplementation(apiAccepts());
+    for (const v of [0, 3, "2"]) {
+      const { user, error } = await popupConnect(
+        connect,
+        {},
+        { payload: { v } }
+      );
+      expect(user).toBeNull();
+      expect(error?.message).toMatch(/unknown type/);
+    }
+    expect(verify).not.toHaveBeenCalled();
+  });
+
   it("rejects when odin-api answers 401", async () => {
     vi.spyOn(connect.api, "verifyConnect").mockRejectedValue(
       new Error("Invalid signature")
@@ -591,6 +656,10 @@ describe("authorize URLs carry v=2 and a request_id", () => {
         const id = url.searchParams.get("request_id")!;
         expect(id).toMatch(REQUEST_ID);
         ids.add(id);
+        // only connect asks for a v2 identity proof
+        expect(url.searchParams.get("proof_v")).toBe(
+          url.pathname === "/authorize/connect" ? "2" : null
+        );
         if (mode === "redirect") {
           expect(url.searchParams.get("state")).toBe(id);
         } else {

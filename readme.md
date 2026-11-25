@@ -329,7 +329,11 @@ X" (devtools, a crafted URL fragment) is rejected:
 2. Odin signs an identity proof with the user's Odin identity, bound to your
    origin (`aud`), to this request (`request_id` nonce) and to that session
    key (`sk` = the `session_pubkey` string). The SDK rejects a proof whose
-   `sk` is missing or is not its own key.
+   `sk` is missing or is not its own key. Since 2.1.0 the SDK asks for a v2
+   proof (`proof_v=2`), which also carries the user's odin.fun session id
+   (`sid`) so odin-api can end the app's session when the user logs out on
+   odin.fun. Odin signs v1 (no `sid`) when it has no session id; the SDK
+   accepts both and rejects a v2 proof without a `sid`.
 3. With `requires_delegation`, the SDK checks the chain locally: not expired,
    issued to its own session key, rooted at the reported principal, and only
    scoped to the `targets` you asked for.
