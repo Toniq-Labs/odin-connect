@@ -14,6 +14,7 @@ import {
   NAVIGATED_BACK,
   POPUP_CLOSED,
   quiet,
+  SESSION_REVOKED,
   readRejectReason,
   watchPopupClosed,
 } from "./canister";
@@ -266,6 +267,8 @@ export class Connect {
     );
     // A 401 on any request sent with the API key ends the session.
     this._api.onUnauthorized = (token) => this.endSession(token);
+    // An action rejected with `session_revoked` (popup or redirect) ends it too.
+    this._store.subscribe(this.handleSessionRevoked);
     // Restore the session and apply a redirect result now (non-blocking),
     // so `state` fills in without the app calling anything. Not on a server.
     if (typeof window !== "undefined") {
@@ -507,6 +510,52 @@ export class Connect {
       type: "logout",
       reason: isTokenExpired(token) ? "expired" : "revoked",
     });
+  }
+
+  /**
+   * Odin answered an action with `session_revoked`: the user is logged out
+   * on odin.fun. Log out here too (`"revoked"`), whatever the check timer
+   * says. Same path for popup results and redirect results applied by
+   * `ready()`, since both land in the store. Runs after the dispatch that
+   * delivered it, so every listener first sees the rejected request.
+   */
+  private handleSessionRevoked = (state: OdinState): void => {
+    const request = state.request;
+    if (
+      !state.user ||
+      !request ||
+      request.action === "connect" ||
+      request.status !== "rejected" ||
+      request.error !== SESSION_REVOKED
+    ) {
+      return;
+    }
+    const { id } = request;
+    const { principal } = state.user;
+    queueMicrotask(() => {
+      // still that request and that user (no re-connect or disconnect since)
+      if (this.state.request?.id !== id) return;
+      if (this.state.user?.principal !== principal) return;
+      this.revokeSession();
+    });
+  };
+
+  /**
+   * Log out with `"revoked"` without a refused API key: odin.fun told us.
+   * The stored session is cleared only when it is still this instance's
+   * (same principal and API key); another tab may have stored a newer one.
+   */
+  private revokeSession(): void {
+    const stored = this._storage.load();
+    if (
+      stored &&
+      stored.principal === this.state.user?.principal &&
+      stored.jwt === this._api.apiKey
+    ) {
+      this._storage.clear();
+    }
+    this._api.apiKey = null;
+    this._store.dispatch({ type: "logout", reason: "revoked" });
   }
 
   // ---- connect ----------------------------------------------------------

@@ -559,6 +559,7 @@ leaves `error` unset. Popup promises still reject with the 1.6.0 text
 | `missing_request_id` | No request id, or no identity, to bind the identity proof. |
 | `unsupported_identity` | The user's wallet cannot sign the identity proof. |
 | `no_action` | Odin has no authorize page for this action. |
+| `session_revoked` | The user is logged out on odin.fun, so the action cannot run. The SDK logs the user out too (`state.user` becomes `null`, `state.logoutReason` is `"revoked"`); the request stays `"rejected"`. |
 | `popup_closed` | Set by the SDK, popup mode only: the popup was closed without an answer (checked every 500 ms, then a 1.5 s grace period for an answer posted just before the close). |
 | `navigated_back` | Set by the SDK, redirect mode only: the user pressed Back on Odin and the browser restored the app page from its back-forward cache without a result. |
 
@@ -605,12 +606,16 @@ settles (e.g. a `createToken` whose image upload got the `401` ends as
   checks while a tab just stays focused.
 - **Any API call:** a `401` on a request sent with the API key (for example
   an image upload or a communities call) logs the user out at once.
+- **Any action:** when Odin rejects an action with `session_revoked` (the
+  user is logged out on odin.fun), the SDK logs the user out at once, with or
+  without an API key. The request stays `"rejected"` with that `error`.
 - Being offline, a `5xx` or a `403` is not a logout: the session is kept and
   the next load or focus checks again.
 
-`state.logoutReason` says why, when the SDK logged the user out after odin-api
-refused the API key: `"revoked"` (the key had not expired, typically after a
-logout on odin.fun) or `"expired"` (the key had reached its expiry time, within
+`state.logoutReason` says why, when the SDK logged the user out on its own:
+`"revoked"` (the user is logged out on odin.fun: an action came back with
+`session_revoked`, or odin-api refused a key that had not expired) or
+`"expired"` (the key had reached its expiry time, within
 5 minutes to allow for the device's clock). It is absent after your own
 `disconnect()` and when a reload finds an expired stored session, cleared once
 a user is connected again, and not persisted across reloads.

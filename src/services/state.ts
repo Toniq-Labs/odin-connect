@@ -110,6 +110,9 @@ export type OdinRequestState = {
  * - `missing_request_id`: no request id, or no identity, to bind the proof.
  * - `unsupported_identity`: the user's wallet cannot sign the identity proof.
  * - `no_action`: Odin has no authorize page for this action.
+ * - `session_revoked`: the user is logged out on odin.fun, so the action
+ *   cannot run. The SDK then logs the user out too (`state.user` becomes
+ *   null, `state.logoutReason` `"revoked"`); the request stays rejected.
  *
  * Set by the SDK itself:
  * - `popup_closed` (popup mode): the popup was closed without an answer.
@@ -124,14 +127,16 @@ export type OdinRejectReason =
   | "missing_request_id"
   | "unsupported_identity"
   | "no_action"
+  | "session_revoked"
   | "popup_closed"
   | "navigated_back";
 
 /**
- * Why the SDK logged the user out after odin-api refused the API key with a
- * `401` (`state.logoutReason`):
- * - `"revoked"`: the key had not expired, typically because the user logged
- *   out on odin.fun. Show e.g. "You were signed out on odin.fun".
+ * Why the SDK logged the user out (`state.logoutReason`): odin-api refused the
+ * API key with a `401`, or Odin rejected an action with `session_revoked`.
+ * - `"revoked"`: the user is logged out on odin.fun (an action rejected with
+ *   `session_revoked`, or a key refused before its expiry). Show e.g. "You
+ *   were signed out on odin.fun".
  * - `"expired"`: the key had reached its expiry time (or was within 5
  *   minutes of it, allowing for the device's clock).
  */
@@ -145,7 +150,8 @@ export type OdinState = {
   request: OdinRequestState | null;
   /**
    * Set when the SDK logged the user out because odin-api refused the API
-   * key (see `OdinLogoutReason`). Absent otherwise: after the app's own
+   * key or Odin rejected an action with `session_revoked` (see
+   * `OdinLogoutReason`). Absent otherwise: after the app's own
    * `disconnect()`, and when a reload finds an expired stored session.
    * Cleared when a user is connected again. Not persisted: gone after a
    * reload.
