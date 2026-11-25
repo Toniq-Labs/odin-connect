@@ -178,6 +178,12 @@ describe("session check (SDK-1)", () => {
     await vi.waitFor(() => expect(b.user).toBeNull());
   });
 
+  it("checks when the stored check time is in the future (clock moved back)", async () => {
+    storeSession("jwt-1", Date.now() + 60 * 60 * 1000);
+    await readyConnect();
+    await vi.waitFor(() => expect(check).toHaveBeenCalledOnce());
+  });
+
   it("sessionCheckIntervalMs: 0 checks on every load and focus", async () => {
     storeSession("jwt-1", Date.now());
     await readyConnect({ sessionCheckIntervalMs: 0 });
@@ -275,6 +281,60 @@ describe("log out on 401 (SDK-2)", () => {
     mockedAxios.mockRejectedValue(httpError(401));
     await expect(connect.api.communities.getCommunities()).rejects.toThrow();
     expectLoggedOut(connect);
+  });
+
+  it("keeps a request in flight: a createToken whose upload got 401 ends failed", async () => {
+    storeSession("jwt-1", Date.now());
+    const connect = await readyConnect();
+    mockedAxios.mockRejectedValue(httpError(401));
+    await expect(
+      connect.odin.createToken({
+        principal: PRINCIPAL,
+        name: "Token",
+        ticker: "TKN",
+        image: new File(["x"], "a.png", { type: "image/png" }),
+      })
+    ).rejects.toThrow("Invalid token");
+    expect(connect.user).toBeNull();
+    expect(connect.api.apiKey).toBeNull();
+    expect(localStorage.getItem(sessionKey())).toBeNull();
+    expect(connect.state.request).toMatchObject({
+      action: "create_token",
+      status: "failed",
+      error: "Invalid token",
+    });
+  });
+
+  it("keeps a pending request when the session check logs out", async () => {
+    storeSession("jwt-1", Date.now());
+    const connect = await readyConnect({ sessionCheckIntervalMs: 0 });
+    await vi.waitFor(() => expect(check).toHaveBeenCalledOnce());
+    vi.spyOn(window, "open").mockReturnValue({ closed: false } as Window);
+    void connect.odin
+      .buy({ principal: PRINCIPAL, token: "t", btcAmount: 1n })
+      .catch(() => {});
+    expect(connect.state.request?.status).toBe("pending");
+    check.mockResolvedValue(false);
+    window.dispatchEvent(new Event("focus"));
+    await vi.waitFor(() => expect(connect.user).toBeNull());
+    expect(connect.state.request).toMatchObject({
+      action: "buy",
+      status: "pending",
+    });
+  });
+
+  it("leaves a newer session another tab stored", async () => {
+    storeSession("jwt-1", Date.now());
+    const connect = await readyConnect();
+    // another tab re-connects and stores its own session
+    storeSession("jwt-2", Date.now());
+    const stored = localStorage.getItem(sessionKey());
+    mockedAxios.mockRejectedValue(httpError(401));
+    await expect(connect.api.communities.getCommunities()).rejects.toThrow();
+    expect(connect.user).toBeNull();
+    expect(connect.api.apiKey).toBeNull();
+    expect(localStorage.getItem(sessionKey())).toBe(stored);
+    expect((await create().ready()).user?.principal).toBe(PRINCIPAL);
   });
 
   it("keeps the session when offline: no logout, no new check time", async () => {
