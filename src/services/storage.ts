@@ -7,9 +7,32 @@ export interface SessionData {
 
 export class SessionStorage {
   private _key: string;
+  private _checkedKey: string;
 
   constructor(slug: string, env: string) {
     this._key = `odin_connect:${slug}:${env}:session`;
+    this._checkedKey = `odin_connect:${slug}:${env}:session_checked_at`;
+  }
+
+  /**
+   * When odin-api last confirmed the stored session (ms since epoch), or 0.
+   * In localStorage, so every tab of the app shares it.
+   */
+  lastCheckedAt(): number {
+    try {
+      const value = Number(localStorage.getItem(this._checkedKey));
+      return Number.isFinite(value) && value > 0 ? value : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  markChecked(at: number = Date.now()): void {
+    try {
+      localStorage.setItem(this._checkedKey, String(at));
+    } catch {
+      // localStorage unavailable (SSR, privacy mode)
+    }
   }
 
   save(data: SessionData): void {
@@ -47,6 +70,7 @@ export class SessionStorage {
   clear(): void {
     try {
       localStorage.removeItem(this._key);
+      localStorage.removeItem(this._checkedKey);
     } catch {
       // localStorage unavailable
     }

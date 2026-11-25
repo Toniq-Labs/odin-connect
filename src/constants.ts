@@ -8,6 +8,15 @@ import type { Environment } from "./models/environment";
 export const PROTOCOL_VERSION = "2";
 
 /**
+ * Default for the `sessionCheckIntervalMs` option: how often, at most, the
+ * SDK asks odin-api whether the stored session is still alive (on page load,
+ * tab focus and visibility). A logout on odin.fun is noticed at the first
+ * load or focus after this time; nothing checks while a tab just stays
+ * focused.
+ */
+export const SESSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
  * Connect-proof version asked for as `proof_v` on the connect URL. With `2`,
  * Odin signs a v2 proof carrying the user's odin.fun session id (`sid`) when
  * it has one, so odin-api can tie the app's JWT to that session and end it

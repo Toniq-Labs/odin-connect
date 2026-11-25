@@ -159,7 +159,9 @@ type StateEvent =
       /** connect success: the verified user. */
       user?: ConnectedUser;
     }
-  | { type: "disconnect" };
+  | { type: "disconnect" }
+  /** The SDK logged the user out (odin-api refused the API key). */
+  | { type: "logout" };
 
 function freezeRequest(request: OdinRequestState): OdinRequestState {
   if (Object.isFrozen(request)) return request;
@@ -199,6 +201,10 @@ function reduce(state: OdinState, event: StateEvent): OdinState {
       } as OdinRequestState;
       return snapshot({ ...state, user: event.user ?? state.user, request });
     }
+    case "logout":
+      // the request in flight is kept: it still settles
+      if (state.user === null) return state;
+      return snapshot({ ...state, user: null });
     case "disconnect":
       if (state.user === null && state.request === null) return state;
       return snapshot({ ...state, user: null, request: null });
