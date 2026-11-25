@@ -9,6 +9,9 @@ the app depends on 2.x it is at `node_modules/odin-connect/MIGRATION-2.0.md`
 
 Follow the steps in order. Do not skip the verification step.
 
+**App already on 2.0.x?** Skip to
+[Upgrading from 2.0 to 2.1](#upgrading-from-20-to-21) at the end.
+
 ## What changed, in one paragraph
 
 2.0 delivers every result (a connect, a buy, an approval) through **one
@@ -50,10 +53,12 @@ Record:
 ## Step 2 — Upgrade the dependency
 
 ```bash
-npm install odin-connect@^2.0.0   # or pnpm add / yarn add
+npm install odin-connect@^2.1.0   # or pnpm add / yarn add
 ```
 
 2.0 is a major version: `^1.x` ranges will not pick it up on their own.
+Install 2.1 or later: 2.0.x stops being able to connect after the v1 proof
+deadline (see [Upgrading from 2.0 to 2.1](#upgrading-from-20-to-21)).
 
 Testing an unreleased 2.0 build (before it is on npm): run `npm pack` in
 the odin-connect repo and install the tarball **temporarily**
@@ -85,6 +90,7 @@ Typical mapping from an app's own auth state machine:
 | App state | 2.0 state |
 |---|---|
 | idle / logged out | `status: "ready"`, `user: null`, no pending `request` |
+| signed out by odin.fun | `user: null` and `logoutReason` set (`"revoked"` / `"expired"`) |
 | connecting | `request.action === "connect"` and `request.status === "pending"` |
 | connected | `user !== null` |
 | error | `request.action === "connect"` and `request.status` is `"rejected"`, `"failed"` or `"unverified"` |
@@ -106,14 +112,17 @@ const initial = await odin.ready();                // stored session + any retur
 applyOdinState(initial);
 ```
 
-`state` is `{ status: "initializing" | "ready", user, request }`:
+`state` is `{ status: "initializing" | "ready", user, request, logoutReason? }`:
 - `user` — `OdinConnectedUser | null` (replaces `restoreSession()`'s return
   value and the value `await connect()` returned);
 - `request` — the latest `connect()` or action:
   `{ id, action, status, input, detail?, returnState?, error? }`, with
   `status` one of `"pending" | "success" | "rejected" | "failed" | "unverified"`
   and `input` the call's own arguments (e.g. `{ token, spender, amount }`,
-  bigints preserved).
+  bigints preserved);
+- `logoutReason` — set only when the SDK logged the user out on its own
+  (`"revoked"`: logged out on odin.fun; `"expired"`: the API key expired).
+  See Step 6.
 
 ### 4b. Move "after await" logic into the state handler
 
@@ -158,7 +167,7 @@ function applyOdinState({ user, request }) {
 A `"rejected"` request carries `request.error` when the user tapped "Back
 to app" on an Odin error screen (`untrusted_origin`, `invalid_targets`,
 `no_targets`, `invalid_session_key`, `missing_request_id`,
-`unsupported_identity`, `no_action`) or closed the popup without answering
+`unsupported_identity`, `no_action`, `session_revoked`) or closed the popup without answering
 (`popup_closed`, set by the SDK in popup mode; `navigated_back`, set by the SDK in redirect mode when the user presses Back on Odin) — `OdinRejectReason`; see the
 readme's "Rejection reasons". A plain Reject leaves it unset. Treat unknown
 codes as a plain rejection. For a plain rejection (no `error`), supply your
@@ -282,6 +291,14 @@ double effects are safe (odin-api is asked once).
 - Only the latest request updates `state`; a connect that finishes after a
   newer request or `disconnect()` resolves its promise but does not set the
   user.
+- **The SDK can log the user out on its own** (2.1): when odin-api refuses
+  the API key (the user logged out on odin.fun, or the key expired) or Odin
+  rejects an action with `session_revoked`. `state.user` becomes `null` and
+  `state.logoutReason` is set; `state.request` is kept. Render the logged-out
+  screen from `state` (any app-side copy of the user or API key must follow
+  `state.user`), optionally with a message such as "You were signed out on
+  odin.fun" when `logoutReason === "revoked"`. **Never** call `connect()`
+  automatically on a logout; show a sign-in button.
 - Action statuses are only a UI signal: before moving value (e.g. a step
   that spends an ICRC-2 allowance), confirm on-chain (`icrc2_allowance`,
   balances). Never treat `"success"` as proof.
@@ -312,9 +329,9 @@ results from Step 7 (and what could not be tested, e.g. no wallet device).
 
 | API | Purpose |
 |---|---|
-| `new OdinConnect({ name, env, mode?, lang?, slug? })` | One instance per page load. `mode` defaults to `"auto"`. |
+| `new OdinConnect({ name, env, mode?, lang?, slug?, sessionCheckIntervalMs? })` | One instance per page load. `mode` defaults to `"auto"`; the session check runs at most every 5 minutes by default. |
 | `await odin.ready()` | Initial state: stored session + any returning redirect result. Idempotent. |
-| `odin.state` / `odin.getState()` | Current immutable snapshot `{ status, user, request }`. |
+| `odin.state` / `odin.getState()` | Current immutable snapshot `{ status, user, request, logoutReason? }`. |
 | `odin.subscribe(listener)` → `unsubscribe` | Called on every state change (popup and redirect). |
 | `odin.getServerState()` / `INITIAL_ODIN_STATE` | Server snapshot for `useSyncExternalStore`. |
 | `odin.user` | Shortcut for `odin.state.user`. |
@@ -323,5 +340,30 @@ results from Step 7 (and what could not be tested, e.g. no wallet device).
 | `odin.disconnect()` | Clear the session; `user` and `request` become `null`. |
 | `odin.mode` | Read/override `"popup" \| "redirect" \| "auto"`. |
 | `restoreSession()` | Deprecated, synchronous, stored session only. |
+| `OdinLogoutReason` | `"revoked"` \| `"expired"`: why the SDK logged the user out (`state.logoutReason`). |
 | `OdinConnectVerificationError` | Popup connect rejection when verification fails. |
 | `isInAppBrowser()` | The detection `"auto"` uses. |
+
+## Upgrading from 2.0 to 2.1
+
+2.1 ends the app's session when the user logs out on odin.fun. No code
+change is required; do these checks:
+
+1. `npm install odin-connect@^2.1.0` and regenerate the lockfile. Upgrade
+   before the v1 proof deadline: 2.1 asks Odin for a v2 identity proof (with
+   the user's odin.fun session id), and odin-api stops accepting v1 proofs
+   30 days after the 2.1.0 release (the date is announced with it). After
+   that, connect fails with 2.0.x.
+2. Search for places that keep their own copy of the user or the API key
+   (`grep -rn -E "\.user\b|apiKey|getState\(\)" --exclude-dir=node_modules .`).
+   They must follow `state.user`: it can now become `null` without a
+   `disconnect()` call (see Step 6).
+3. Optional: show a message when `state.logoutReason === "revoked"` (the user
+   logged out on odin.fun). Do not call `connect()` automatically.
+4. Optional: `sessionCheckIntervalMs` in the constructor changes how often
+   the SDK checks the session (default 5 minutes, `0` = on every load and
+   focus). Leave the default unless the owner asks.
+5. Verify: connect with `requires_api`, log out on odin.fun in another tab,
+   then come back to the app tab after 5 minutes (or reload it); the app
+   shows the user as logged out. Starting an action after the odin.fun
+   logout also logs the user out, with `request.error === "session_revoked"`.

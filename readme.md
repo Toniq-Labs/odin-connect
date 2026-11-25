@@ -17,6 +17,7 @@ A TypeScript SDK for integrating with the [Odin](https://odin.fun) decentralized
   - [Wallet in-app browsers (redirect mode)](#wallet-in-app-browsers-redirect-mode)
 - [State and sessions](#state-and-sessions)
 - [Migrating to 2.0.0](#migrating-to-200)
+  - [Upgrading from 2.0 to 2.1](#upgrading-from-20-to-21)
 - [Connected User Operations](#connected-user-operations)
   - [Fetching User Data](#fetching-user-data)
   - [Trading](#trading)
@@ -496,6 +497,7 @@ type OdinState = {
   status: "initializing" | "ready";
   user: OdinConnectedUser | null;
   request: OdinRequestState | null; // the latest request; a new one replaces it
+  logoutReason?: OdinLogoutReason; // "revoked" | "expired", see Logout on odin.fun
 };
 
 type OdinRequestState = {
@@ -754,6 +756,32 @@ Relative to 1.6.0 and 1.7.0:
   (`OdinRejectReason`, e.g. `untrusted_origin`, `no_targets`,
   `popup_closed`) when Odin's "Back to app" or a closed popup ended it (see
   [Rejection reasons](#rejection-reasons)).
+
+### Upgrading from 2.0 to 2.1
+
+2.1.0 ends the app's session when the user logs out on odin.fun. There is
+no breaking change: `npm install odin-connect@^2.1.0` and nothing else is
+required. What to know:
+
+- **Upgrade before the v1 proof deadline.** 2.1 asks Odin for a v2 identity
+  proof (with the user's odin.fun session id, see
+  [Verified connect](#verified-connect)). odin-api will stop accepting v1
+  proofs on a date announced with this release (30 days after it). After
+  that date, connect fails with 2.0.x.
+- **The SDK can log the user out on its own** (see
+  [Logout on odin.fun](#logout-on-odinfun)): `state.user` becomes `null`
+  without a call to `disconnect()`. Apps that render from `state` already
+  handle it. Code that kept its own copy of the user (or of the API key)
+  must clear it when `state.user` becomes `null`.
+- **`state.logoutReason`** (`"revoked"` | `"expired"`, type
+  `OdinLogoutReason`) says why, so the app can show e.g. "You were signed
+  out on odin.fun". Do not start `connect()` automatically when it is set:
+  let the user sign in again.
+- **`session_revoked`**: an action rejected because the user is logged out
+  on odin.fun ([Rejection reasons](#rejection-reasons)).
+- **`sessionCheckIntervalMs`** (constructor option, default 5 minutes): how
+  often the SDK asks odin-api whether the session is still alive. The check
+  uses `api.odin.fun`, which the CSP must already allow since 2.0.
 
 ## Connected User Operations
 
@@ -1140,6 +1168,7 @@ import type {
   OdinAction,
   OdinActionDetail,
   OdinRejectReason,
+  OdinLogoutReason,
   SessionData,
 } from "odin-connect";
 ```

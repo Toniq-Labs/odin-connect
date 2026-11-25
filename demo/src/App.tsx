@@ -16,6 +16,7 @@ import { Examples } from "./features/Examples";
 import { LanguageSelect } from "./ui/LanguageSelect";
 import { ModeSelect } from "./ui/ModeSelect";
 import { RequestResult } from "./ui/RequestResult";
+import { LogoutNotice } from "./ui/LogoutNotice";
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
           <h1>Connect</h1>
           <LanguageSelect />
           <ModeSelect />
+          <LogoutNotice />
           <RequestResult />
           <Connect />
         </section>
