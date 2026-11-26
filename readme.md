@@ -596,7 +596,9 @@ A stored session with an API key (`requires_api`) ends when odin-api stops
 accepting its JWT: it expired, or the user logged out on odin.fun. The SDK
 then logs the user out: `state.user` becomes `null` and the stored session and
 API key are cleared, so apps that render from `state` need no code for it.
-Unlike `disconnect()`, `state.request` is kept, so a request in flight still
+On `env: "legacy"` (legacy.odin.fun and odin-api `/v1`) this starts once
+legacy.odin.fun and `/v1` support it; until then the user stays logged in
+until the key expires. Unlike `disconnect()`, `state.request` is kept, so a request in flight still
 settles (e.g. a `createToken` whose image upload got the `401` ends as
 `"failed"`).
 
@@ -767,7 +769,9 @@ required. What to know:
   proof (with the user's odin.fun session id, see
   [Verified connect](#verified-connect)). odin-api will stop accepting v1
   proofs on a date announced with this release (30 days after it). After
-  that date, connect fails with 2.0.x.
+  that date, connect fails with 2.0.x on `env` `"prod"`, `"staging"` and
+  `"dev"`. `"legacy"` (odin-api `/v1`) keeps accepting v1 proofs until a
+  separate date, announced later.
 - **The SDK can log the user out on its own** (see
   [Logout on odin.fun](#logout-on-odinfun)): `state.user` becomes `null`
   without a call to `disconnect()`. Apps that render from `state` already

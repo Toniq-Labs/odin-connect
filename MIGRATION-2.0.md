@@ -58,7 +58,7 @@ npm install odin-connect@^2.1.0   # or pnpm add / yarn add
 
 2.0 is a major version: `^1.x` ranges will not pick it up on their own.
 Install 2.1 or later: 2.0.x stops being able to connect after the v1 proof
-deadline (see [Upgrading from 2.0 to 2.1](#upgrading-from-20-to-21)).
+deadline (`"legacy"` env: a later date; see [Upgrading from 2.0 to 2.1](#upgrading-from-20-to-21)).
 
 Testing an unreleased 2.0 build (before it is on npm): run `npm pack` in
 the odin-connect repo and install the tarball **temporarily**
@@ -353,7 +353,9 @@ change is required; do these checks:
    before the v1 proof deadline: 2.1 asks Odin for a v2 identity proof (with
    the user's odin.fun session id), and odin-api stops accepting v1 proofs
    30 days after the 2.1.0 release (the date is announced with it). After
-   that, connect fails with 2.0.x.
+   that, connect fails with 2.0.x on `env` `"prod"`, `"staging"` and
+   `"dev"`. `"legacy"` (odin-api `/v1`) keeps accepting v1 proofs until a
+   separate date, announced later; upgrade legacy apps anyway.
 2. Search for places that keep their own copy of the user or the API key
    (`grep -rn -E "\.user\b|apiKey|getState\(\)" --exclude-dir=node_modules .`).
    They must follow `state.user`: it can now become `null` without a
@@ -365,5 +367,6 @@ change is required; do these checks:
    focus). Leave the default unless the owner asks.
 5. Verify: connect with `requires_api`, log out on odin.fun in another tab,
    then come back to the app tab after 5 minutes (or reload it); the app
-   shows the user as logged out. Starting an action after the odin.fun
+   shows the user as logged out (on `env: "legacy"` only once legacy.odin.fun
+   and odin-api `/v1` support it; until then skip this check). Starting an action after the odin.fun
    logout also logs the user out, with `request.error === "session_revoked"`.
