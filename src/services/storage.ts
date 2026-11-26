@@ -1,5 +1,10 @@
 export interface SessionData {
   principal: string;
+  /**
+   * The session key, only for a session with a delegation (`""` otherwise):
+   * `idb:<id>` for a non-extractable P-256 key kept in IndexedDB, or the
+   * Ed25519 key's JSON (the fallback, and sessions stored before 2.2).
+   */
   sessionKey: string;
   delegationChain: string | null;
   jwt: string | null;
@@ -8,6 +13,9 @@ export interface SessionData {
 export class SessionStorage {
   private _key: string;
   private _checkedKey: string;
+
+  /** Called with the cleared session's `sessionKey` (to delete a P-256 key). */
+  onSessionKeyRemoved: ((ref: string) => void) | null = null;
 
   constructor(slug: string, env: string) {
     this._key = `odin_connect:${slug}:${env}:session`;
@@ -68,6 +76,14 @@ export class SessionStorage {
   }
 
   clear(): void {
+    const ref = this.load()?.sessionKey;
+    if (ref) {
+      try {
+        this.onSessionKeyRemoved?.(ref);
+      } catch {
+        // the key is swept later
+      }
+    }
     try {
       localStorage.removeItem(this._key);
       localStorage.removeItem(this._checkedKey);

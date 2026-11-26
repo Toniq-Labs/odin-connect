@@ -9,7 +9,11 @@ import {
   Ed25519KeyIdentity,
   Ed25519PublicKey,
 } from "@dfinity/identity";
-import type { PublicKey, SignIdentity } from "@dfinity/agent";
+import type {
+  DerEncodedPublicKey,
+  PublicKey,
+  SignIdentity,
+} from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import { createPublicKey, verify } from "node:crypto";
 
@@ -22,6 +26,33 @@ function toBase64(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
+}
+
+/**
+ * The session public key as the Odin page reads it (WEB-7): Ed25519, or an
+ * uncompressed P-256 SubjectPublicKeyInfo. Throws for anything else.
+ */
+function sessionPublicKey(param: string): PublicKey {
+  const der = fromBase64Url(param);
+  try {
+    return Ed25519PublicKey.fromDer(der as DerEncodedPublicKey);
+  } catch {
+    const key = createPublicKey({
+      key: Buffer.from(der),
+      format: "der",
+      type: "spki",
+    });
+    if (
+      key.asymmetricKeyType !== "ec" ||
+      key.asymmetricKeyDetails?.namedCurve !== "prime256v1" ||
+      der.length !== 91
+    ) {
+      throw new Error("invalid session_pubkey");
+    }
+    return {
+      toDer: () => der.buffer.slice(0) as DerEncodedPublicKey,
+    } as unknown as PublicKey;
+  }
 }
 
 /** An Odin identity like SIWB's: root key -> delegated session key. */
@@ -142,13 +173,13 @@ export async function odinConnectMessage(url: URL, opts: OdinPageOptions = {}) {
     if (!sessionPubkey) {
       throw new Error("v=2 connect requires session_pubkey");
     }
-    Ed25519PublicKey.fromDer(fromBase64Url(sessionPubkey));
+    sessionPublicKey(sessionPubkey);
   }
 
   let delegationChain = null;
   if (params.get("requires_delegation") === "1" && sessionPubkey) {
     const to =
-      opts.delegateTo ?? Ed25519PublicKey.fromDer(fromBase64Url(sessionPubkey));
+      opts.delegateTo ?? sessionPublicKey(sessionPubkey);
     const targets =
       opts.targets ??
       (params.get("targets") || "")
@@ -210,7 +241,8 @@ export async function odinConnectMessage(url: URL, opts: OdinPageOptions = {}) {
 
 /**
  * odin-api's session-key binding check: `client_signature` must verify over
- * UTF-8("odin-connect-verify:v1\n" + payload) with the key in `payload.sk`.
+ * UTF-8("odin-connect-verify:v1\n" + payload) with the key in `payload.sk`
+ * (Ed25519, or P-256 since API-11).
  */
 export function clientSignatureValid(body: {
   payload: string;
@@ -220,16 +252,21 @@ export function clientSignatureValid(body: {
   if (typeof sk !== "string" || typeof body.client_signature !== "string") {
     return false;
   }
-  return verify(
-    null,
-    Buffer.from("odin-connect-verify:v1\n" + body.payload, "utf8"),
-    createPublicKey({
-      key: Buffer.from(fromBase64Url(sk)),
-      format: "der",
-      type: "spki",
-    }),
-    Buffer.from(body.client_signature, "base64")
-  );
+  const key = createPublicKey({
+    key: Buffer.from(fromBase64Url(sk)),
+    format: "der",
+    type: "spki",
+  });
+  const data = Buffer.from("odin-connect-verify:v1\n" + body.payload, "utf8");
+  const signature = Buffer.from(body.client_signature, "base64");
+  if (key.asymmetricKeyType === "ec") {
+    // P-256 (API-11): ECDSA over SHA-256, 64-byte r || s as WebCrypto signs
+    return (
+      signature.length === 64 &&
+      verify("sha256", data, { key, dsaEncoding: "ieee-p1363" }, signature)
+    );
+  }
+  return verify(null, data, key, signature);
 }
 
 /** What a well-behaved odin-api returns for a proof (401 without binding). */
