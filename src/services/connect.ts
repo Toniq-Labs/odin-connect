@@ -466,8 +466,10 @@ export class Connect {
         .checkConnectSession(window.location.origin)
         .then(
           (alive) => {
-            // only for the session it checked (not after a disconnect)
-            if (alive && this._storage.load()?.jwt === token) {
+            // only for the session it checked (not after a disconnect). A
+            // `null` (no session check on this odin-api, e.g. `/v1`) also
+            // waits the interval, so it is not asked again on every focus
+            if (alive !== false && this._storage.load()?.jwt === token) {
               this._storage.markChecked();
             }
             return alive;

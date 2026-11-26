@@ -288,9 +288,11 @@ export class OdinApiClient {
    * Ask odin-api whether the API key is still a live session for `audience`
    * (`GET /connect/session`). Resolves `true` when it is and `false` on a
    * `401` (expired, wrong audience, or its odin.fun session logged out).
-   * Rejects on anything else (offline, `5xx`): that is not a logout.
+   * Resolves `null` on a `404`: this odin-api has no session check yet
+   * (`/v1`, the `legacy` env, until it gets one). Rejects on anything else
+   * (offline, `5xx`): that is not a logout.
    */
-  async checkConnectSession(audience: string): Promise<boolean> {
+  async checkConnectSession(audience: string): Promise<boolean | null> {
     const key = this._apiKey;
     if (!key) {
       throw new Error("API key is not set");
@@ -302,7 +304,9 @@ export class OdinApiClient {
       });
       return true;
     } catch (error) {
-      if (httpStatus(error) === 401) return false;
+      const status = httpStatus(error);
+      if (status === 401) return false;
+      if (status === 404) return null;
       throw toApiError(error, "Session check failed");
     }
   }

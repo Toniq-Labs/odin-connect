@@ -614,7 +614,9 @@ settles (e.g. a `createToken` whose image upload got the `401` ends as
   user is logged out on odin.fun), the SDK logs the user out at once, with or
   without an API key. The request stays `"rejected"` with that `error`.
 - Being offline, a `5xx` or a `403` is not a logout: the session is kept and
-  the next load or focus checks again.
+  the next load or focus checks again. A `404` (an odin-api without the
+  session check, e.g. `/v1` for `env: "legacy"` for now) is not a logout
+  either; the SDK then asks again after `sessionCheckIntervalMs`.
 
 `state.logoutReason` says why, when the SDK logged the user out on its own:
 `"revoked"` (the user is logged out on odin.fun: an action came back with

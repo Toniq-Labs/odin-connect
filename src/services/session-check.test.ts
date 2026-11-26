@@ -407,6 +407,26 @@ describe("log out on 401 (SDK-2)", () => {
     await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(2));
   });
 
+  it("keeps the session when odin-api has no session check (404), and waits the interval", async () => {
+    storeSession("jwt-1", Date.now() - SESSION_CHECK_INTERVAL_MS - 1);
+    check.mockResolvedValue(null);
+    const before = Date.now();
+    const connect = await readyConnect();
+    await vi.waitFor(() => expect(check).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(Number(localStorage.getItem(checkedKey()))).toBeGreaterThanOrEqual(
+        before
+      )
+    );
+    expect(connect.user?.principal).toBe(PRINCIPAL);
+    expect(connect.api.apiKey).toBe("jwt-1");
+    expect(connect.state.logoutReason).toBeUndefined();
+    // not asked again on focus within the interval
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+    expect(check).toHaveBeenCalledOnce();
+  });
+
   it("keeps the session on a 5xx from an API request", async () => {
     storeSession("jwt-1", Date.now());
     const connect = await readyConnect();
@@ -470,12 +490,16 @@ describe("OdinApiClient.checkConnectSession", () => {
     );
   });
 
-  it("resolves false on 401 and rejects on anything else", async () => {
+  it("resolves false on 401, null on 404 and rejects on anything else", async () => {
     const api = new OdinApiClient("dev");
     api.apiKey = "jwt-1";
     mockedAxios.mockRejectedValueOnce(httpError(401));
     await expect(api.checkConnectSession("https://app.example")).resolves.toBe(
       false
+    );
+    mockedAxios.mockRejectedValueOnce(httpError(404));
+    await expect(api.checkConnectSession("https://app.example")).resolves.toBe(
+      null
     );
     mockedAxios.mockRejectedValueOnce(httpError(500));
     await expect(api.checkConnectSession("https://app.example")).rejects.toThrow();
