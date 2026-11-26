@@ -18,6 +18,7 @@ A TypeScript SDK for integrating with the [Odin](https://odin.fun) decentralized
 - [State and sessions](#state-and-sessions)
 - [Migrating to 2.0.0](#migrating-to-200)
   - [Upgrading from 2.0 to 2.1](#upgrading-from-20-to-21)
+  - [Upgrading from 2.1 to 2.2](#upgrading-from-21-to-22)
 - [Connected User Operations](#connected-user-operations)
   - [Fetching User Data](#fetching-user-data)
   - [Trading](#trading)
@@ -315,6 +316,12 @@ const identity = odinConnect.user?.getIdentity();
 // Use identity with @dfinity/agent
 ```
 
+The identity signs with the connect's session key. Since 2.2.0 that is a
+non-extractable ECDSA P-256 key where the browser allows it (see
+[The session key](#the-session-key)). After a reload the key comes from
+IndexedDB, so the identity is there once `ready()` has finished; the
+deprecated `restoreSession()` returns the user without it before that.
+
 > [!IMPORTANT]
 > **Every target canister must trust your app's origin.** Each canister listed in `targets` must return your app's origin from its [`icrc28_trusted_origins()`](https://github.com/dfinity/wg-identity-authentication) method. The Odin frontend verifies this against **all** targets before issuing a delegation.
 >
@@ -357,7 +364,32 @@ analytics capturing `location.href` or third-party scripts can read it before
 the SDK does. Without the binding, whoever read it first could redeem it at
 `/connect/verify` for the user's JWT. With it, redeeming the proof needs a
 signature from the session secret, which stayed in your page (popup: in
-memory; redirect: in that tab's `sessionStorage` until the result is read).
+memory; redirect: a P-256 key in IndexedDB, or an Ed25519 key in that tab's
+`sessionStorage`, until the result is read).
+
+#### The session key
+
+Since 2.2.0 the session key is a **non-extractable ECDSA P-256 key**
+(WebCrypto, `extractable: false`) where the browser allows it. Its
+`CryptoKeyPair` stays in IndexedDB (database `odin_connect`); the stored
+session and the pending redirect only hold a reference to it (`idb:<id>`).
+A script running on your page can still use the key while the page is open,
+but it can no longer copy it out of `localStorage` or `sessionStorage` and
+use it elsewhere. The key is only kept for a session with a delegation, and
+is deleted when the session ends.
+
+The SDK falls back to the extractable Ed25519 key of earlier versions:
+- on `env: "legacy"` (legacy.odin.fun and odin-api `/v1` accept no P-256
+  key yet);
+- in browsers without WebCrypto or a working IndexedDB (some wallet in-app
+  browsers);
+- for a connect started within the first milliseconds after the page loads,
+  before the P-256 key (generated in the background) is ready.
+
+Sessions stored by 2.0 and 2.1 keep their Ed25519 key until they expire. If
+IndexedDB is cleared while `localStorage` is not, a session with a
+delegation can't be restored; the next load drops it and the user connects
+again.
 
 If any step fails, `state.request` is `{ action: "connect", status:
 "unverified", error }` in both modes, and a popup `connect()` promise rejects
@@ -517,7 +549,7 @@ type OdinRequestState = {
 | `ready(): Promise<OdinState>` | Restores the stored session and applies a redirect result. Started by the constructor; idempotent; never rejects. Without a redirect result the state is `"ready"` right after construction. |
 | `state` / `getState()` | The current snapshot. A new frozen object after every change, the same object in between (what `useSyncExternalStore` needs). |
 | `getServerState()` | Always `INITIAL_ODIN_STATE` (`"initializing"`, no user, no request); `useSyncExternalStore`'s `getServerSnapshot`. |
-| `restoreSession()` | Deprecated (1.6.0). Synchronous: the stored session's user (`state.user` once `ready()` finished). Does not apply a redirect result. |
+| `restoreSession()` | Deprecated (1.6.0). Synchronous: the stored session's user (`state.user` once `ready()` finished). Does not apply a redirect result. Before `ready()` finished, a user whose session key is a P-256 key (IndexedDB) has no `getIdentity()` yet. |
 | `subscribe(listener)` | Calls `listener(state)` after every change, not on subscribe (read `state` after `await ready()`). Returns the unsubscribe function. |
 | `user` | `state.user`. |
 | `disconnect()` | Clears the stored session and the API key; `user` and `request` become `null`. |
@@ -651,6 +683,7 @@ const odinConnect = new OdinConnect({
 > - Sessions with a delegation chain are automatically invalidated when the delegation expires.
 > - Calling `disconnect()` in one tab clears the session for all tabs on the same origin.
 > - In environments where `localStorage` is unavailable (SSR, strict privacy mode), session persistence is silently skipped.
+> - A P-256 session key lives in IndexedDB, next to the session in `localStorage`; clearing only one of them ends a session with a delegation.
 > - On a server (no `window`) the constructor does not touch the browser and `state` stays `"initializing"`.
 
 ## Migrating to 2.0.0
@@ -789,6 +822,26 @@ required. What to know:
 - **`sessionCheckIntervalMs`** (constructor option, default 5 minutes): how
   often the SDK asks odin-api whether the session is still alive. The check
   uses `api.odin.fun`, which the CSP must already allow since 2.0.
+
+### Upgrading from 2.1 to 2.2
+
+2.2.0 makes the connect session key non-extractable (see
+[The session key](#the-session-key)). There is no breaking change and no
+code change is required. What to know:
+
+- **The delegation identity after a reload arrives with `ready()`.** The
+  P-256 key is read from IndexedDB, which is asynchronous. `state.user`
+  (after `ready()`) has it; the deprecated `restoreSession()` called before
+  `ready()` finished returns the user with `getIdentity()` still `null`.
+  Build canister actors from `state.user`, or after `await ready()`.
+- **Sessions stored by 2.0 and 2.1 keep working** with their Ed25519 key
+  until they expire. New connects use a P-256 key where the browser allows
+  it.
+- **`SessionData.sessionKey`** (if your code reads the stored session) is now
+  `idb:<id>` for a P-256 key, the Ed25519 key's JSON for the fallback, or
+  `""` for a session without a delegation (no key is kept for it).
+- Clearing only IndexedDB, or only `localStorage`, ends a session with a
+  delegation; the user connects again.
 
 ## Connected User Operations
 

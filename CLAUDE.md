@@ -37,6 +37,7 @@ Layered. Public surface is small; everything else is internal services composed 
 - [src/services/window.ts](src/services/window.ts) — `WindowClient`, wraps `window.open` for popups.
 - [src/services/http.ts](src/services/http.ts) — `HttpClient`, axios wrapper.
 - [src/services/storage.ts](src/services/storage.ts) — `SessionStorage`, localStorage-backed session under key `odin_connect:${slug}:${env}:session`. All accesses try/catch (SSR / privacy mode safe).
+- [src/services/session-key.ts](src/services/session-key.ts) — the connect session key. A non-extractable ECDSA P-256 key generated ahead by `Connect` (so `connect()` stays synchronous for the popup), its `CryptoKeyPair` in IndexedDB (`odin_connect` / `session_keys`, keyed `slug:env:id`); stored sessions and pending redirects hold only `idb:<id>`. Falls back to extractable Ed25519 (JSON ref) on `legacy`, without WebCrypto/IndexedDB, or before the key is ready. Restoring a P-256 session is async (`ready()`); `restoreSession()` before that has no identity. Keys are deleted with their session (`SessionStorage.onSessionKeyRemoved`) and swept after `PENDING_REDIRECT_MAX_AGE_MS`. Tests use `fake-indexeddb` (jsdom has no IndexedDB, so other tests run the Ed25519 path).
 - [src/models/](src/models/) — pure type definitions. [src/utils/](src/utils/) — `convertToOdinAmount`, token-field validators, delegation validity check.
 
 ### Cross-cutting conventions

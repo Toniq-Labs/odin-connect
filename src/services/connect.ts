@@ -2,6 +2,7 @@ import { OdinApiClient, Pagination, Sort } from "./api";
 import {
   DelegationChain,
   DelegationIdentity,
+  ECDSAKeyIdentity,
   Ed25519KeyIdentity,
 } from "@dfinity/identity";
 import { ConnectedUser } from "./connected-user";
@@ -19,11 +20,21 @@ import {
   watchPopupClosed,
 } from "./canister";
 import { SessionStorage } from "./storage";
+import {
+  ed25519SessionKey,
+  generateP256SessionKey,
+  HeldSessionKey,
+  idbKeyId,
+  loadSessionKey,
+  SessionKey,
+  SessionKeyStore,
+} from "./session-key";
 import { isDelegationValid } from "../utils/session";
 import { OdinLang } from "../models/lang";
 import { DEFAULT_LANG, normalizeOdinLang } from "../utils/lang";
 import {
   ConnectMode,
+  PENDING_REDIRECT_MAX_AGE_MS,
   createRequestId,
   PendingRedirectStorage,
   readFragmentValue,
@@ -148,7 +159,7 @@ function hashCode(str: string): string {
 }
 
 /** `session_pubkey` param: base64url (no padding) of the public key DER. */
-function sessionPubkeyParam(sessionKey: Ed25519KeyIdentity): string {
+function sessionPubkeyParam(sessionKey: SessionKey): string {
   return toBase64Url(new Uint8Array(sessionKey.getPublicKey().toDer()));
 }
 
@@ -234,6 +245,12 @@ export class Connect {
   private _redirect: RedirectClient;
   private _store = new StateStore();
   private _ready: Promise<void> | null = null;
+  private _keys: SessionKeyStore;
+  /** The next connect's P-256 key, generated ahead (see session-key.ts). */
+  private _nextKey: (HeldSessionKey & {
+    id: string;
+    keyPair: CryptoKeyPair;
+  }) | null = null;
 
   constructor(appInfo?: Partial<AppInitOptions>) {
     this._appInfo = {
@@ -265,6 +282,15 @@ export class Connect {
       this._appInfo.slug!,
       this._appInfo.env || "prod"
     );
+    this._keys = new SessionKeyStore(
+      this._appInfo.slug!,
+      this._appInfo.env || "prod"
+    );
+    // a session that ends takes its P-256 key with it
+    this._storage.onSessionKeyRemoved = (ref) => {
+      const id = idbKeyId(ref);
+      if (id) void this._keys.delete(id).catch(() => {});
+    };
     // A 401 on any request sent with the API key ends the session.
     this._api.onUnauthorized = (token) => this.endSession(token);
     // An action rejected with `session_revoked` (popup or redirect) ends it too.
@@ -272,6 +298,7 @@ export class Connect {
     // Restore the session and apply a redirect result now (non-blocking),
     // so `state` fills in without the app calling anything. Not on a server.
     if (typeof window !== "undefined") {
+      this.prepareSessionKey();
       void this.ready();
       window.addEventListener("focus", this.handleActivity);
       document.addEventListener("visibilitychange", this.handleActivity);
@@ -418,13 +445,59 @@ export class Connect {
         // stale or foreign result (fragment already removed): ignored
       }
     }
-    // a rejected or unverified re-connect keeps the stored session
-    this._store.dispatch({
-      type: "ready",
-      user: user ?? this.loadStoredSession(),
-      request,
-    });
+    if (!user) {
+      // a rejected or unverified re-connect keeps the stored session
+      const stored = this.loadStoredSession(true);
+      user = stored instanceof Promise ? await stored : stored;
+      if (generation !== this.disconnectGeneration) user = null;
+    }
+    this._store.dispatch({ type: "ready", user, request });
     void this.checkSession();
+    void this.sweepSessionKeys();
+  }
+
+  // ---- session key ------------------------------------------------------
+
+  /** Generate the next connect's P-256 key in the background. */
+  private prepareSessionKey(): void {
+    // legacy.odin.fun and odin-api /v1 accept no P-256 key yet
+    if (this.currentEnv === "legacy") return;
+    void generateP256SessionKey().then((key) => {
+      this._nextKey = key;
+    });
+  }
+
+  /**
+   * The key for a connect, synchronously (a popup must open within the
+   * click): the P-256 key generated ahead, else a new Ed25519 key.
+   */
+  private takeSessionKey(): HeldSessionKey & {
+    id?: string;
+    keyPair?: CryptoKeyPair;
+  } {
+    const key = this._nextKey;
+    if (!key) return ed25519SessionKey();
+    this._nextKey = null;
+    this.prepareSessionKey();
+    return key;
+  }
+
+  /**
+   * Delete P-256 keys no session or recent redirect uses (abandoned
+   * redirects, sessions ended in another tab). Best effort.
+   */
+  private async sweepSessionKeys(): Promise<void> {
+    if (typeof indexedDB === "undefined") return;
+    const ref = this._storage.load()?.sessionKey;
+    const id = ref ? idbKeyId(ref) : null;
+    try {
+      await this._keys.sweep(
+        new Set(id ? [id] : []),
+        PENDING_REDIRECT_MAX_AGE_MS
+      );
+    } catch {
+      // IndexedDB unavailable: nothing to sweep
+    }
   }
 
   // ---- session check ----------------------------------------------------
@@ -590,7 +663,7 @@ export class Connect {
       requires_api: false,
     }
   ): Promise<ConnectedUser> {
-    const sessionKey = Ed25519KeyIdentity.generate();
+    const sessionKey = this.takeSessionKey();
     const requestId = createRequestId();
     const options = { requires_api, requires_delegation, targets };
     const input: OdinRequestInput["connect"] = {
@@ -608,36 +681,51 @@ export class Connect {
         ...(returnState !== undefined ? { returnState } : {}),
       },
     });
-    const url = this.createConnectUrl(sessionKey, requestId, options);
     if (this._redirect.useRedirect) {
+      const start = (key: HeldSessionKey) =>
+        this._redirect.start<ConnectedUser>(
+          this.createConnectUrl(key.identity, requestId, options),
+          {
+            path: "/authorize/connect",
+            // Every connect (with or without delegation): the key waits for
+            // the result (a P-256 key in IndexedDB, only its ref in this
+            // tab's sessionStorage); Odin only sees session_pubkey.
+            sessionKey: key.ref,
+            requires_delegation: input.requires_delegation,
+            requires_api: input.requires_api,
+            targets,
+            returnState,
+          },
+          requestId,
+          () =>
+            this._store.dispatch({
+              type: "settle",
+              id: requestId,
+              status: "rejected",
+              error: NAVIGATED_BACK,
+            })
+        );
+      const { id, keyPair } = sessionKey;
+      const started =
+        id && keyPair
+          ? // the key must be in IndexedDB before the tab leaves; if it
+            // can't be stored, fall back to an Ed25519 key
+            this._keys.put(id, keyPair).then(
+              () => start(sessionKey),
+              () => start(ed25519SessionKey())
+            )
+          : start(sessionKey);
       return quiet(
-        this._redirect
-          .start<ConnectedUser>(
-            url,
-            {
-              path: "/authorize/connect",
-              // Every connect (with or without delegation): the secret waits
-              // in this tab's sessionStorage; Odin only sees session_pubkey.
-              sessionKey: JSON.stringify(sessionKey.toJSON()),
-              requires_delegation: input.requires_delegation,
-              requires_api: input.requires_api,
-              targets,
-              returnState,
-            },
-            requestId,
-            () =>
-              this._store.dispatch({
-                type: "settle",
-                id: requestId,
-                status: "rejected",
-                error: NAVIGATED_BACK,
-              })
-          )
-          .catch((error) => {
-            throw this.settleError(requestId, "failed", error);
-          })
+        started.catch((error) => {
+          throw this.settleError(requestId, "failed", error);
+        })
       );
     }
+    const url = this.createConnectUrl(
+      sessionKey.identity,
+      requestId,
+      options
+    );
     if (open) {
       this._window.settings = open;
     }
@@ -674,7 +762,7 @@ export class Connect {
             try {
               connected = await this.verifyConnection(
                 event.data.message as ConnectResult,
-                sessionKey,
+                sessionKey.identity,
                 connectionOptions
               );
             } catch (error) {
@@ -747,7 +835,7 @@ export class Connect {
   }
 
   private createConnectUrl(
-    sessionKey: Ed25519KeyIdentity,
+    sessionKey: SessionKey,
     requestId: string,
     {
       requires_api,
@@ -854,6 +942,9 @@ export class Connect {
         ...extra,
       };
       if (result.message === "rejected") {
+        // the key waited for a result that never comes
+        const rejectedKey = pending.sessionKey && idbKeyId(pending.sessionKey);
+        if (rejectedKey) void this._keys.delete(rejectedKey).catch(() => {});
         const reason = readRejectReason(result.detail);
         return {
           request: {
@@ -875,7 +966,26 @@ export class Connect {
           },
         };
       }
-      const sessionKey = Ed25519KeyIdentity.fromJSON(pending.sessionKey);
+      const ref = pending.sessionKey;
+      const identity = await loadSessionKey(ref, this._keys);
+      // kept only by a stored session with a delegation (persistConnection)
+      let keepKey = false;
+      const keyId = idbKeyId(ref);
+      const dropKey = () => {
+        if (keyId && !keepKey) void this._keys.delete(keyId).catch(() => {});
+      };
+      if (!identity) {
+        return {
+          request: {
+            ...request,
+            status: "unverified",
+            error: new ConnectVerificationError(
+              "the session key is gone (browser storage was cleared)"
+            ).message,
+          },
+        };
+      }
+      const sessionKey: HeldSessionKey = { identity, ref };
       const options = {
         requestId: pending.state,
         requires_api: pending.requires_api,
@@ -885,7 +995,7 @@ export class Connect {
       try {
         const connected = await this.verifyConnection(
           result.message as ConnectResult,
-          sessionKey,
+          identity,
           options
         );
         if (generation !== this.disconnectGeneration) {
@@ -893,6 +1003,7 @@ export class Connect {
           return { request: { ...request, status: "success" } };
         }
         this.persistConnection(connected, sessionKey, options);
+        keepKey = this._storage.load()?.sessionKey === ref;
         return { request: { ...request, status: "success" }, connected };
       } catch (error) {
         return {
@@ -902,6 +1013,8 @@ export class Connect {
             error: error instanceof Error ? error.message : String(error),
           },
         };
+      } finally {
+        dropKey();
       }
     }
     if (!(action in ACTIONS)) {
@@ -939,7 +1052,7 @@ export class Connect {
   /** Every local and odin-api check; no side effects. */
   private async verifyConnection(
     message: ConnectResult,
-    sessionKey: Ed25519KeyIdentity,
+    sessionKey: SessionKey,
     { requestId, requires_api, requires_delegation, targets }: ConnectionOptions
   ): Promise<VerifiedConnection> {
     if (!message || typeof message.principal !== "string") {
@@ -1020,15 +1133,22 @@ export class Connect {
    */
   private persistConnection(
     { principal, chain, jwt }: VerifiedConnection,
-    sessionKey: Ed25519KeyIdentity,
+    { identity, ref }: HeldSessionKey,
     { requires_api, requires_delegation }: ConnectionOptions
   ): void {
     this._storage.clear();
     this._api.apiKey = null;
     if (requires_api || requires_delegation) {
+      // the key is only needed again to rebuild the delegation identity
+      const id = chain ? idbKeyId(ref) : null;
+      if (id && identity instanceof ECDSAKeyIdentity) {
+        // already there after a redirect; a failed write drops the session
+        // on the next load (the key is missing then)
+        void this._keys.put(id, identity.getKeyPair()).catch(() => {});
+      }
       this._storage.save({
         principal,
-        sessionKey: JSON.stringify(sessionKey.toJSON()),
+        sessionKey: chain ? ref : "",
         delegationChain: chain ? JSON.stringify(chain.toJSON()) : null,
         jwt,
       });
@@ -1062,7 +1182,19 @@ export class Connect {
     return this.loadStoredSession();
   }
 
-  private loadStoredSession(): ConnectedUser | null {
+  /**
+   * The stored session's user. A P-256 session key is in IndexedDB (async):
+   * with `withKey`, a promise of the user with its delegation identity (null
+   * when the key is gone); without, the user at once without the identity
+   * (the deprecated synchronous `restoreSession()` before `ready()`).
+   */
+  private loadStoredSession(
+    withKey: true
+  ): ConnectedUser | null | Promise<ConnectedUser | null>;
+  private loadStoredSession(withKey?: false): ConnectedUser | null;
+  private loadStoredSession(
+    withKey = false
+  ): ConnectedUser | null | Promise<ConnectedUser | null> {
     try {
       const data = this._storage.load();
       if (!data) return null;
@@ -1078,16 +1210,32 @@ export class Connect {
         this._api.apiKey = data.jwt;
       }
 
-      let identity: DelegationIdentity | null = null;
-      if (data.delegationChain && data.sessionKey) {
-        const sessionKey = Ed25519KeyIdentity.fromJSON(data.sessionKey);
-        const chain = DelegationChain.fromJSON(
-          JSON.parse(data.delegationChain)
-        );
-        identity = DelegationIdentity.fromDelegation(sessionKey, chain);
+      if (!data.delegationChain || !data.sessionKey) {
+        return new ConnectedUser(data.principal, null, this._api, this._odin);
       }
-
-      return new ConnectedUser(data.principal, identity, this._api, this._odin);
+      const chain = DelegationChain.fromJSON(JSON.parse(data.delegationChain));
+      const user = (key: SessionKey | null) =>
+        new ConnectedUser(
+          data.principal,
+          key ? DelegationIdentity.fromDelegation(key, chain) : null,
+          this._api,
+          this._odin
+        );
+      if (idbKeyId(data.sessionKey) === null) {
+        // Ed25519: the JSON is the key
+        return user(Ed25519KeyIdentity.fromJSON(data.sessionKey));
+      }
+      if (!withKey) return user(null);
+      const ref = data.sessionKey;
+      return loadSessionKey(ref, this._keys).then((key) => {
+        if (key) return user(key);
+        // the key is gone: the delegation can't be used, drop the session
+        if (this._storage.load()?.sessionKey === ref) {
+          this._storage.clear();
+          this._api.apiKey = null;
+        }
+        return null;
+      });
     } catch {
       this._storage.clear();
       return null;

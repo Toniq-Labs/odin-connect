@@ -10,7 +10,8 @@ the app depends on 2.x it is at `node_modules/odin-connect/MIGRATION-2.0.md`
 Follow the steps in order. Do not skip the verification step.
 
 **App already on 2.0.x?** Skip to
-[Upgrading from 2.0 to 2.1](#upgrading-from-20-to-21) at the end.
+[Upgrading from 2.0 to 2.1](#upgrading-from-20-to-21) at the end. **On
+2.1.x?** Skip to [Upgrading from 2.1 to 2.2](#upgrading-from-21-to-22).
 
 ## What changed, in one paragraph
 
@@ -370,3 +371,25 @@ change is required; do these checks:
    shows the user as logged out (on `env: "legacy"` only once legacy.odin.fun
    and odin-api `/v1` support it; until then skip this check). Starting an action after the odin.fun
    logout also logs the user out, with `request.error === "session_revoked"`.
+
+## Upgrading from 2.1 to 2.2
+
+2.2 makes the connect session key a non-extractable ECDSA P-256 key kept in
+IndexedDB (with an Ed25519 fallback on `env: "legacy"` and in browsers
+without WebCrypto or IndexedDB). No code change is required; do these
+checks:
+
+1. `npm install odin-connect@^2.2.0` and regenerate the lockfile.
+2. Find code that builds canister actors from the delegation identity
+   (`grep -rn "getIdentity()" --exclude-dir=node_modules .`). After a
+   reload the identity is only there once `ready()` has finished: take it
+   from `state.user` (or after `await odin.ready()`). A deprecated
+   `restoreSession()` called before `ready()` returns the user with
+   `getIdentity()` still `null`; move such code after `ready()` or into the
+   state handler.
+3. Find code that reads the stored session itself (`SessionData`,
+   `localStorage` keys starting with `odin_connect:`). `sessionKey` is now
+   `idb:<id>`, the Ed25519 key's JSON, or `""`; do not parse it as a key.
+4. Verify: connect with `requires_delegation`, reload, and make one
+   canister call with the identity from `state.user`. Sessions stored by
+   2.1 must still restore after the upgrade.

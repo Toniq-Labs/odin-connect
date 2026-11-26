@@ -9,11 +9,11 @@
  */
 import {
   DelegationChain,
-  Ed25519KeyIdentity,
   JsonnableDelegationChain,
 } from "@dfinity/identity";
 import { Principal } from "@dfinity/principal";
 import { ConnectProof } from "./api";
+import type { SessionKey } from "./session-key";
 import { isDelegationValid } from "../utils/session";
 
 /** What the Odin connect page posts / puts in the fragment (v=2). */
@@ -68,7 +68,7 @@ export const CLIENT_SIGNATURE_PREFIX = "odin-connect-verify:v1\n";
  * the proof names (`sk`). Returns base64 (standard, with padding).
  */
 export async function signClientBinding(
-  sessionKey: Ed25519KeyIdentity,
+  sessionKey: SessionKey,
   payload: string
 ): Promise<string> {
   const signature = await sessionKey.sign(
