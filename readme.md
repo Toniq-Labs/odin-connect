@@ -598,7 +598,8 @@ then logs the user out: `state.user` becomes `null` and the stored session and
 API key are cleared, so apps that render from `state` need no code for it.
 On `env: "legacy"` (legacy.odin.fun and odin-api `/v1`) this starts once
 legacy.odin.fun and `/v1` support it; until then the user stays logged in
-until the key expires. Unlike `disconnect()`, `state.request` is kept, so a request in flight still
+until a request sent with the API key is refused (even past the key's
+expiry). Unlike `disconnect()`, `state.request` is kept, so a request in flight still
 settles (e.g. a `createToken` whose image upload got the `401` ends as
 `"failed"`).
 
@@ -614,9 +615,9 @@ settles (e.g. a `createToken` whose image upload got the `401` ends as
   user is logged out on odin.fun), the SDK logs the user out at once, with or
   without an API key. The request stays `"rejected"` with that `error`.
 - Being offline, a `5xx` or a `403` is not a logout: the session is kept and
-  the next load or focus checks again. A `404` (an odin-api without the
-  session check, e.g. `/v1` for `env: "legacy"` for now) is not a logout
-  either; the SDK then asks again after `sessionCheckIntervalMs`.
+  the next load or focus checks again. On `env: "legacy"`, a `404`
+  (odin-api `/v1` has no session check yet) is not a logout either; the SDK
+  then asks again after `sessionCheckIntervalMs`.
 
 `state.logoutReason` says why, when the SDK logged the user out on its own:
 `"revoked"` (the user is logged out on odin.fun: an action came back with
@@ -771,8 +772,8 @@ required. What to know:
   proof (with the user's odin.fun session id, see
   [Verified connect](#verified-connect)). odin-api will stop accepting v1
   proofs on a date announced with this release (30 days after it). After
-  that date, connect fails with 2.0.x on `env` `"prod"`, `"staging"` and
-  `"dev"`. `"legacy"` (odin-api `/v1`) keeps accepting v1 proofs until a
+  that date, connect fails with 2.0.x on `env` `"prod"`, `"staging"`, `"dev"`
+  and `"local"`. `"legacy"` (odin-api `/v1`) keeps accepting v1 proofs until a
   separate date, announced later.
 - **The SDK can log the user out on its own** (see
   [Logout on odin.fun](#logout-on-odinfun)): `state.user` becomes `null`

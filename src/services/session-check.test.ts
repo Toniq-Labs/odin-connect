@@ -407,7 +407,7 @@ describe("log out on 401 (SDK-2)", () => {
     await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(2));
   });
 
-  it("keeps the session when odin-api has no session check (404), and waits the interval", async () => {
+  it("keeps the session when legacy odin-api has no session check (404), and waits the interval", async () => {
     storeSession("jwt-1", Date.now() - SESSION_CHECK_INTERVAL_MS - 1);
     check.mockResolvedValue(null);
     const before = Date.now();
@@ -490,17 +490,22 @@ describe("OdinApiClient.checkConnectSession", () => {
     );
   });
 
-  it("resolves false on 401, null on 404 and rejects on anything else", async () => {
+  it("resolves false on 401, null on a legacy 404 and rejects on anything else", async () => {
     const api = new OdinApiClient("dev");
     api.apiKey = "jwt-1";
     mockedAxios.mockRejectedValueOnce(httpError(401));
     await expect(api.checkConnectSession("https://app.example")).resolves.toBe(
       false
     );
+    // a 404 means "no session check" only on legacy (/v1)
     mockedAxios.mockRejectedValueOnce(httpError(404));
-    await expect(api.checkConnectSession("https://app.example")).resolves.toBe(
-      null
-    );
+    await expect(api.checkConnectSession("https://app.example")).rejects.toThrow();
+    const legacy = new OdinApiClient("legacy");
+    legacy.apiKey = "jwt-1";
+    mockedAxios.mockRejectedValueOnce(httpError(404));
+    await expect(
+      legacy.checkConnectSession("https://app.example")
+    ).resolves.toBe(null);
     mockedAxios.mockRejectedValueOnce(httpError(500));
     await expect(api.checkConnectSession("https://app.example")).rejects.toThrow();
     mockedAxios.mockRejectedValueOnce(new Error("Network Error"));

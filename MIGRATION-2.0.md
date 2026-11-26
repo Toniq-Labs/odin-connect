@@ -353,8 +353,8 @@ change is required; do these checks:
    before the v1 proof deadline: 2.1 asks Odin for a v2 identity proof (with
    the user's odin.fun session id), and odin-api stops accepting v1 proofs
    30 days after the 2.1.0 release (the date is announced with it). After
-   that, connect fails with 2.0.x on `env` `"prod"`, `"staging"` and
-   `"dev"`. `"legacy"` (odin-api `/v1`) keeps accepting v1 proofs until a
+   that, connect fails with 2.0.x on `env` `"prod"`, `"staging"`, `"dev"`
+   and `"local"`. `"legacy"` (odin-api `/v1`) keeps accepting v1 proofs until a
    separate date, announced later; upgrade legacy apps anyway.
 2. Search for places that keep their own copy of the user or the API key
    (`grep -rn -E "\.user\b|apiKey|getState\(\)" --exclude-dir=node_modules .`).

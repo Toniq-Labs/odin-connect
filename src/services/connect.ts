@@ -444,10 +444,12 @@ export class Connect {
 
   /**
    * Ask odin-api whether the stored session is still alive, at most once per
-   * `sessionCheckIntervalMs` across all tabs (the last successful check is in
-   * localStorage). A `401` logs the user out; being offline or a `5xx` keeps
-   * the session and leaves the timer alone, so the next load or focus tries
-   * again. Never rejects.
+   * `sessionCheckIntervalMs` across all tabs (the time of the last answered
+   * check is in localStorage). A `401` logs the user out; being offline or a
+   * `5xx` keeps the session and leaves the timer alone, so the next load or
+   * focus tries again. On `legacy` a `404` (odin-api `/v1` has no session
+   * check yet) keeps the session but sets the time, so it is asked again
+   * only after the interval; it confirms nothing. Never rejects.
    */
   private async checkSession(): Promise<void> {
     if (this.state.status !== "ready" || !this.state.user) return;
