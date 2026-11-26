@@ -17,6 +17,7 @@ A TypeScript SDK for integrating with the [Odin](https://odin.fun) decentralized
   - [Wallet in-app browsers (redirect mode)](#wallet-in-app-browsers-redirect-mode)
 - [State and sessions](#state-and-sessions)
 - [Migrating to 2.0.0](#migrating-to-200)
+  - [Upgrading from 2.0 to 2.1](#upgrading-from-20-to-21)
 - [Connected User Operations](#connected-user-operations)
   - [Fetching User Data](#fetching-user-data)
   - [Trading](#trading)
@@ -249,6 +250,7 @@ const odinConnect = new OdinConnect({
   env: "prod",        // "prod" | "staging" | "dev" | "local" | "legacy"
   lang: "en",         // Popup UI language: "en" | "zh" (default "en")
   mode: "auto",       // "auto" (default) | "popup" | "redirect", see below
+  sessionCheckIntervalMs: 300_000, // session check interval (default 5 min), see below
 });
 ```
 
@@ -329,7 +331,11 @@ X" (devtools, a crafted URL fragment) is rejected:
 2. Odin signs an identity proof with the user's Odin identity, bound to your
    origin (`aud`), to this request (`request_id` nonce) and to that session
    key (`sk` = the `session_pubkey` string). The SDK rejects a proof whose
-   `sk` is missing or is not its own key.
+   `sk` is missing or is not its own key. Since 2.1.0 the SDK asks for a v2
+   proof (`proof_v=2`), which also carries the user's odin.fun session id
+   (`sid`) so odin-api can end the app's session when the user logs out on
+   odin.fun. Odin signs v1 (no `sid`) when it has no session id; the SDK
+   accepts both and rejects a v2 proof without a `sid`.
 3. With `requires_delegation`, the SDK checks the chain locally: not expired,
    issued to its own session key, rooted at the reported principal, and only
    scoped to the `targets` you asked for.
@@ -491,6 +497,7 @@ type OdinState = {
   status: "initializing" | "ready";
   user: OdinConnectedUser | null;
   request: OdinRequestState | null; // the latest request; a new one replaces it
+  logoutReason?: OdinLogoutReason; // "revoked" | "expired", see Logout on odin.fun
 };
 
 type OdinRequestState = {
@@ -554,6 +561,7 @@ leaves `error` unset. Popup promises still reject with the 1.6.0 text
 | `missing_request_id` | No request id, or no identity, to bind the identity proof. |
 | `unsupported_identity` | The user's wallet cannot sign the identity proof. |
 | `no_action` | Odin has no authorize page for this action. |
+| `session_revoked` | The user is logged out on odin.fun, so the action cannot run. The SDK logs the user out too (`state.user` becomes `null`, `state.logoutReason` is `"revoked"`); the request stays `"rejected"`. |
 | `popup_closed` | Set by the SDK, popup mode only: the popup was closed without an answer (checked every 500 ms, then a 1.5 s grace period for an answer posted just before the close). |
 | `navigated_back` | Set by the SDK, redirect mode only: the user pressed Back on Odin and the browser restored the app page from its back-forward cache without a result. |
 
@@ -580,6 +588,51 @@ if (odinConnect.isSessionValid()) {
 
 // Clears persisted session data, the API key, state.user and state.request
 odinConnect.disconnect();
+```
+
+#### Logout on odin.fun
+
+A stored session with an API key (`requires_api`) ends when odin-api stops
+accepting its JWT: it expired, or the user logged out on odin.fun. The SDK
+then logs the user out: `state.user` becomes `null` and the stored session and
+API key are cleared, so apps that render from `state` need no code for it.
+On `env: "legacy"` (legacy.odin.fun and odin-api `/v1`) this starts once
+legacy.odin.fun and `/v1` support it; until then the user stays logged in
+until a request sent with the API key is refused (even past the key's
+expiry). Unlike `disconnect()`, `state.request` is kept, so a request in flight still
+settles (e.g. a `createToken` whose image upload got the `401` ends as
+`"failed"`).
+
+- **Session check:** on page load and when the tab becomes visible or regains
+  focus, the SDK asks odin-api `GET /connect/session` whether the session is
+  still alive, at most once per `sessionCheckIntervalMs` (default 5 minutes,
+  `0` = every time). All tabs of the app share that timer. A logout on
+  odin.fun is noticed at the first load or focus after this time; nothing
+  checks while a tab just stays focused.
+- **Any API call:** a `401` on a request sent with the API key (for example
+  an image upload or a communities call) logs the user out at once.
+- **Any action:** when Odin rejects an action with `session_revoked` (the
+  user is logged out on odin.fun), the SDK logs the user out at once, with or
+  without an API key. The request stays `"rejected"` with that `error`.
+- Being offline, a `5xx` or a `403` is not a logout: the session is kept and
+  the next load or focus checks again. On `env: "legacy"`, a `404`
+  (odin-api `/v1` has no session check yet) is not a logout either; the SDK
+  then asks again after `sessionCheckIntervalMs`.
+
+`state.logoutReason` says why, when the SDK logged the user out on its own:
+`"revoked"` (the user is logged out on odin.fun: an action came back with
+`session_revoked`, or odin-api refused a key that had not expired) or
+`"expired"` (the key had reached its expiry time, within
+5 minutes to allow for the device's clock). It is absent after your own
+`disconnect()` and when a reload finds an expired stored session, cleared once
+a user is connected again, and not persisted across reloads.
+
+```typescript
+odinConnect.subscribe((state) => {
+  if (state.logoutReason === "revoked") {
+    showToast("You were signed out on odin.fun");
+  }
+});
 ```
 
 ### Custom app slug
@@ -708,6 +761,34 @@ Relative to 1.6.0 and 1.7.0:
   (`OdinRejectReason`, e.g. `untrusted_origin`, `no_targets`,
   `popup_closed`) when Odin's "Back to app" or a closed popup ended it (see
   [Rejection reasons](#rejection-reasons)).
+
+### Upgrading from 2.0 to 2.1
+
+2.1.0 ends the app's session when the user logs out on odin.fun. There is
+no breaking change: `npm install odin-connect@^2.1.0` and nothing else is
+required. What to know:
+
+- **Upgrade before the v1 proof deadline.** 2.1 asks Odin for a v2 identity
+  proof (with the user's odin.fun session id, see
+  [Verified connect](#verified-connect)). odin-api will stop accepting v1
+  proofs on a date announced with this release (30 days after it). After
+  that date, connect fails with 2.0.x on `env` `"prod"`, `"staging"`, `"dev"`
+  and `"local"`. `"legacy"` (odin-api `/v1`) keeps accepting v1 proofs until a
+  separate date, announced later.
+- **The SDK can log the user out on its own** (see
+  [Logout on odin.fun](#logout-on-odinfun)): `state.user` becomes `null`
+  without a call to `disconnect()`. Apps that render from `state` already
+  handle it. Code that kept its own copy of the user (or of the API key)
+  must clear it when `state.user` becomes `null`.
+- **`state.logoutReason`** (`"revoked"` | `"expired"`, type
+  `OdinLogoutReason`) says why, so the app can show e.g. "You were signed
+  out on odin.fun". Do not start `connect()` automatically when it is set:
+  let the user sign in again.
+- **`session_revoked`**: an action rejected because the user is logged out
+  on odin.fun ([Rejection reasons](#rejection-reasons)).
+- **`sessionCheckIntervalMs`** (constructor option, default 5 minutes): how
+  often the SDK asks odin-api whether the session is still alive. The check
+  uses `api.odin.fun`, which the CSP must already allow since 2.0.
 
 ## Connected User Operations
 
@@ -1094,6 +1175,7 @@ import type {
   OdinAction,
   OdinActionDetail,
   OdinRejectReason,
+  OdinLogoutReason,
   SessionData,
 } from "odin-connect";
 ```

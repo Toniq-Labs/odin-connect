@@ -4,6 +4,7 @@ import type {
   OdinConnectedUser,
   OdinConnectMode,
   OdinLang,
+  OdinLogoutReason,
   OdinRequestState,
   OdinToken,
 } from "odin-connect";
@@ -26,6 +27,8 @@ type OdinContextType = {
   setMode: (mode: OdinConnectMode) => void;
   /* state.request: the latest connect() or action, popup or redirect */
   request: OdinRequestState | null;
+  /* state.logoutReason: set when the SDK logged the user out on its own */
+  logoutReason: OdinLogoutReason | undefined;
 };
 
 export const OdinContext = createContext<OdinContextType | undefined>(

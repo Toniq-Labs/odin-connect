@@ -287,7 +287,8 @@ describe("popup connect: only its own answer, only while current", () => {
   it("disconnect() while the popup is open: its success does not resurrect the user", async () => {
     const connect = await readyConnect();
     const old = await connectedUser(connect);
-    expect(localStorage.length).toBe(1);
+    // the session and the time odin-api last confirmed it
+    expect(localStorage.length).toBe(2);
     const { promise, url } = startConnect(connect, POPUP);
     connect.disconnect();
     const message = await odinConnectMessage(url);
@@ -772,7 +773,8 @@ describe("disconnect()", () => {
     const connect = await readyConnect();
     await connectedUser(connect);
     expect(connect.user).not.toBeNull();
-    expect(localStorage.length).toBe(1);
+    // the session and the time odin-api last confirmed it
+    expect(localStorage.length).toBe(2);
     connect.disconnect();
     expect(connect.state).toEqual({
       status: "ready",
